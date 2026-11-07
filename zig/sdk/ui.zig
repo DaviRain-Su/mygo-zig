@@ -276,6 +276,32 @@ const PaintOp = enum(u8) {
     text = 4,
     shadow = 5,
     animation_frame = 6,
+    path_begin = 7,
+    path_move = 8,
+    path_line = 9,
+    path_quad = 10,
+    path_cubic = 11,
+    path_close = 12,
+    path_fill = 13,
+    path_stroke = 14,
+    path_svg = 15,
+};
+
+pub const FillRule = enum(u8) {
+    non_zero = 0,
+    even_odd = 1,
+};
+
+pub const LineCap = enum(u8) {
+    round = 0,
+    butt = 1,
+    square = 2,
+};
+
+pub const LineJoin = enum(u8) {
+    round = 0,
+    miter = 1,
+    bevel = 2,
 };
 
 pub const CTheme = extern struct {
@@ -851,6 +877,80 @@ pub const Painter = struct {
     pub fn requestAnimationFrame(self: *Painter) void {
         self.writeU8(@intFromEnum(PaintOp.animation_frame));
     }
+
+    /// Start a vector path (`ui.Path`). Follow with move/line/… then fill/stroke.
+    pub fn pathBegin(self: *Painter, rule: FillRule, cap: LineCap, join: LineJoin, miter: f32) void {
+        self.ensure(8);
+        self.writeU8(@intFromEnum(PaintOp.path_begin));
+        self.writeU8(@intFromEnum(rule));
+        self.writeU8(@intFromEnum(cap));
+        self.writeU8(@intFromEnum(join));
+        self.writeF32(miter);
+    }
+
+    pub fn pathMoveTo(self: *Painter, x: f32, y: f32) void {
+        self.ensure(9);
+        self.writeU8(@intFromEnum(PaintOp.path_move));
+        self.writeF32(x);
+        self.writeF32(y);
+    }
+
+    pub fn pathLineTo(self: *Painter, x: f32, y: f32) void {
+        self.ensure(9);
+        self.writeU8(@intFromEnum(PaintOp.path_line));
+        self.writeF32(x);
+        self.writeF32(y);
+    }
+
+    pub fn pathQuadTo(self: *Painter, cx: f32, cy: f32, x: f32, y: f32) void {
+        self.ensure(17);
+        self.writeU8(@intFromEnum(PaintOp.path_quad));
+        self.writeF32(cx);
+        self.writeF32(cy);
+        self.writeF32(x);
+        self.writeF32(y);
+    }
+
+    pub fn pathCubicTo(self: *Painter, c1x: f32, c1y: f32, c2x: f32, c2y: f32, x: f32, y: f32) void {
+        self.ensure(25);
+        self.writeU8(@intFromEnum(PaintOp.path_cubic));
+        self.writeF32(c1x);
+        self.writeF32(c1y);
+        self.writeF32(c2x);
+        self.writeF32(c2y);
+        self.writeF32(x);
+        self.writeF32(y);
+    }
+
+    pub fn pathClose(self: *Painter) void {
+        self.ensure(1);
+        self.writeU8(@intFromEnum(PaintOp.path_close));
+    }
+
+    pub fn pathFill(self: *Painter, color: Color) void {
+        self.ensure(5);
+        self.writeU8(@intFromEnum(PaintOp.path_fill));
+        self.writeU32(color.toU32());
+    }
+
+    pub fn pathStroke(self: *Painter, width: f32, color: Color) void {
+        self.ensure(9);
+        self.writeU8(@intFromEnum(PaintOp.path_stroke));
+        self.writeF32(width);
+        self.writeU32(color.toU32());
+    }
+
+    /// Parse an SVG path `d` string and fill and/or stroke it.
+    /// Pass `fill` with a=0 to skip fill; `stroke_width <= 0` skips stroke.
+    pub fn pathSVG(self: *Painter, d: []const u8, fill: Color, stroke_width: f32, stroke: Color) void {
+        self.ensure(13 + d.len);
+        self.writeU8(@intFromEnum(PaintOp.path_svg));
+        self.writeStr(d);
+        self.writeU32(fill.toU32());
+        self.writeF32(stroke_width);
+        self.writeU32(stroke.toU32());
+    }
+
 };
 
 fn registerSubview(comptime StatePtr: type, comptime fnPtr: fn (StatePtr, *Context) void) usize {

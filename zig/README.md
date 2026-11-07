@@ -14,6 +14,8 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 
 | Path | Role |
 |------|------|
+| `cmd/build/` | One-shot `zig build` + `mygo build` for an app |
+| `cmd/scaffold/` | New Native UI Zig app (`-build` packages it) |
 | `cmd/uigen/` | AST codegen from `ui/api_gen.go` → **202** Element modifiers (`host/ui/modifiers_gen.go` + `sdk/element_gen.zig`), including `Align` / `BorderStyle` / `Cursor` / `Direction` |
 | `host/` | Pure-Go purego host: windows, IPC, embed, clipboard, menus, shell |
 | `host/ui/` | Opt-in Native GPU UI CommandBuffer (widgets below) |
@@ -72,10 +74,10 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Widgets / chrome / data | Done | Gallery covers Controls→Editor |
 | Drag / toast / video / routes | Done | Incl. stream push + toast userdata |
 | Motion / timing | Done | Ops 322–332 |
-| Painter paths / gradients | Open | `FillPath`/`StrokePath`/`ParseSVG` path draw |
+| Painter paths / gradients | Paths done | `pathBegin`/`Move`/`Line`/`Quad`/`Cubic`/`Fill`/`Stroke`/`pathSVG`; gradients still open |
 | Bitmap / Canvas / Fonts | Open | `NewBitmap`, `RegisterFont`, decode helpers |
 | File dialogs / tray | Open | only if/when host `mygo` exposes them to Zig |
-| DX: CI + one-shot build | Open | `zig build` in CI; `scaffold` → build → package script |
+| DX: CI + one-shot build | Done | `.github/workflows/zig.yml`; `go run ./zig/cmd/build <app>`; `scaffold -build` |
 | Standalone module path | Open | `mygo-zig` go.mod branding / docs site |
 
 ## Quick start
@@ -93,9 +95,8 @@ go run ./cmd/mygo build -skip-dmg zig/examples/hello-zig
 (cd zig/examples/counter-native-zig && zig build -Doptimize=ReleaseSmall)
 go run ./cmd/mygo build -skip-dmg zig/examples/counter-native-zig
 
-# 3. Widget gallery (markdown + editor linked)
-(cd zig/examples/gallery-zig && zig build -Doptimize=ReleaseSmall)
-go run ./cmd/mygo build -skip-dmg zig/examples/gallery-zig
+# 3. Widget gallery (one-shot)
+go run ./zig/cmd/build zig/examples/gallery-zig
 open zig/examples/gallery-zig/dist/darwin-arm64/Gallery\ Zig.app
 ```
 

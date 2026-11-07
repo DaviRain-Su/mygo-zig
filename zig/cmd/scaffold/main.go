@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -19,6 +20,7 @@ var templates embed.FS
 
 func main() {
 	dirFlag := flag.String("dir", "", "output directory (default zig/examples/<name>-zig)")
+	buildFlag := flag.Bool("build", false, "run zig build + mygo build after scaffolding")
 	flag.Parse()
 	if flag.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "usage: scaffold [-dir path] <name>\n")
@@ -93,11 +95,27 @@ func main() {
 		}
 		fmt.Println("wrote", dst)
 	}
+	if *buildFlag {
+		fmt.Println("→ zig build")
+		cmd := exec.Command("zig", "build", "-Doptimize=ReleaseSmall")
+		cmd.Dir = out
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fail(err)
+		}
+		fmt.Println("→ mygo build")
+		cmd = exec.Command("go", "run", "./cmd/mygo", "build", "-skip-dmg", out)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fail(err)
+		}
+		return
+	}
 	fmt.Printf(`
 Next:
-  (cd %s && zig build -Doptimize=ReleaseSmall)
-  go run ./cmd/mygo build -skip-dmg %s
-`, out, out)
+  go run ./zig/cmd/build %s
+  # or: (cd %s && zig build -Doptimize=ReleaseSmall) && go run ./cmd/mygo build -skip-dmg %s
+`, out, out, out)
 }
 
 func sanitize(s string) string {

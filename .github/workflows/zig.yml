@@ -1,0 +1,62 @@
+name: Zig
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "zig/**"
+      - ".github/workflows/zig.yml"
+      - "go.mod"
+      - "go.sum"
+      - "ui/api_gen.go"
+  pull_request:
+    paths:
+      - "zig/**"
+      - ".github/workflows/zig.yml"
+      - "go.mod"
+      - "go.sum"
+      - "ui/api_gen.go"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zig-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  zig:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, os: macos-latest }
+          - { name: Linux, os: ubuntu-latest }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.1
+      - name: Host build + vet
+        run: |
+          CGO_ENABLED=0 go build ./zig/...
+          go vet ./zig/host/...
+          go run ./zig/cmd/uigen
+          git diff --exit-code -- zig/host/ui/modifiers_gen.go zig/sdk/element_gen.zig
+      - name: Zig examples
+        run: |
+          for d in hello-zig counter-native-zig gallery-zig; do
+            (cd zig/examples/$d && zig build -Doptimize=ReleaseSmall)
+          done
+      - name: One-shot package (hello)
+        run: go run ./zig/cmd/build -skip-dmg zig/examples/hello-zig
+      - name: Scaffold round-trip
+        run: |
+          go run ./zig/cmd/scaffold -dir /tmp/mygo-zig-ci democi
+          (cd /tmp/mygo-zig-ci && zig build -Doptimize=ReleaseSmall)

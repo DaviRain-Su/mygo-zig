@@ -823,6 +823,14 @@ const Gallery = struct {
             }
         }
 
+        _ = c.text("Painter paths").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.box()
+            .fillWidth()
+            .height(120)
+            .border(1, t.border)
+            .radius(8)
+            .draw(*Gallery, self, Gallery.paintPaths);
+
         _ = c.text("Draggable card (snap corners)").fontSize(13).bold().textColor(t.text_muted);
         {
             const stage = c.box().fillWidth().height(160).border(1, t.border).radius(8).begin();
@@ -855,6 +863,47 @@ const Gallery = struct {
 
 
 
+
+    fn paintPaths(self: *Gallery, p: *ui.Painter, r: ui.Rect) void {
+        _ = self;
+        p.fillRect(r.x, r.y, r.w, r.h, ui.Color.rgba(15, 23, 42, 20), 8);
+        // Chevron via imperative path commands.
+        const x0 = r.x + 24;
+        const y0 = r.y + r.h * 0.5;
+        p.pathBegin(.non_zero, .round, .round, 4);
+        p.pathMoveTo(x0, y0 - 28);
+        p.pathLineTo(x0 + 28, y0);
+        p.pathLineTo(x0, y0 + 28);
+        p.pathStroke(4, ui.Color.rgb(99, 102, 241));
+        // Heart-ish cubic blob.
+        const hx = r.x + r.w * 0.45;
+        const hy = r.y + 28;
+        p.pathBegin(.non_zero, .round, .round, 4);
+        p.pathMoveTo(hx, hy + 20);
+        p.pathCubicTo(hx - 36, hy - 10, hx - 10, hy - 36, hx, hy - 8);
+        p.pathCubicTo(hx + 10, hy - 36, hx + 36, hy - 10, hx, hy + 20);
+        p.pathClose();
+        p.pathFill(ui.Color.rgb(244, 63, 94));
+        // Star via SVG path `d` (translated into the element).
+        var dbuf: [192]u8 = undefined;
+        const d = std.fmt.bufPrint(&dbuf, "M {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} Z",
+            .{
+                r.x + r.w - 78, r.y + 18,
+                r.x + r.w - 66, r.y + 42,
+                r.x + r.w - 42, r.y + 42,
+                r.x + r.w - 60, r.y + 58,
+                r.x + r.w - 54, r.y + 82,
+                r.x + r.w - 78, r.y + 68,
+                r.x + r.w - 102, r.y + 82,
+                r.x + r.w - 96, r.y + 58,
+                r.x + r.w - 114, r.y + 42,
+                r.x + r.w - 90, r.y + 42,
+            }) catch "";
+        if (d.len > 0) {
+            p.pathSVG(d, ui.Color.rgb(250, 204, 21), 1.5, ui.Color.rgb(161, 98, 7));
+        }
+        p.text(r.x + r.w - 120, r.y + 12, "path + SVG", 12, ui.Color.rgb(100, 116, 139));
+    }
     fn provideLazyMIME(self: *Gallery, buf: []u8) usize {
         // Fresh payload each drag start.
         var tmp: [64]u8 = undefined;

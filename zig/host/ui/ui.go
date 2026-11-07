@@ -180,6 +180,15 @@ const (
 	paintText           uint8 = 4
 	paintShadow         uint8 = 5
 	paintAnimationFrame uint8 = 6
+	paintPathBegin      uint8 = 7 // rule u8, cap u8, join u8, miter f32
+	paintPathMove       uint8 = 8
+	paintPathLine       uint8 = 9
+	paintPathQuad       uint8 = 10
+	paintPathCubic      uint8 = 11
+	paintPathClose      uint8 = 12
+	paintPathFill       uint8 = 13 // rgba u32
+	paintPathStroke     uint8 = 14 // width f32, rgba u32
+	paintPathSVG        uint8 = 15 // svg str, then fill rgba + stroke width/rgba (0 width = no stroke)
 )
 
 type cUITheme struct {
@@ -3144,6 +3153,7 @@ func flushPaint(painterHandle, cmdPtr, cmdLen uintptr) {
 		return
 	}
 	r := tapeReader{b: host.BytesView(cmdPtr, cmdLen)}
+	var path *mygoui.Path
 	for {
 		op, ok := r.u8()
 		if !ok {
@@ -3211,6 +3221,93 @@ func flushPaint(painterHandle, cmdPtr, cmdLen uintptr) {
 			p.Shadow(mygoui.Rect{X: x, Y: y, W: w, H: h}, rad, dx, dy, blur, spread, unpackColor(rgba))
 		case paintAnimationFrame:
 			p.AnimationFrame()
+		case paintPathBegin:
+			rule, ok1 := r.u8()
+			cap, ok2 := r.u8()
+			join, ok3 := r.u8()
+			miter, ok4 := r.f32()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			path = &mygoui.Path{}
+			path.FillRule(mygoui.FillRule(rule))
+			path.Cap(mygoui.LineCap(cap))
+			path.Join(mygoui.LineJoin(join))
+			if miter > 0 {
+				path.MiterLimit(miter)
+			}
+		case paintPathMove:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			if !ok1 || !ok2 || path == nil {
+				return
+			}
+			path.MoveTo(x, y)
+		case paintPathLine:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			if !ok1 || !ok2 || path == nil {
+				return
+			}
+			path.LineTo(x, y)
+		case paintPathQuad:
+			cx, ok1 := r.f32()
+			cy, ok2 := r.f32()
+			x, ok3 := r.f32()
+			y, ok4 := r.f32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || path == nil {
+				return
+			}
+			path.QuadTo(cx, cy, x, y)
+		case paintPathCubic:
+			c1x, ok1 := r.f32()
+			c1y, ok2 := r.f32()
+			c2x, ok3 := r.f32()
+			c2y, ok4 := r.f32()
+			x, ok5 := r.f32()
+			y, ok6 := r.f32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || path == nil {
+				return
+			}
+			path.CubeTo(c1x, c1y, c2x, c2y, x, y)
+		case paintPathClose:
+			if path == nil {
+				return
+			}
+			path.Close()
+		case paintPathFill:
+			rgba, ok := r.u32()
+			if !ok || path == nil {
+				return
+			}
+			p.FillPath(path, unpackColor(rgba))
+		case paintPathStroke:
+			w, ok1 := r.f32()
+			rgba, ok2 := r.u32()
+			if !ok1 || !ok2 || path == nil {
+				return
+			}
+			p.StrokePath(path, w, unpackColor(rgba))
+		case paintPathSVG:
+			svg, ok1 := r.str()
+			fillRGBA, ok2 := r.u32()
+			strokeW, ok3 := r.f32()
+			strokeRGBA, ok4 := r.u32()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			parsed, err := mygoui.ParsePath(svg)
+			if err != nil {
+				host.SetError(err)
+				return
+			}
+			path = parsed
+			if fillRGBA != 0 {
+				p.FillPath(path, unpackColor(fillRGBA))
+			}
+			if strokeW > 0 {
+				p.StrokePath(path, strokeW, unpackColor(strokeRGBA))
+			}
 		default:
 			return
 		}
