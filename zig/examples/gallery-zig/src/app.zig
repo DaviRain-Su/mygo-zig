@@ -177,6 +177,10 @@ const Gallery = struct {
     show_video: bool = false,
     video_registered: bool = false,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
+    custom_toasts: bool = false,
+    mime_drop: [256]u8 = undefined,
+    mime_drop_len: usize = 0,
+    toast_info_buf: [256]u8 = undefined,
     outline_sel: i32 = 0,
     outline_open: [256]u8 = undefined,
     outline_open_len: usize = 0,
@@ -820,9 +824,62 @@ const Gallery = struct {
         }
     }
 
+
+    fn paintRichObject(self: *Gallery, p: *ui.Painter, at: i32, r: ui.Rect) void {
+        _ = self;
+        _ = at;
+        p.fillRect(r.x, r.y, r.w, r.h, ui.Color.rgb(59, 130, 246), 6);
+        p.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, ui.Color.rgb(37, 99, 235), 4);
+    }
+
+    fn renderCustomToasts(self: *Gallery, c: *ui.Context, count: usize) void {
+        const t = c.theme();
+        // Current element is the viewport column; style it then build each toast.
+        _ = (ui.Element{ .ctx = c }).padding(16).gap(8).alignItems(.end);
+        var i: usize = 0;
+        while (i < count) : (i += 1) {
+            var info: ui.Context.ToastInfo = .{};
+            const root = c.toastItem(@intCast(i), self.toast_info_buf[0..], &info)
+                .row()
+                .gap(10)
+                .padding(10)
+                .radius(10)
+                .background(t.surface)
+                .border(1, t.accent)
+                .maxWidth(360);
+            {
+                const body = root.begin();
+                defer body.end();
+                {
+                    const col = c.column().gap(2).grow(1.0).begin();
+                    defer col.end();
+                    _ = c.text(info.title).bold().fontSize(13);
+                    if (info.description.len > 0) {
+                        _ = c.text(info.description).fontSize(11).textColor(t.text_muted);
+                    }
+                }
+                if (info.has_action) {
+                    const action = c.toastActionButton().padding(6).radius(6).background(t.accent);
+                    {
+                        const a = action.begin();
+                        defer a.end();
+                        const label = if (info.action.len > 0) info.action else "Action";
+                        _ = c.text(label).fontSize(12).textColor(t.accent_text);
+                    }
+                }
+                const close = c.toastCloseButton().padding(6).radius(6);
+                {
+                    const b = close.begin();
+                    defer b.end();
+                    _ = c.text("×").fontSize(14);
+                }
+            }
+        }
+    }
+
     fn viewMore(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
-        _ = c.text("Toolbar · Grid · Icon · Themed · Find · Toast · Menu").fontSize(16).bold();
+        _ = c.text("Toolbar · Custom toasts · RichText objects · MIME drag").fontSize(16).bold();
 
         _ = c.toolbar("tb", *Gallery, self, Gallery.toolbarBody).fillWidth();
 
@@ -837,7 +894,47 @@ const Gallery = struct {
             if (c.button("undoable", "Delete…").clicked()) {
                 c.toastAction("Item deleted", "Undo", *Gallery, self, Gallery.onToastUndo);
             }
+            if (c.button("custom-toast-toggle", if (self.custom_toasts) "Default toasts" else "Custom toasts").clicked()) {
+                self.custom_toasts = !self.custom_toasts;
+            }
             _ = c.menuButton("file", "Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
+        }
+
+        // RichText with an inline object chip
+        {
+            const spans = [_]ui.Span{
+                ui.Span.plain("Inline object: "),
+                ui.Span.object(52, 18, 4),
+                ui.Span.plain(" between words"),
+            };
+            _ = c.richText(&spans)
+                .drawObjects(*Gallery, self, Gallery.paintRichObject)
+                .fillWidth();
+        }
+
+        // Custom MIME drag / drop
+        {
+            const row = c.row().fillWidth().gap(10).center().begin();
+            defer row.end();
+            _ = c.badge("MIME drag")
+                .padding(8)
+                .radius(6)
+                .dragMIME(&.{ .{ "application/x-mygo-demo", "zig-demo-v1" }, .{ "text/plain", "fallback text" } });
+            const zone = c.box().padding(8).radius(6).border(1, t.border).grow(1.0);
+            if (zone.dropMIME(&.{ "application/x-mygo-demo", "text/plain" }, self.mime_drop[0..], &self.mime_drop_len)) {}
+            {
+                const body = zone.begin();
+                defer body.end();
+                if (self.mime_drop_len > 0) {
+                    _ = c.textf("{s}", .{self.mime_drop[0..self.mime_drop_len]}).fontSize(11);
+                } else {
+                    _ = c.text("Drop custom MIME here").fontSize(12).textColor(t.text_muted);
+                }
+            }
+        }
+
+        if (self.custom_toasts) {
+            _ = c.toastViewport(*Gallery, self, Gallery.renderCustomToasts);
         }
 
         if (self.menu_id_len > 0) {

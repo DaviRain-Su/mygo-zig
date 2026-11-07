@@ -81,6 +81,10 @@ var handWrittenZigNames = map[string]bool{
 	"dragData":          true,
 	"dropData":          true,
 	"dataDragOver":      true,
+	"dataDragOverMIME":  true,
+	"drawObjects":       true,
+	"dragMIME":          true,
+	"dropMIME":          true,
 }
 
 func toCamel(s string) string {
@@ -448,6 +452,24 @@ func writeZigElement(methods []methodSpec) {
     /// True while a native drag matching text/URL/files is over this element.
     pub fn dataDragOver(self: Element) bool {
         return self.ctx.dataDragOver();
+    }
+
+    pub fn dataDragOverMIME(self: Element, formats: []const []const u8) bool {
+        return self.ctx.dataDragOverMIME(formats);
+    }
+
+    pub fn drawObjects(self: Element, comptime StatePtr: type, state: StatePtr, comptime paintFn: fn (StatePtr, *ui.Painter, i32, ui.Rect) void) Element {
+        self.ctx.drawObjects(StatePtr, state, paintFn);
+        return self;
+    }
+
+    pub fn dragMIME(self: Element, parts: []const struct { []const u8, []const u8 }) Element {
+        self.ctx.dragMIME(parts);
+        return self;
+    }
+
+    pub fn dropMIME(self: Element, formats: []const []const u8, buf: []u8, len: *usize) bool {
+        return self.ctx.dropMIME(formats, buf, len);
     }
 `)
 

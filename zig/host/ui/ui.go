@@ -141,6 +141,13 @@ const (
 	opRouteView        uint16 = 310
 	opRouteMatch       uint16 = 311
 	opRouteParam       uint16 = 312
+	opDrawObjects      uint16 = 313
+	opToastViewport    uint16 = 314
+	opToastItem        uint16 = 315
+	opToastCloseBtn    uint16 = 316
+	opToastActionBtn   uint16 = 317
+	opDragMIME         uint16 = 318
+	opDropMIME         uint16 = 319
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -254,6 +261,8 @@ type cUIOutlineCellInfo struct {
 type cUIRect struct {
 	X, Y, W, H float32
 	NowMillis  int64
+	At         int32 // DrawObjects index; unused (0) for Draw
+	_          int32
 }
 
 type cUIQuery struct {
@@ -300,12 +309,15 @@ type uiWindowHost struct {
 var assetCache sync.Map // hash key → *SVG | ImageSource
 
 type uiFrame struct {
-	ctx    *mygoui.Context
-	cur    mygoui.Element
-	scopes []mygoui.FFIScope
-	host   *uiWindowHost
-	theme  cUITheme
-	route  *mygoui.Route // set while a router/route page callback runs
+	ctx        *mygoui.Context
+	cur        mygoui.Element
+	scopes     []mygoui.FFIScope
+	host       *uiWindowHost
+	theme      cUITheme
+	route      *mygoui.Route // set while a router/route page callback runs
+	toasts     []mygoui.Toast
+	toastParts mygoui.ToastParts
+	hasToast   bool
 }
 
 type gifAsset struct {
@@ -1884,14 +1896,33 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 					return
 				}
 				sp := mygoui.Span{
-					Text:      text,
-					Weight:    int(weight),
-					Size:      size,
-					Italic:    flags&1 != 0,
-					Underline: flags&2 != 0,
+					Text:          text,
+					Weight:        int(weight),
+					Size:          size,
+					Italic:        flags&1 != 0,
+					Underline:     flags&2 != 0,
+					Strikethrough: flags&8 != 0,
 				}
 				if flags&4 != 0 {
 					sp.Color = unpackColor(rgba)
+				}
+				if flags&16 != 0 { // object replacement
+					ow, okW := r.f32()
+					oh, okH := r.f32()
+					od, okD := r.f32()
+					if !okW || !okH || !okD {
+						return
+					}
+					sp.ObjectWidth = ow
+					sp.ObjectHeight = oh
+					sp.ObjectDescent = od
+				}
+				if flags&32 != 0 {
+					bg, okBG := r.u32()
+					if !okBG {
+						return
+					}
+					sp.Background = unpackColor(bg)
 				}
 				spans = append(spans, sp)
 			}
@@ -2275,6 +2306,89 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				})
 			})
 
+		case opDrawObjects:
+			paintCbID, ok1 := r.u64()
+			paintUD, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh := f.host
+			f.cur = f.cur.DrawObjects(func(p *mygoui.Painter, at int, rect mygoui.Rect) {
+				activePainters = append(activePainters, p)
+				pHandle := uintptr(len(activePainters))
+				cr := cUIRect{
+					X:         rect.X,
+					Y:         rect.Y,
+					W:         rect.W,
+					H:         rect.H,
+					NowMillis: p.Now().UnixMilli(),
+					At:        int32(at),
+				}
+				wh.callZig(host.ZigEventUIPaint, uintptr(paintCbID), pHandle, uintptr(unsafe.Pointer(&cr)), uintptr(paintUD))
+				activePainters[len(activePainters)-1] = nil
+				activePainters = activePainters[:len(activePainters)-1]
+			})
+
+		case opToastViewport:
+			bodyCbID, ok1 := r.u64()
+			bodyUD, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.ToastViewportBase(c, func(viewport mygoui.Element, toasts []mygoui.Toast) {
+				runFrame(c, wh, th, func(handle uintptr) {
+					idx := int(handle) - 1
+					if idx >= 0 && idx < len(activeFrames) && activeFrames[idx] != nil {
+						activeFrames[idx].cur = viewport
+						activeFrames[idx].toasts = toasts
+					}
+					info := cUIFrameInfo{
+						WindowID:     wh.winID,
+						WindowActive: 1,
+						Theme:        th,
+					}
+					// Pack toast count into Width so Zig knows how many toastItem calls to make.
+					info.Width = float32(len(toasts))
+					wh.callZig(host.ZigEventUISubview, uintptr(bodyCbID), handle, uintptr(unsafe.Pointer(&info)), uintptr(bodyUD))
+				})
+			})
+
+		case opToastItem:
+			index, ok := r.i32()
+			if !ok {
+				return
+			}
+			if index < 0 || int(index) >= len(f.toasts) {
+				return
+			}
+			ts := f.toasts[index]
+			parts := mygoui.ToastBase(c, ts)
+			f.toastParts = parts
+			f.hasToast = true
+			f.cur = parts.Root
+			if out != nil {
+				out.BoolVal = u8Bool(ts.Action != "")
+				// Title\nDescription\nType into text buf
+				payload := ts.Title + "\n" + ts.Description + "\n" + ts.Type
+				if ts.Action != "" {
+					payload += "\n" + ts.Action
+				}
+				writeChosenID(out, savedBufPtr, savedBufCap, payload)
+			}
+
+		case opToastCloseBtn:
+			if !f.hasToast {
+				return
+			}
+			f.cur = f.toastParts.CloseButton()
+
+		case opToastActionBtn:
+			if !f.hasToast {
+				return
+			}
+			f.cur = f.toastParts.ActionButton()
+
 		case opWebView:
 			key, ok1 := r.str()
 			url, ok2 := r.str()
@@ -2322,6 +2436,25 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			}
 			f.cur = f.cur.DragData(transfer.TextData(text))
 
+		case opDragMIME:
+			n, ok := r.u16()
+			if !ok {
+				return
+			}
+			reps := make([]transfer.Representation, 0, int(n))
+			for range int(n) {
+				format, ok1 := r.str()
+				payload, ok2 := r.str()
+				if !ok1 || !ok2 {
+					return
+				}
+				reps = append(reps, transfer.Bytes(transfer.Format(format), []byte(payload)))
+			}
+			if len(reps) == 0 {
+				return
+			}
+			f.cur = f.cur.DragData(transfer.New(transfer.NewItem(reps...)))
+
 		case opDropData:
 			opts := transfer.DropOptions{
 				Formats:    []transfer.Format{transfer.Text, transfer.URIList, transfer.FileList},
@@ -2339,13 +2472,62 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				writeChosenID(out, savedBufPtr, savedBufCap, payload)
 			}
 
-		case opDataDragOver:
+		case opDropMIME:
+			n, ok := r.u16()
+			if !ok {
+				return
+			}
+			formats := make([]transfer.Format, 0, int(n))
+			for range int(n) {
+				fmtName, okF := r.str()
+				if !okF {
+					return
+				}
+				formats = append(formats, transfer.Format(fmtName))
+			}
+			if len(formats) == 0 {
+				formats = []transfer.Format{transfer.Text, transfer.URIList, transfer.FileList}
+			}
 			opts := transfer.DropOptions{
-				Formats:    []transfer.Format{transfer.Text, transfer.URIList, transfer.FileList},
+				Formats:    formats,
 				Operations: transfer.Copy | transfer.Move,
 			}
-			if offer, over := mygoui.DataDragOver(f.cur, opts); over {
-				_ = offer
+			if drop, ok := mygoui.DropData(f.cur, opts); ok {
+				format, found := drop.Data.Preferred(formats...)
+				payload := ""
+				if found {
+					if b, err := drop.Data.Read(format); err == nil {
+						payload = string(format) + "\n" + string(b)
+					}
+				}
+				if payload == "" {
+					if b, err := drop.Data.Read(transfer.Text); err == nil {
+						payload = string(transfer.Text) + "\n" + string(b)
+					}
+				}
+				writeChosenID(out, savedBufPtr, savedBufCap, payload)
+			}
+
+		case opDataDragOver:
+			n, okN := r.u16()
+			var formats []transfer.Format
+			if okN && n > 0 {
+				formats = make([]transfer.Format, 0, int(n))
+				for range int(n) {
+					fmtName, okF := r.str()
+					if !okF {
+						return
+					}
+					formats = append(formats, transfer.Format(fmtName))
+				}
+			} else {
+				formats = []transfer.Format{transfer.Text, transfer.URIList, transfer.FileList}
+			}
+			opts := transfer.DropOptions{
+				Formats:    formats,
+				Operations: transfer.Copy | transfer.Move,
+			}
+			if _, over := mygoui.DataDragOver(f.cur, opts); over {
 				if out != nil {
 					out.BoolVal = 1
 				}

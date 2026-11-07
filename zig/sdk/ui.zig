@@ -246,6 +246,13 @@ pub const CoreOp = enum(u16) {
     route_view = 310,
     route_match = 311,
     route_param = 312,
+    draw_objects = 313,
+    toast_viewport = 314,
+    toast_item = 315,
+    toast_close_btn = 316,
+    toast_action_btn = 317,
+    drag_mime = 318,
+    drop_mime = 319,
 };
 
 const PaintOp = enum(u8) {
@@ -372,6 +379,8 @@ pub const CRect = extern struct {
     w: f32,
     h: f32,
     now_ms: i64,
+    at: i32 = 0,
+    _pad_at: i32 = 0,
 };
 
 pub const CQuery = extern struct {
@@ -479,7 +488,13 @@ pub const Span = struct {
     size: f32 = 0,
     italic: bool = false,
     underline: bool = false,
+    strikethrough: bool = false,
     color: ?Color = null,
+    background: ?Color = null,
+    /// When set, `text` should be U+FFFC object replacement characters.
+    object_width: ?f32 = null,
+    object_height: f32 = 0,
+    object_descent: f32 = 0,
 
     pub fn plain(text: []const u8) Span {
         return .{ .text = text };
@@ -491,6 +506,10 @@ pub const Span = struct {
 
     pub fn colored(text: []const u8, color: Color) Span {
         return .{ .text = text, .color = color };
+    }
+
+    pub fn object(width: f32, height: f32, descent: f32) Span {
+        return .{ .text = "\u{FFFC}", .object_width = width, .object_height = height, .object_descent = descent };
     }
 };
 
@@ -2288,11 +2307,20 @@ pub const Context = struct {
             if (sp.italic) flags |= 1;
             if (sp.underline) flags |= 2;
             if (sp.color != null) flags |= 4;
+            if (sp.strikethrough) flags |= 8;
+            if (sp.object_width != null) flags |= 16;
+            if (sp.background != null) flags |= 32;
             self.writeStr(sp.text);
             self.writeU8(flags);
             self.writeU16(sp.weight);
             self.writeF32(sp.size);
             self.writeU32(if (sp.color) |c| c.toU32() else 0);
+            if (sp.object_width) |ow| {
+                self.writeF32(ow);
+                self.writeF32(sp.object_height);
+                self.writeF32(sp.object_descent);
+            }
+            if (sp.background) |bg| self.writeU32(bg.toU32());
         }
         return .{ .ctx = self };
     }
@@ -2415,6 +2443,15 @@ pub const Context = struct {
     /// True while a native drag matching text/URL/files is over the element.
     pub fn dataDragOver(self: *Context) bool {
         self.writeOp(@intFromEnum(CoreOp.data_drag_over));
+        self.writeU16(0); // default text/url/file formats
+        return self.flushQuery().bool_val != 0;
+    }
+
+    /// Native drag-over for an explicit MIME list.
+    pub fn dataDragOverMIME(self: *Context, formats: []const []const u8) bool {
+        self.writeOp(@intFromEnum(CoreOp.data_drag_over));
+        self.writeU16(@intCast(formats.len));
+        for (formats) |fmt| self.writeStr(fmt);
         return self.flushQuery().bool_val != 0;
     }
 
@@ -2539,6 +2576,138 @@ pub const Context = struct {
         self.writeOp(@intFromEnum(CoreOp.route_param));
         self.writeStr(name);
         _ = self.flushChosenID(buf, len);
+    }
+
+    /// Draws inline objects of the current RichText (`Span.object`).
+    pub fn drawObjects(
+        self: *Context,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime paintFn: fn (StatePtr, *Painter, i32, Rect) void,
+    ) void {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onPaint(painter_handle: usize, cr: *const CRect, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var p = Painter{ .handle = painter_handle };
+                paintFn(s, &p, cr.at, .{ .x = cr.x, .y = cr.y, .w = cr.w, .h = cr.h });
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_paint_handlers[mygo.ui_paint_count] = &S.onPaint;
+            mygo.ui_paint_count += 1;
+            S.cb_id = mygo.ui_paint_count;
+        }
+        self.writeOp(@intFromEnum(CoreOp.draw_objects));
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+    }
+
+    pub const ToastInfo = struct {
+        title: []const u8 = "",
+        description: []const u8 = "",
+        type: []const u8 = "",
+        action: []const u8 = "",
+        has_action: bool = false,
+    };
+
+    /// Custom toast look. Inside `bodyFn`, style the viewport (current element),
+    /// then call `toastItem` for each toast (`info.width` is the count).
+    pub fn toastViewport(
+        self: *Context,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime bodyFn: fn (StatePtr, *Context, usize) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onBody(frame_handle: usize, info: *const CFrameInfo, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var ctx = Context{
+                    .frame_handle = frame_handle,
+                    .window = .{ .id = info.window_id },
+                    .width_dip = info.width,
+                    .height_dip = info.height,
+                    .window_active = info.window_active != 0,
+                    .ui_theme = Theme.fromC(info.theme),
+                };
+                const count: usize = @intFromFloat(@max(info.width, 0));
+                bodyFn(s, &ctx, count);
+                ctx.flush();
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_subview_handlers[mygo.ui_subview_count] = &S.onBody;
+            mygo.ui_subview_count += 1;
+            S.cb_id = mygo.ui_subview_count;
+        }
+        self.writeOp(@intFromEnum(CoreOp.toast_viewport));
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+        return .{ .ctx = self };
+    }
+
+    /// Builds toast `index` inside `toastViewport`; returns Root as current element.
+    pub fn toastItem(self: *Context, index: i32, info_buf: []u8, info: *ToastInfo) Element {
+        self.writeOp(@intFromEnum(CoreOp.toast_item));
+        self.writeI32(index);
+        var q = CQuery{
+            .text_buf_ptr = if (info_buf.len > 0) @intFromPtr(info_buf.ptr) else 0,
+            .text_buf_cap = info_buf.len,
+        };
+        self.flushQueryInto(&q);
+        const len = @min(q.text_len, info_buf.len);
+        info.* = .{};
+        info.has_action = q.bool_val != 0;
+        if (len > 0) {
+            const raw = info_buf[0..len];
+            var parts: [4][]const u8 = .{ "", "", "", "" };
+            var n: usize = 0;
+            var start: usize = 0;
+            for (raw, 0..) |ch, i| {
+                if (ch == '\n' and n < parts.len) {
+                    parts[n] = raw[start..i];
+                    n += 1;
+                    start = i + 1;
+                }
+            }
+            if (n < parts.len and start <= raw.len) {
+                parts[n] = raw[start..];
+            }
+            info.title = parts[0];
+            info.description = parts[1];
+            info.type = parts[2];
+            info.action = parts[3];
+        }
+        return .{ .ctx = self };
+    }
+
+    pub fn toastCloseButton(self: *Context) Element {
+        self.writeOp(@intFromEnum(CoreOp.toast_close_btn));
+        return .{ .ctx = self };
+    }
+
+    pub fn toastActionButton(self: *Context) Element {
+        self.writeOp(@intFromEnum(CoreOp.toast_action_btn));
+        return .{ .ctx = self };
+    }
+
+    /// Multi-MIME native drag source: pairs of (format, payload).
+    pub fn dragMIME(self: *Context, parts: []const struct { []const u8, []const u8 }) void {
+        self.writeOp(@intFromEnum(CoreOp.drag_mime));
+        self.writeU16(@intCast(parts.len));
+        for (parts) |pair| {
+            self.writeStr(pair[0]);
+            self.writeStr(pair[1]);
+        }
+    }
+
+    /// Native drop for explicit MIME list. Buffer receives `format\npayload`.
+    pub fn dropMIME(self: *Context, formats: []const []const u8, buf: []u8, len: *usize) bool {
+        self.writeOp(@intFromEnum(CoreOp.drop_mime));
+        self.writeU16(@intCast(formats.len));
+        for (formats) |fmt| self.writeStr(fmt);
+        return self.flushChosenID(buf, len);
     }
 
     fn chartSpec(xs: []const f32, ys: []const f32, color: Color, height: f32, show_axes: bool) CChartSpec {

@@ -108,6 +108,24 @@ pub const Element = struct {
         return self.ctx.dataDragOver();
     }
 
+    pub fn dataDragOverMIME(self: Element, formats: []const []const u8) bool {
+        return self.ctx.dataDragOverMIME(formats);
+    }
+
+    pub fn drawObjects(self: Element, comptime StatePtr: type, state: StatePtr, comptime paintFn: fn (StatePtr, *ui.Painter, i32, ui.Rect) void) Element {
+        self.ctx.drawObjects(StatePtr, state, paintFn);
+        return self;
+    }
+
+    pub fn dragMIME(self: Element, parts: []const struct { []const u8, []const u8 }) Element {
+        self.ctx.dragMIME(parts);
+        return self;
+    }
+
+    pub fn dropMIME(self: Element, formats: []const []const u8, buf: []u8, len: *usize) bool {
+        return self.ctx.dropMIME(formats, buf, len);
+    }
+
     pub fn absolute(self: Element) Element {
         self.ctx.writeOp(100);
         return self;
