@@ -140,7 +140,12 @@ func New() *Backend {
 
 func (b *Backend) Name() string { return "windows/webview2" }
 
-func (b *Backend) IsMainThread() bool { return currentThreadID() == mainThreadID }
+// ClaimMainThread records the calling OS thread as the main UI thread, for
+// c-archive and c-shared hosts whose Go runtime initialized on a background
+// thread.
+func ClaimMainThread() { atomic.StoreUint32(&mainThreadID, currentThreadID()) }
+
+func (b *Backend) IsMainThread() bool { return currentThreadID() == atomic.LoadUint32(&mainThreadID) }
 
 func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 	b.h = h

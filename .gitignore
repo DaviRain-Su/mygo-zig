@@ -9,3 +9,5 @@ packages/cli/npm/*/bin/
 .DS_Store
 mygo.ts
 benchmarks/*/target/
+zig/**/.zig-cache/
+zig/**/zig-out/
