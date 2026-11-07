@@ -77,6 +77,7 @@ const ZigEvent = enum(usize) {
     ui_grid_item = 13,
     ui_outline_row = 14,
     ui_route = 15,
+    ui_outline_cell = 16,
 };
 
 pub const CStr = extern struct {
@@ -196,6 +197,9 @@ pub var ui_outline_row_count: usize = 0;
 pub var ui_route_handlers: [32]ui.RawRouteHandler = undefined;
 pub var ui_route_count: usize = 0;
 
+pub var ui_outline_cell_handlers: [64]ui.RawOutlineCellHandler = undefined;
+pub var ui_outline_cell_count: usize = 0;
+
 var bytes_handlers: [32]RawBytesHandler = undefined;
 var bytes_count: usize = 0;
 
@@ -300,6 +304,12 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_route_count) return 0;
                     const info: *const ui.CRouteInfo = @ptrFromInt(a2);
                     ui_route_handlers[a0 - 1](a1, info, a3);
+                    return 0;
+                },
+                .ui_outline_cell => {
+                    if (a0 == 0 or a0 > ui_outline_cell_count) return 0;
+                    const info: *const ui.COutlineCellInfo = @ptrFromInt(a2);
+                    ui_outline_cell_handlers[a0 - 1](a1, info, a3);
                     return 0;
                 },
             }

@@ -124,6 +124,10 @@ const (
 	opRouterForward    uint16 = 93
 	opBackButton       uint16 = 94
 	opForwardButton    uint16 = 95
+	opOutlineTable     uint16 = 96
+	opDrag             uint16 = 97
+	opDrop             uint16 = 98
+	opDragOver         uint16 = 99
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -218,6 +222,20 @@ type cUIRouteInfo struct {
 	Theme    cUITheme
 	PathPtr  uintptr
 	PathLen  uintptr
+}
+
+type cUIOutlineCellInfo struct {
+	WindowID int32
+	Row      int32
+	Col      int32
+	Depth    int32
+	Selected uint8
+	Branch   uint8
+	Open     uint8
+	_        uint8
+	Theme    cUITheme
+	IDPtr    uintptr
+	IDLen    uintptr
 }
 
 type cUIRect struct {
@@ -605,6 +623,94 @@ func writeStrList(dst []byte, items []string) int {
 		off += len(s)
 	}
 	return off
+}
+
+// zigMenuNode is a menu entry parsed from the Zig tape. build runs again
+// after a choice, so the tree must be owned by Go, not the command buffer.
+type zigMenuNode struct {
+	kind        uint8 // 0=item, 1=separator, 2=submenu
+	id, label   string
+	children    []zigMenuNode
+}
+
+// readMenuTree reads:
+//
+//	u16 count
+//	for each: u8 kind (0=item, 1=separator, 2=submenu)
+//	  item:     str id, str label
+//	  separator: (none)
+//	  submenu:  str label, then nested count+entries
+func readMenuTree(r *tapeReader) ([]zigMenuNode, bool) {
+	n, ok := r.u16()
+	if !ok {
+		return nil, false
+	}
+	out := make([]zigMenuNode, 0, int(n))
+	for range int(n) {
+		kind, okK := r.u8()
+		if !okK {
+			return nil, false
+		}
+		switch kind {
+		case 0:
+			id, ok1 := r.str()
+			label, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return nil, false
+			}
+			if label == "" {
+				label = id
+			}
+			out = append(out, zigMenuNode{kind: 0, id: id, label: label})
+		case 1:
+			out = append(out, zigMenuNode{kind: 1})
+		case 2:
+			label, okL := r.str()
+			if !okL {
+				return nil, false
+			}
+			kids, okKids := readMenuTree(r)
+			if !okKids {
+				return nil, false
+			}
+			out = append(out, zigMenuNode{kind: 2, label: label, children: kids})
+		default:
+			return nil, false
+		}
+	}
+	return out, true
+}
+
+func applyMenu(m *mygoui.Menu, nodes []zigMenuNode, chosenID *string) {
+	for _, n := range nodes {
+		switch n.kind {
+		case 0:
+			if m.Item(n.label).Chosen() {
+				*chosenID = n.id
+			}
+		case 1:
+			m.Separator()
+		case 2:
+			kids := n.children
+			m.Submenu(n.label, func(sub *mygoui.Menu) {
+				applyMenu(sub, kids, chosenID)
+			})
+		}
+	}
+}
+
+func writeChosenID(out *cUIQuery, savedBufPtr, savedBufCap uintptr, chosenID string) {
+	if out == nil || chosenID == "" {
+		return
+	}
+	out.BoolVal = 1
+	if savedBufPtr != 0 && savedBufCap > 0 {
+		n := min(len(chosenID), int(savedBufCap))
+		if n > 0 {
+			copy(host.BytesView(savedBufPtr, uintptr(n)), chosenID[:n])
+		}
+		out.TextLen = uintptr(n)
+	}
 }
 
 func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
@@ -1589,80 +1695,45 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				wh.callZig(host.ZigEventUIAction, uintptr(cbID), 0, 0, uintptr(ud))
 			})
 
-		case opMenuButton:
-			key, ok1 := r.str()
-			label, ok2 := r.str()
-			items, ok3 := r.strList()
-			if !ok1 || !ok2 || !ok3 {
-				return
-			}
-			chosen := -1
-			f.cur = mygoui.MenuButton(keyedCtx(c, key), label, func(m *mygoui.Menu) {
-				for i, it := range items {
-					if it == "-" {
-						m.Separator()
-						continue
-					}
-					if m.Item(it).Chosen() {
-						chosen = i
-					}
-				}
-			})
-			if out != nil {
-				out.IntVal = int64(chosen)
-				out.BoolVal = u8Bool(chosen >= 0)
-			}
-
 		case opContextMenu, opPopoverMenu:
-			items, ok := r.strList()
+			nodes, ok := readMenuTree(&r)
 			if !ok {
 				return
 			}
-			chosen := -1
-			build := func(m *mygoui.Menu) {
-				for i, it := range items {
-					if it == "-" {
-						m.Separator()
-						continue
-					}
-					if m.Item(it).Chosen() {
-						chosen = i
-					}
-				}
-			}
+			var chosenID string
+			build := func(m *mygoui.Menu) { applyMenu(m, nodes, &chosenID) }
 			if op == opPopoverMenu {
 				f.cur = f.cur.PopoverMenu(build)
 			} else {
 				f.cur = f.cur.ContextMenu(build)
 			}
-			if out != nil {
-				out.IntVal = int64(chosen)
-				out.BoolVal = u8Bool(chosen >= 0)
-			}
+			writeChosenID(out, savedBufPtr, savedBufCap, chosenID)
 
 		case opPopoverMenuBtn:
 			key, ok1 := r.str()
 			label, ok2 := r.str()
-			items, ok3 := r.strList()
+			nodes, ok3 := readMenuTree(&r)
 			if !ok1 || !ok2 || !ok3 {
 				return
 			}
-			chosen := -1
+			var chosenID string
 			f.cur = mygoui.PopoverMenuButton(keyedCtx(c, key), label, func(m *mygoui.Menu) {
-				for i, it := range items {
-					if it == "-" {
-						m.Separator()
-						continue
-					}
-					if m.Item(it).Chosen() {
-						chosen = i
-					}
-				}
+				applyMenu(m, nodes, &chosenID)
 			})
-			if out != nil {
-				out.IntVal = int64(chosen)
-				out.BoolVal = u8Bool(chosen >= 0)
+			writeChosenID(out, savedBufPtr, savedBufCap, chosenID)
+
+		case opMenuButton:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			nodes, ok3 := readMenuTree(&r)
+			if !ok1 || !ok2 || !ok3 {
+				return
 			}
+			var chosenID string
+			f.cur = mygoui.MenuButton(keyedCtx(c, key), label, func(m *mygoui.Menu) {
+				applyMenu(m, nodes, &chosenID)
+			})
+			writeChosenID(out, savedBufPtr, savedBufCap, chosenID)
 
 		case opOutline:
 			key, ok1 := r.str()
@@ -1861,6 +1932,128 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				f.cur = mygoui.BackButton(c, rt)
 			} else {
 				f.cur = mygoui.ForwardButton(c, rt)
+			}
+
+		case opOutlineTable:
+			key, ok1 := r.str()
+			selectedIn, ok2 := r.i32()
+			openIDs, ok3 := r.strList()
+			roots, ok4 := r.strList()
+			branches, ok5 := r.u16()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			childrenOf := map[string][]string{}
+			for range int(branches) {
+				id, okID := r.str()
+				kids, okKids := r.strList()
+				if !okID || !okKids {
+					return
+				}
+				childrenOf[id] = kids
+			}
+			colCount, ok6 := r.u16()
+			if !ok6 {
+				return
+			}
+			cols := make([]mygoui.TableColumn, int(colCount))
+			for i := range int(colCount) {
+				title, okT := r.str()
+				w, okW := r.f32()
+				al, okA := r.u8()
+				if !okT || !okW || !okA {
+					return
+				}
+				cols[i] = mygoui.TableColumn{
+					Title: title,
+					ID:    strconv.Itoa(i) + ":" + title,
+					Width: w,
+					Align: mygoui.Align(al),
+				}
+			}
+			cellCbID, ok7 := r.u64()
+			cellUD, ok8 := r.u64()
+			if !ok7 || !ok8 {
+				return
+			}
+			zo := f.host.outlines[key]
+			if zo == nil {
+				zo = &zigOutline{selected: int(selectedIn)}
+				f.host.outlines[key] = zo
+			} else {
+				zo.selected = int(selectedIn)
+			}
+			zo.state.List.Selected = &zo.selected
+			zo.state.Open = mygoui.Selection[string]{}
+			for _, id := range openIDs {
+				zo.state.Open.Add(id)
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.OutlineTable(keyedCtx(c, key), &zo.state, cols, roots, func(id string) []string {
+				kids, ok := childrenOf[id]
+				if !ok {
+					return nil
+				}
+				return kids
+			}, func(item string, col int) {
+				row := -1
+				for i := 0; i < zo.state.Rows(); i++ {
+					if zo.state.Item(i) == item {
+						row = i
+						break
+					}
+				}
+				depth := 0
+				if row >= 0 {
+					depth = zo.state.Depth(row)
+				}
+				_, isBranch := childrenOf[item]
+				info := cUIOutlineCellInfo{
+					WindowID: wh.winID,
+					Row:      int32(row),
+					Col:      int32(col),
+					Depth:    int32(depth),
+					Selected: u8Bool(zo.selected == row),
+					Branch:   u8Bool(isBranch),
+					Open:     u8Bool(zo.state.Open.Has(item)),
+					Theme:    th,
+					IDPtr:    uintptr(unsafe.Pointer(unsafe.StringData(item))),
+					IDLen:    uintptr(len(item)),
+				}
+				runFrame(c, wh, th, func(cellHandle uintptr) {
+					wh.callZig(host.ZigEventUIOutlineCell, uintptr(cellCbID), cellHandle, uintptr(unsafe.Pointer(&info)), uintptr(cellUD))
+				})
+			})
+			if out != nil {
+				out.IntVal = int64(zo.selected)
+				out.BoolVal = u8Bool(f.cur.Changed())
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					opened := make([]string, 0, zo.state.Open.Len())
+					for id := range zo.state.Open.All() {
+						opened = append(opened, id)
+					}
+					n := writeStrList(host.BytesView(savedBufPtr, savedBufCap), opened)
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opDrag:
+			payload, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = f.cur.Drag(payload)
+
+		case opDrop:
+			v, okDrop := mygoui.Drop[string](f.cur)
+			if okDrop {
+				writeChosenID(out, savedBufPtr, savedBufCap, v)
+			}
+
+		case opDragOver:
+			v, okOver := mygoui.DragOver[string](f.cur)
+			if okOver {
+				writeChosenID(out, savedBufPtr, savedBufCap, v)
 			}
 
 		case opGridView:

@@ -6,8 +6,31 @@ const mygo = @import("mygo");
 const ui = mygo.ui;
 
 const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Markdown", "Editor" };
-const menu_items = [_][]const u8{ "New", "Open…", "-", "Save", "-", "Quit" };
-const ctx_items = [_][]const u8{ "Copy", "Paste", "-", "Delete" };
+const edit_submenu = [_]ui.MenuEntry{
+    ui.MenuEntry.ofLabel("Cut"),
+    ui.MenuEntry.ofLabel("Copy"),
+    ui.MenuEntry.ofLabel("Paste"),
+};
+const menu_entries = [_]ui.MenuEntry{
+    ui.MenuEntry.ofItem("new", "New"),
+    ui.MenuEntry.ofItem("open", "Open…"),
+    ui.MenuEntry.sep(),
+    ui.MenuEntry.ofSub("Edit", &edit_submenu),
+    ui.MenuEntry.sep(),
+    ui.MenuEntry.ofItem("save", "Save"),
+    ui.MenuEntry.ofItem("quit", "Quit"),
+};
+const ctx_entries = [_]ui.MenuEntry{
+    ui.MenuEntry.ofItem("copy", "Copy"),
+    ui.MenuEntry.ofItem("paste", "Paste"),
+    ui.MenuEntry.sep(),
+    ui.MenuEntry.ofItem("delete", "Delete"),
+};
+const outline_table_cols = [_]ui.TableColumn{
+    .{ .title = "Name", .width = 180 },
+    .{ .title = "Kind", .width = 80 },
+    .{ .title = "Note", .width = 0 },
+};
 const outline_roots = [_][]const u8{ "src", "zig", "docs" };
 const outline_src_kids = [_][]const u8{ "app.zig", "main.go" };
 const outline_zig_kids = [_][]const u8{ "sdk", "host" };
@@ -130,9 +153,17 @@ const Gallery = struct {
     find_len: usize = 0,
     find_current: i32 = 0,
     grid_sel: i32 = 0,
-    last_menu: i32 = -1,
+    menu_id_buf: [32]u8 = undefined,
+    menu_id_len: usize = 0,
     toast_undos: u32 = 0,
-    last_ctx: i32 = -1,
+    ctx_id_buf: [32]u8 = undefined,
+    ctx_id_len: usize = 0,
+    drop_buf: [64]u8 = undefined,
+    drop_len: usize = 0,
+    drag_over: bool = false,
+    ot_sel: i32 = 0,
+    ot_open: [256]u8 = undefined,
+    ot_open_len: usize = 0,
     outline_sel: i32 = 0,
     outline_open: [256]u8 = undefined,
     outline_open_len: usize = 0,
@@ -447,8 +478,7 @@ const Gallery = struct {
         _ = c.icon(star_svg);
         if (c.button("tb-save", "Save").clicked()) c.toast("Saved");
         if (c.button("tb-find", "Find").clicked()) self.find_open = true;
-        const chosen = c.menuButton("tb-menu", "File", &menu_items);
-        if (chosen >= 0) self.last_menu = chosen;
+        if (c.menuButton("tb-menu", "File", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len)) {}
         _ = c.spacer();
         _ = c.badge("toolbar").fontSize(11);
     }
@@ -522,9 +552,35 @@ const Gallery = struct {
         }
     }
 
+    fn renderOutlineCell(self: *Gallery, cell: ui.OutlineCell) void {
+        _ = self;
+        const c = cell.ctx;
+        const t = c.theme();
+        switch (cell.col) {
+            0 => {
+                const r = c.row().fillWidth().gap(6).center().begin();
+                defer r.end();
+                if (cell.branch) {
+                    _ = c.badge(if (cell.open) "−" else "+").fontSize(10);
+                }
+                _ = c.text(cell.id).fontSize(13).grow(1.0);
+            },
+            1 => {
+                _ = c.text(if (cell.branch) "dir" else "file").fontSize(12).textColor(t.text_muted);
+            },
+            else => {
+                if (cell.selected) {
+                    _ = c.badge("sel").fontSize(10).textColor(t.accent);
+                } else {
+                    _ = c.textf("d={d}", .{cell.depth}).fontSize(11).textColor(t.text_muted);
+                }
+            },
+        }
+    }
+
     fn viewNav(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
-        _ = c.text("Outline · Router · RichText · ContextMenu").fontSize(16).bold();
+        _ = c.text("Outline · Router · RichText · Nested menus · Drag").fontSize(16).bold();
 
         {
             const row = c.row().fillWidth().gap(8).center().begin();
@@ -542,19 +598,43 @@ const Gallery = struct {
 
         _ = c.router(&self.router, "/home", *Gallery, self, Gallery.renderRoute)
             .fillWidth()
-            .height(160)
+            .height(140)
             .border(1, t.border)
             .radius(8);
 
         {
-            const label = c.text("Right-click me").padding(8).border(1, t.border).radius(6);
-            const chosen = label.contextMenu(&ctx_items);
-            if (chosen >= 0) self.last_ctx = chosen;
-            const chosen2 = c.popoverMenuButton("pmb", "Popover Menu", &menu_items);
-            if (chosen2 >= 0) self.last_menu = chosen2;
+            const row = c.row().fillWidth().gap(10).center().begin();
+            defer row.end();
+            const label = c.text("Right-click / nested menu").padding(8).border(1, t.border).radius(6);
+            _ = label.contextMenu(&ctx_entries, self.ctx_id_buf[0..], &self.ctx_id_len);
+            _ = c.popoverMenuButton("pmb", "Popover Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
+
+            _ = c.badge("Drag me").padding(8).radius(6).drag("gallery-chip");
+
+            var over_buf: [64]u8 = undefined;
+            var over_len: usize = 0;
+            const target = c.box().padding(8).radius(6).border(1, if (self.drag_over) t.accent else t.border);
+            self.drag_over = target.dragOver(over_buf[0..], &over_len);
+            if (target.drop(self.drop_buf[0..], &self.drop_len)) {
+                self.drag_over = false;
+            }
+            {
+                const body = target.begin();
+                defer body.end();
+                if (self.drop_len > 0) {
+                    _ = c.textf("drop={s}", .{self.drop_buf[0..self.drop_len]}).fontSize(12);
+                } else if (self.drag_over) {
+                    _ = c.text("drop here").fontSize(12).textColor(t.accent);
+                } else {
+                    _ = c.text("Drop target").fontSize(12).textColor(t.text_muted);
+                }
+            }
         }
-        if (self.last_ctx >= 0) {
-            _ = c.textf("context menu chose {d}", .{self.last_ctx}).fontSize(12).textColor(t.text_muted);
+        if (self.ctx_id_len > 0) {
+            _ = c.textf("context chose {s}", .{self.ctx_id_buf[0..self.ctx_id_len]}).fontSize(12).textColor(t.text_muted);
+        }
+        if (self.menu_id_len > 0) {
+            _ = c.textf("menu chose {s}", .{self.menu_id_buf[0..self.menu_id_len]}).fontSize(12).textColor(t.text_muted);
         }
 
         _ = c.text("Outline").fontSize(13).bold().textColor(t.text_muted);
@@ -568,6 +648,24 @@ const Gallery = struct {
             *Gallery,
             self,
             Gallery.renderOutlineRow,
+        )
+            .fillWidth()
+            .height(140)
+            .border(1, t.border)
+            .radius(8);
+
+        _ = c.text("OutlineTable").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.outlineTable(
+            "files-table",
+            &self.ot_sel,
+            self.ot_open[0..],
+            &self.ot_open_len,
+            &outline_roots,
+            &outline_nodes,
+            &outline_table_cols,
+            *Gallery,
+            self,
+            Gallery.renderOutlineCell,
         )
             .fillWidth()
             .grow(1.0)
@@ -592,12 +690,11 @@ const Gallery = struct {
             if (c.button("undoable", "Delete…").clicked()) {
                 c.toastAction("Item deleted", "Undo", *Gallery, self, Gallery.onToastUndo);
             }
-            const chosen = c.menuButton("file", "Menu", &menu_items);
-            if (chosen >= 0) self.last_menu = chosen;
+            _ = c.menuButton("file", "Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
         }
 
-        if (self.last_menu >= 0) {
-            _ = c.textf("menu chose index {d}", .{self.last_menu}).fontSize(12).textColor(t.text_muted);
+        if (self.menu_id_len > 0) {
+            _ = c.textf("menu chose {s}", .{self.menu_id_buf[0..self.menu_id_len]}).fontSize(12).textColor(t.text_muted);
         }
         if (self.toast_undos > 0) {
             _ = c.textf("toast undos={d}", .{self.toast_undos}).fontSize(12).textColor(t.text_muted);

@@ -74,6 +74,9 @@ var handWrittenZigNames = map[string]bool{
 	"submitted":         true,
 	"contextMenu":       true,
 	"popoverMenu":       true,
+	"drag":              true,
+	"drop":              true,
+	"dragOver":          true,
 }
 
 func toCamel(s string) string {
@@ -395,15 +398,30 @@ func writeZigElement(methods []methodSpec) {
         return self.ctx.flushQuery().bool_val != 0;
     }
 
-    /// Flat context menu. Items equal to "-" become separators.
-    /// Returns the chosen item index, or -1.
-    pub fn contextMenu(self: Element, items: []const []const u8) i32 {
-        return self.ctx.attachFlatMenu(.context_menu, items);
+    /// Nested context menu. Writes chosen item id into id_buf when Chosen.
+    pub fn contextMenu(self: Element, entries: []const ui.MenuEntry, id_buf: []u8, id_len: *usize) bool {
+        return self.ctx.attachMenu(.context_menu, entries, id_buf, id_len);
     }
 
     /// Like contextMenu, drawn by MyGo rather than the system menu.
-    pub fn popoverMenu(self: Element, items: []const []const u8) i32 {
-        return self.ctx.attachFlatMenu(.popover_menu, items);
+    pub fn popoverMenu(self: Element, entries: []const ui.MenuEntry, id_buf: []u8, id_len: *usize) bool {
+        return self.ctx.attachMenu(.popover_menu, entries, id_buf, id_len);
+    }
+
+    /// Makes this element a UTF-8 drag source.
+    pub fn drag(self: Element, payload: []const u8) Element {
+        self.ctx.drag(payload);
+        return self;
+    }
+
+    /// String drop target; true when a payload arrived since last frame.
+    pub fn drop(self: Element, buf: []u8, len: *usize) bool {
+        return self.ctx.drop(buf, len);
+    }
+
+    /// True while a matching string drag is over this element.
+    pub fn dragOver(self: Element, buf: []u8, len: *usize) bool {
+        return self.ctx.dragOver(buf, len);
     }
 `)
 

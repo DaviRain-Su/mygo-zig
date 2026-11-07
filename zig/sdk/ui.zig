@@ -22,6 +22,7 @@ pub const RawActionHandler = *const fn (userdata: usize) void;
 pub const RawGridItemHandler = *const fn (frame_handle: usize, info: *const CGridItemInfo, userdata: usize) void;
 pub const RawOutlineRowHandler = *const fn (frame_handle: usize, info: *const COutlineRowInfo, userdata: usize) void;
 pub const RawRouteHandler = *const fn (frame_handle: usize, info: *const CRouteInfo, userdata: usize) void;
+pub const RawOutlineCellHandler = *const fn (frame_handle: usize, info: *const COutlineCellInfo, userdata: usize) void;
 
 pub const Align = enum(u8) {
     start = 0,
@@ -228,6 +229,10 @@ pub const CoreOp = enum(u16) {
     router_forward = 93,
     back_button = 94,
     forward_button = 95,
+    outline_table = 96,
+    drag = 97,
+    drop = 98,
+    drag_over = 99,
 };
 
 const PaintOp = enum(u8) {
@@ -325,6 +330,26 @@ pub const CRouteInfo = extern struct {
         if (self.path_ptr == 0 or self.path_len == 0) return "/";
         const p: [*]const u8 = @ptrFromInt(self.path_ptr);
         return p[0..self.path_len];
+    }
+};
+
+pub const COutlineCellInfo = extern struct {
+    window_id: i32,
+    row: i32,
+    col: i32,
+    depth: i32,
+    selected: u8,
+    branch: u8,
+    open: u8,
+    _pad: u8 = 0,
+    theme: CTheme,
+    id_ptr: usize,
+    id_len: usize,
+
+    pub fn id(self: *const COutlineCellInfo) []const u8 {
+        if (self.id_ptr == 0 or self.id_len == 0) return "";
+        const p: [*]const u8 = @ptrFromInt(self.id_ptr);
+        return p[0..self.id_len];
     }
 };
 
@@ -460,6 +485,40 @@ pub const OutlineNode = struct {
     id: []const u8,
     /// `null` = leaf; empty slice = branch with no children yet.
     children: ?[]const []const u8 = null,
+};
+
+pub const OutlineCell = struct {
+    ctx: *Context,
+    id: []const u8,
+    row: i32,
+    col: i32,
+    depth: i32,
+    selected: bool,
+    branch: bool,
+    open: bool,
+};
+
+/// Nested menu entry for `menuButton` / `contextMenu` / `popoverMenu*`.
+pub const MenuEntry = union(enum) {
+    item: struct { id: []const u8, label: []const u8 },
+    separator,
+    submenu: struct { label: []const u8, entries: []const MenuEntry },
+
+    pub fn ofLabel(lbl: []const u8) MenuEntry {
+        return .{ .item = .{ .id = lbl, .label = lbl } };
+    }
+
+    pub fn ofItem(id: []const u8, lbl: []const u8) MenuEntry {
+        return .{ .item = .{ .id = id, .label = lbl } };
+    }
+
+    pub fn sep() MenuEntry {
+        return .separator;
+    }
+
+    pub fn ofSub(lbl: []const u8, entries: []const MenuEntry) MenuEntry {
+        return .{ .submenu = .{ .label = lbl, .entries = entries } };
+    }
 };
 
 pub const RouterState = struct {
@@ -1847,16 +1906,54 @@ pub const Context = struct {
         self.flush();
     }
 
-    /// Flat menu button. Items equal to `"-"` become separators.
-    /// Returns the chosen item index, or `-1`.
-    pub fn menuButton(self: *Context, key: []const u8, lbl: []const u8, items: []const []const u8) i32 {
+    fn writeMenuEntries(self: *Context, entries: []const MenuEntry) void {
+        self.writeU16(@intCast(entries.len));
+        for (entries) |e| {
+            switch (e) {
+                .item => |it| {
+                    self.writeU8(0);
+                    self.writeStr(it.id);
+                    self.writeStr(it.label);
+                },
+                .separator => self.writeU8(1),
+                .submenu => |sm| {
+                    self.writeU8(2);
+                    self.writeStr(sm.label);
+                    self.writeMenuEntries(sm.entries);
+                },
+            }
+        }
+    }
+
+    fn flushChosenID(self: *Context, id_buf: []u8, id_len: *usize) bool {
+        var q = CQuery{
+            .text_buf_ptr = if (id_buf.len > 0) @intFromPtr(id_buf.ptr) else 0,
+            .text_buf_cap = id_buf.len,
+        };
+        self.flushQueryInto(&q);
+        if (q.bool_val == 0) {
+            id_len.* = 0;
+            return false;
+        }
+        id_len.* = @min(q.text_len, id_buf.len);
+        return true;
+    }
+
+    /// Menu button with nested `MenuEntry` support. Writes chosen item id into
+    /// `id_buf` when an item was Chosen.
+    pub fn menuButton(
+        self: *Context,
+        key: []const u8,
+        lbl: []const u8,
+        entries: []const MenuEntry,
+        id_buf: []u8,
+        id_len: *usize,
+    ) bool {
         self.writeOp(@intFromEnum(CoreOp.menu_button));
         self.writeStr(key);
         self.writeStr(lbl);
-        self.writeStrSlice(items);
-        const q = self.flushQuery();
-        if (q.bool_val == 0) return -1;
-        return @intCast(q.int_val);
+        self.writeMenuEntries(entries);
+        return self.flushChosenID(id_buf, id_len);
     }
 
     pub fn gridView(
@@ -1908,22 +2005,31 @@ pub const Context = struct {
         return .{ .ctx = self };
     }
 
-    pub fn attachFlatMenu(self: *Context, op: CoreOp, items: []const []const u8) i32 {
+    pub fn attachMenu(
+        self: *Context,
+        op: CoreOp,
+        entries: []const MenuEntry,
+        id_buf: []u8,
+        id_len: *usize,
+    ) bool {
         self.writeOp(@intFromEnum(op));
-        self.writeStrSlice(items);
-        const q = self.flushQuery();
-        if (q.bool_val == 0) return -1;
-        return @intCast(q.int_val);
+        self.writeMenuEntries(entries);
+        return self.flushChosenID(id_buf, id_len);
     }
 
-    pub fn popoverMenuButton(self: *Context, key: []const u8, lbl: []const u8, items: []const []const u8) i32 {
+    pub fn popoverMenuButton(
+        self: *Context,
+        key: []const u8,
+        lbl: []const u8,
+        entries: []const MenuEntry,
+        id_buf: []u8,
+        id_len: *usize,
+    ) bool {
         self.writeOp(@intFromEnum(CoreOp.popover_menu_button));
         self.writeStr(key);
         self.writeStr(lbl);
-        self.writeStrSlice(items);
-        const q = self.flushQuery();
-        if (q.bool_val == 0) return -1;
-        return @intCast(q.int_val);
+        self.writeMenuEntries(entries);
+        return self.flushChosenID(id_buf, id_len);
     }
 
     /// Hierarchical outline. Only branches go in `nodes` (`children != null`);
@@ -2002,6 +2108,109 @@ pub const Context = struct {
         selected.* = @intCast(q.int_val);
         open_len.* = @min(q.text_len, open_pack.len);
         return .{ .ctx = self };
+    }
+
+    /// Outline whose rows are table cells (first column shows the disclosure).
+    pub fn outlineTable(
+        self: *Context,
+        key: []const u8,
+        selected: *i32,
+        open_pack: []u8,
+        open_len: *usize,
+        roots: []const []const u8,
+        nodes: []const OutlineNode,
+        columns: []const TableColumn,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime cellFn: fn (StatePtr, OutlineCell) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onCell(cell_handle: usize, info: *const COutlineCellInfo, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var cell_ctx = Context{
+                    .frame_handle = cell_handle,
+                    .window = .{ .id = info.window_id },
+                    .width_dip = 0,
+                    .height_dip = 0,
+                    .window_active = true,
+                    .ui_theme = Theme.fromC(info.theme),
+                };
+                cellFn(s, .{
+                    .ctx = &cell_ctx,
+                    .id = info.id(),
+                    .row = info.row,
+                    .col = info.col,
+                    .depth = info.depth,
+                    .selected = info.selected != 0,
+                    .branch = info.branch != 0,
+                    .open = info.open != 0,
+                });
+                cell_ctx.flush();
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_outline_cell_handlers[mygo.ui_outline_cell_count] = &S.onCell;
+            mygo.ui_outline_cell_count += 1;
+            S.cb_id = mygo.ui_outline_cell_count;
+        }
+
+        var open_ids_buf: [64][]const u8 = undefined;
+        const open_count = readStrList(open_pack[0..open_len.*], &open_ids_buf);
+
+        var branch_count: u16 = 0;
+        for (nodes) |node| {
+            if (node.children != null) branch_count += 1;
+        }
+
+        self.writeOp(@intFromEnum(CoreOp.outline_table));
+        self.writeStr(key);
+        self.writeI32(selected.*);
+        self.writeStrSlice(open_ids_buf[0..open_count]);
+        self.writeStrSlice(roots);
+        self.writeU16(branch_count);
+        for (nodes) |node| {
+            if (node.children) |kids| {
+                self.writeStr(node.id);
+                self.writeStrSlice(kids);
+            }
+        }
+        self.writeU16(@intCast(columns.len));
+        for (columns) |col| {
+            self.writeStr(col.title);
+            self.writeF32(col.width);
+            self.writeU8(@intFromEnum(col.@"align"));
+        }
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+
+        var q = CQuery{
+            .text_buf_ptr = if (open_pack.len > 0) @intFromPtr(open_pack.ptr) else 0,
+            .text_buf_cap = open_pack.len,
+        };
+        self.flushQueryInto(&q);
+        selected.* = @intCast(q.int_val);
+        open_len.* = @min(q.text_len, open_pack.len);
+        return .{ .ctx = self };
+    }
+
+    /// Makes the current element a drag source of a UTF-8 payload.
+    pub fn drag(self: *Context, payload: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.drag));
+        self.writeStr(payload);
+    }
+
+    /// Makes the current element a string drop target. Returns true and writes
+    /// the payload when a drop happened since the last frame.
+    pub fn drop(self: *Context, buf: []u8, len: *usize) bool {
+        self.writeOp(@intFromEnum(CoreOp.drop));
+        return self.flushChosenID(buf, len);
+    }
+
+    /// True while a matching string drag is over the current element.
+    pub fn dragOver(self: *Context, buf: []u8, len: *usize) bool {
+        self.writeOp(@intFromEnum(CoreOp.drag_over));
+        return self.flushChosenID(buf, len);
     }
 
     pub fn richText(self: *Context, spans: []const Span) Element {
