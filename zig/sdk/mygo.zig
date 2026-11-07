@@ -42,6 +42,8 @@ pub const HostOp = enum(usize) {
     markdown_view = 200,
     editor_view = 210,
     diff_view = 211,
+    line_chart = 220,
+    bar_chart = 221,
 };
 
 pub const WinCtl = enum(usize) {

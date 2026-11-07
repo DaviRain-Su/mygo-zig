@@ -40,14 +40,14 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 ### Data
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
-### Opt-in rich text
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`)
+### Opt-in rich text & charts
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` (`_ "…/zig/host/chart"`)
 
 ### 202 Element modifiers (generated)
-padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, …
+padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, `draggable`, …
 
 ### Intentionally deferred (need extra host infra)
-charts, `Video` / `WebView`, native `DataDrag` / file drops, nested `Route.View` layouts, `ToastViewportBase` custom look, `RichText` object spans, `Draggable` free-move offsets.
+`Video` / `WebView`, native `DataDrag` / file drops, nested `Route.View` layouts, `ToastViewportBase` custom look, `RichText` object spans, pie/area chart helpers, `Draggable` snap points.
 
 ## Quick start
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/egoist/mygo/zig/host"
+	_ "github.com/egoist/mygo/zig/host/chart"
 	_ "github.com/egoist/mygo/zig/host/editor"
 	_ "github.com/egoist/mygo/zig/host/markdown"
 	_ "github.com/egoist/mygo/zig/host/ui"

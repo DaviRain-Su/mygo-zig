@@ -77,6 +77,7 @@ var handWrittenZigNames = map[string]bool{
 	"drag":              true,
 	"drop":              true,
 	"dragOver":          true,
+	"draggable":         true,
 }
 
 func toCamel(s string) string {
@@ -422,6 +423,12 @@ func writeZigElement(methods []methodSpec) {
     /// True while a matching string drag is over this element.
     pub fn dragOver(self: Element, buf: []u8, len: *usize) bool {
         return self.ctx.dragOver(buf, len);
+    }
+
+    /// Free-move drag of this element; updates *x/*y each frame.
+    pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds: ?ui.DragBounds) Element {
+        self.ctx.draggable(x, y, axis, bounds);
+        return self;
     }
 `)
 

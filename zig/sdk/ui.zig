@@ -233,6 +233,9 @@ pub const CoreOp = enum(u16) {
     drag = 97,
     drop = 98,
     drag_over = 99,
+
+    // 100..301 = Element modifiers (uigen). Widget ops continue after.
+    draggable = 302,
 };
 
 const PaintOp = enum(u8) {
@@ -519,6 +522,31 @@ pub const MenuEntry = union(enum) {
     pub fn ofSub(lbl: []const u8, entries: []const MenuEntry) MenuEntry {
         return .{ .submenu = .{ .label = lbl, .entries = entries } };
     }
+};
+
+pub const DragAxis = enum(u8) {
+    both = 0,
+    horizontal = 1,
+    vertical = 2,
+};
+
+pub const DragBounds = struct {
+    x: f32 = 0,
+    y: f32 = 0,
+    w: f32 = 0,
+    h: f32 = 0,
+    rigid: bool = false,
+};
+
+const CChartSpec = extern struct {
+    xs_ptr: usize = 0,
+    xs_len: usize = 0,
+    ys_ptr: usize = 0,
+    ys_len: usize = 0,
+    color: u32 = 0,
+    height: f32 = 160,
+    flags: u8 = 1,
+    _pad: [3]u8 = .{ 0, 0, 0 },
 };
 
 pub const RouterState = struct {
@@ -2316,6 +2344,74 @@ pub const Context = struct {
     pub fn forwardButton(self: *Context, rt: *RouterState) Element {
         self.writeOp(@intFromEnum(CoreOp.forward_button));
         self.writeStr(rt.key);
+        return .{ .ctx = self };
+    }
+
+    /// Lets the pointer move the current element by *x/*y.
+    pub fn draggable(
+        self: *Context,
+        x: *f32,
+        y: *f32,
+        axis: DragAxis,
+        bounds: ?DragBounds,
+    ) void {
+        self.writeOp(@intFromEnum(CoreOp.draggable));
+        self.writeF32(x.*);
+        self.writeF32(y.*);
+        self.writeU8(@intFromEnum(axis));
+        if (bounds) |b| {
+            self.writeU8(1);
+            self.writeF32(b.x);
+            self.writeF32(b.y);
+            self.writeF32(b.w);
+            self.writeF32(b.h);
+            self.writeU8(@intFromBool(b.rigid));
+        } else {
+            self.writeU8(0);
+        }
+        const q = self.flushQuery();
+        x.* = @floatCast(q.num_val);
+        y.* = @floatCast(q.num_val2);
+    }
+
+    fn chartSpec(xs: []const f32, ys: []const f32, color: Color, height: f32, show_axes: bool) CChartSpec {
+        return .{
+            .xs_ptr = if (xs.len > 0) @intFromPtr(xs.ptr) else 0,
+            .xs_len = xs.len,
+            .ys_ptr = if (ys.len > 0) @intFromPtr(ys.ptr) else 0,
+            .ys_len = ys.len,
+            .color = color.toU32(),
+            .height = height,
+            .flags = if (show_axes) 1 else 0,
+        };
+    }
+
+    /// Line chart (`_ "…/zig/host/chart"`). Empty `xs` uses 0..n-1.
+    pub fn lineChart(
+        self: *Context,
+        xs: []const f32,
+        ys: []const f32,
+        color: Color,
+        height: f32,
+        show_axes: bool,
+    ) Element {
+        self.flush();
+        var spec = chartSpec(xs, ys, color, height, show_axes);
+        _ = mygo.dispatch(.line_chart, self.frame_handle, @intFromPtr(&spec), 0, 0);
+        return .{ .ctx = self };
+    }
+
+    /// Bar chart (`_ "…/zig/host/chart"`). Uses `ys` only; categories are 1..n.
+    pub fn barChart(
+        self: *Context,
+        ys: []const f32,
+        color: Color,
+        height: f32,
+        show_axes: bool,
+    ) Element {
+        self.flush();
+        var spec = chartSpec(&.{}, ys, color, height, show_axes);
+        _ = mygo.dispatch(.bar_chart, self.frame_handle, @intFromPtr(&spec), 0, 0);
         return .{ .ctx = self };
     }
 

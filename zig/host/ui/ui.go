@@ -128,6 +128,8 @@ const (
 	opDrag             uint16 = 97
 	opDrop             uint16 = 98
 	opDragOver         uint16 = 99
+	// 100..301 are Element modifiers (uigen). New widget ops continue after.
+	opDraggable        uint16 = 302
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -2054,6 +2056,41 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			v, okOver := mygoui.DragOver[string](f.cur)
 			if okOver {
 				writeChosenID(out, savedBufPtr, savedBufCap, v)
+			}
+
+		case opDraggable:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			axis, ok3 := r.u8()
+			hasBounds, ok4 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			off := mygoui.Point{X: x, Y: y}
+			opts := mygoui.DraggableOptions{}
+			switch axis {
+			case 1:
+				opts.Axis = mygoui.Horizontal
+			case 2:
+				opts.Axis = mygoui.Vertical
+			}
+			if hasBounds != 0 {
+				bx, okB1 := r.f32()
+				by, okB2 := r.f32()
+				bw, okB3 := r.f32()
+				bh, okB4 := r.f32()
+				rigid, okB5 := r.u8()
+				if !okB1 || !okB2 || !okB3 || !okB4 || !okB5 {
+					return
+				}
+				bounds := mygoui.Rect{X: bx, Y: by, W: bw, H: bh}
+				opts.Bounds = &bounds
+				opts.Rigid = rigid != 0
+			}
+			f.cur = f.cur.Draggable(&off, opts)
+			if out != nil {
+				out.NumVal = float64(off.X)
+				out.NumVal2 = float64(off.Y)
 			}
 
 		case opGridView:

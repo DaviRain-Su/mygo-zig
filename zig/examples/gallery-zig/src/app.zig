@@ -5,7 +5,7 @@ const std = @import("std");
 const mygo = @import("mygo");
 const ui = mygo.ui;
 
-const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Markdown", "Editor" };
+const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor" };
 const edit_submenu = [_]ui.MenuEntry{
     ui.MenuEntry.ofLabel("Cut"),
     ui.MenuEntry.ofLabel("Copy"),
@@ -164,6 +164,10 @@ const Gallery = struct {
     ot_sel: i32 = 0,
     ot_open: [256]u8 = undefined,
     ot_open_len: usize = 0,
+    drag_x: f32 = 20,
+    drag_y: f32 = 20,
+    line_ys: [12]f32 = .{ 4, 8, 6, 12, 9, 15, 11, 18, 14, 20, 16, 22 },
+    bar_ys: [6]f32 = .{ 12, 18, 9, 22, 15, 11 },
     outline_sel: i32 = 0,
     outline_open: [256]u8 = undefined,
     outline_open_len: usize = 0,
@@ -673,6 +677,46 @@ const Gallery = struct {
             .radius(8);
     }
 
+    fn viewCharts(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        _ = c.text("Charts · Draggable").fontSize(16).bold();
+
+        _ = c.text("Line (monotone)").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.lineChart(&.{}, self.line_ys[0..], t.accent, 160, true).fillWidth();
+
+        _ = c.text("Bars").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.barChart(self.bar_ys[0..], t.success, 140, true).fillWidth();
+
+        _ = c.text("Draggable card (bounded)").fontSize(13).bold().textColor(t.text_muted);
+        {
+            const stage = c.box().fillWidth().height(160).border(1, t.border).radius(8).begin();
+            defer stage.end();
+            const card = c.box()
+                .absolute()
+                .left(self.drag_x)
+                .top(self.drag_y)
+                .width(120)
+                .height(72)
+                .padding(10)
+                .radius(8)
+                .background(t.surface)
+                .border(1, t.border)
+                .draggable(&self.drag_x, &self.drag_y, .both, .{
+                    .x = 0,
+                    .y = 0,
+                    .w = 280,
+                    .h = 80,
+                    .rigid = true,
+                });
+            {
+                const body = card.begin();
+                defer body.end();
+                _ = c.text("Drag me").bold();
+                _ = c.textf("{d:.0},{d:.0}", .{ self.drag_x, self.drag_y }).fontSize(11).textColor(t.text_muted);
+            }
+        }
+    }
+
     fn viewMore(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
         _ = c.text("Toolbar · Grid · Icon · Themed · Find · Toast · Menu").fontSize(16).bold();
@@ -861,7 +905,8 @@ const Gallery = struct {
             4 => self.viewTree(c),
             5 => self.viewMore(c),
             6 => self.viewNav(c),
-            7 => self.viewMarkdown(c),
+            7 => self.viewCharts(c),
+            8 => self.viewMarkdown(c),
             else => self.viewEditor(c),
         }
     }

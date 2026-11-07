@@ -327,6 +327,13 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return EditorDispatch(op, a0, a1, a2, a3)
 	}
+	if op == HostOpLineChart || op == HostOpBarChart {
+		if ChartDispatch == nil {
+			SetError(errors.New("zighost: chart not linked (import _ \"github.com/egoist/mygo/zig/host/chart\")"))
+			return ^uintptr(0)
+		}
+		return ChartDispatch(op, a0, a1, a2, a3)
+	}
 	if op >= HostOpUIBase {
 		if UIDispatch == nil {
 			SetError(errors.New("zighost: UI support not linked (import _ \"github.com/egoist/mygo/zig/host/ui\")"))

@@ -86,6 +86,12 @@ pub const Element = struct {
         return self.ctx.dragOver(buf, len);
     }
 
+    /// Free-move drag of this element; updates *x/*y each frame.
+    pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds: ?ui.DragBounds) Element {
+        self.ctx.draggable(x, y, axis, bounds);
+        return self;
+    }
+
     pub fn absolute(self: Element) Element {
         self.ctx.writeOp(100);
         return self;

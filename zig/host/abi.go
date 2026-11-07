@@ -53,6 +53,8 @@ const (
 	HostOpMarkdownView   uintptr = 200
 	HostOpEditorView     uintptr = 210
 	HostOpDiffView       uintptr = 211
+	HostOpLineChart      uintptr = 220
+	HostOpBarChart       uintptr = 221
 )
 
 // Window control sub-opcodes for HostOpWindowControl.
@@ -136,6 +138,19 @@ var MarkdownDispatch func(frameHandle, a1, a2, a3 uintptr) uintptr
 // EditorDispatch is populated by `zig/host/editor` when imported.
 var EditorDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
 
+// ChartDispatch is populated by `zig/host/chart` when imported.
+var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
+
+// CChartSpec is the line/bar chart payload from Zig (`zig/sdk/ui.zig`).
+type CChartSpec struct {
+	XSPtr, XSLen uintptr
+	YSPtr, YSLen uintptr
+	Color        uint32
+	Height       float32
+	Flags        uint8 // bit0 = show axes
+	_            [3]byte
+}
+
 // PtrTo reinterprets a non-zero C/Zig address as *T without triggering unsafeptr warnings.
 func PtrTo[T any](addr uintptr) *T {
 	if addr == 0 {
@@ -150,6 +165,14 @@ func BytesView(addr, n uintptr) []byte {
 		return nil
 	}
 	return unsafe.Slice(*(**byte)(unsafe.Pointer(&addr)), int(n))
+}
+
+// Float32View returns a non-owning view of `n` float32s at `addr`.
+func Float32View(addr, n uintptr) []float32 {
+	if addr == 0 || n == 0 {
+		return nil
+	}
+	return unsafe.Slice(*(**float32)(unsafe.Pointer(&addr)), int(n))
 }
 
 // CopyBytes copies `n` bytes from `addr` into a new Go slice.
