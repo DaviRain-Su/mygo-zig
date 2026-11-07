@@ -44,6 +44,9 @@ pub const HostOp = enum(usize) {
     diff_view = 211,
     line_chart = 220,
     bar_chart = 221,
+    area_chart = 222,
+    pie_chart = 223,
+    video_gif = 230,
 };
 
 pub const WinCtl = enum(usize) {

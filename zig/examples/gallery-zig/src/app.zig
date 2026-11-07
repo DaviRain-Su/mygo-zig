@@ -1,9 +1,11 @@
 //! Zig gallery of MyGo Native UI widgets (Model A purego host).
-//! Tabs: Controls · Inputs · Layout · Data · Markdown · Editor
+//! Tabs: Controls · Inputs · Layout · Data · Tree · More · Nav · Charts · Markdown · Editor
 
 const std = @import("std");
 const mygo = @import("mygo");
 const ui = mygo.ui;
+
+const waves_gif = @embedFile("waves.gif");
 
 const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor" };
 const edit_submenu = [_]ui.MenuEntry{
@@ -172,6 +174,9 @@ const Gallery = struct {
     native_drop_len: usize = 0,
     native_over: bool = false,
     show_web: bool = false,
+    show_video: bool = false,
+    video_registered: bool = false,
+    pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     outline_sel: i32 = 0,
     outline_open: [256]u8 = undefined,
     outline_open_len: usize = 0,
@@ -551,12 +556,36 @@ const Gallery = struct {
             if (c.button("to-about", "/about").clicked()) c.routerPush(&self.router, "/about");
         }
 
-        if (std.mem.eql(u8, route.path, "/settings")) {
-            _ = c.text("Settings page").fontSize(14);
+        if (c.routeMatch("/settings/{section...}")) {
+            _ = c.text("Settings layout").fontSize(14).bold();
+            {
+                const row = c.row().gap(8).begin();
+                defer row.end();
+                if (c.button("sec-general", "General").clicked()) c.routerPush(&self.router, "/settings/general");
+                if (c.button("sec-fonts", "Fonts").clicked()) c.routerPush(&self.router, "/settings/fonts");
+            }
+            _ = c.routeView(*Gallery, self, Gallery.renderSettingsSection).fillWidth().grow(1.0).border(1, t.border).radius(8).padding(8);
         } else if (std.mem.eql(u8, route.path, "/about")) {
             _ = c.text("About MyGo × Zig").fontSize(14);
         } else {
             _ = c.text("Home page").fontSize(14);
+        }
+    }
+
+    fn renderSettingsSection(self: *Gallery, route: ui.Route) void {
+        _ = self;
+        const c = route.ctx;
+        const t = c.theme();
+        const col = c.column().fill().gap(6).begin();
+        defer col.end();
+        if (c.routeMatch("/fonts")) {
+            _ = c.text("Fonts section").fontSize(13).bold();
+            _ = c.text("Nested Route.View keeps layout state.").fontSize(12).textColor(t.text_muted);
+        } else if (c.routeMatch("/general") or c.routeMatch("/")) {
+            _ = c.text("General section").fontSize(13).bold();
+            _ = c.textf("inner path: {s}", .{route.path}).fontSize(12).textColor(t.text_muted);
+        } else {
+            _ = c.textf("section: {s}", .{route.path}).fontSize(12);
         }
     }
 
@@ -588,7 +617,7 @@ const Gallery = struct {
 
     fn viewNav(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
-        _ = c.text("Outline · Router · WebView · Native drag").fontSize(16).bold();
+        _ = c.text("Outline · Nested routes · WebView · Video · Native drag").fontSize(16).bold();
 
         {
             const row = c.row().fillWidth().gap(8).center().begin();
@@ -707,7 +736,27 @@ const Gallery = struct {
         }
 
         if (self.show_web) {
-            _ = c.webView("docs", "https://mygo.egoist.dev").fillWidth().grow(1.0).border(1, t.border).radius(8);
+            _ = c.webView("docs", "https://mygo.egoist.dev").fillWidth().height(180).border(1, t.border).radius(8);
+        }
+
+        {
+            const row = c.row().fillWidth().gap(10).center().begin();
+            defer row.end();
+            if (c.button("toggle-video", if (self.show_video) "Hide Video" else "Show Video").clicked()) {
+                self.show_video = !self.show_video;
+                if (!self.show_video) c.videoClose("waves");
+            }
+            if (self.show_video) {
+                if (c.button("pause-video", "Pause").clicked()) c.videoPause("waves");
+                if (c.button("play-video", "Play").clicked()) c.videoPlay("waves");
+            }
+        }
+        if (self.show_video) {
+            if (!self.video_registered) {
+                c.registerVideoGIF("waves", waves_gif, true);
+                self.video_registered = true;
+            }
+            _ = c.video("waves", .cover).fillWidth().height(160).border(1, t.border).radius(8);
         }
     }
 
@@ -721,7 +770,27 @@ const Gallery = struct {
         _ = c.text("Bars").fontSize(13).bold().textColor(t.text_muted);
         _ = c.barChart(self.bar_ys[0..], t.success, 140, true).fillWidth();
 
-        _ = c.text("Draggable card (bounded)").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.text("Area").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.areaChart(&.{}, self.line_ys[0..], t.warning, 140, true).fillWidth();
+
+        {
+            const row = c.row().fillWidth().gap(12).begin();
+            defer row.end();
+            {
+                const col = c.column().grow(1.0).gap(6).begin();
+                defer col.end();
+                _ = c.text("Pie").fontSize(13).bold().textColor(t.text_muted);
+                _ = c.pieChart(self.pie_vals[0..], &.{ t.accent, t.success, t.warning, t.danger }, 160, 0, 0.02).fillWidth();
+            }
+            {
+                const col = c.column().grow(1.0).gap(6).begin();
+                defer col.end();
+                _ = c.text("Donut").fontSize(13).bold().textColor(t.text_muted);
+                _ = c.pieChart(self.pie_vals[0..], &.{ t.accent, t.success, t.warning, t.danger }, 160, 0.45, 0.02).fillWidth();
+            }
+        }
+
+        _ = c.text("Draggable card (snap corners)").fontSize(13).bold().textColor(t.text_muted);
         {
             const stage = c.box().fillWidth().height(160).border(1, t.border).radius(8).begin();
             defer stage.end();
@@ -741,7 +810,7 @@ const Gallery = struct {
                     .w = 280,
                     .h = 80,
                     .rigid = true,
-                });
+                }, &.{ .{ 0, 0 }, .{ 160, 0 }, .{ 0, 80 }, .{ 160, 80 } });
             {
                 const body = card.begin();
                 defer body.end();

@@ -241,6 +241,11 @@ pub const CoreOp = enum(u16) {
     drag_data = 305,
     drop_data = 306,
     data_drag_over = 307,
+    video = 308,
+    video_control = 309,
+    route_view = 310,
+    route_match = 311,
+    route_param = 312,
 };
 
 const PaintOp = enum(u8) {
@@ -535,6 +540,14 @@ pub const DragAxis = enum(u8) {
     vertical = 2,
 };
 
+pub const Fit = enum(u8) {
+    contain = 0,
+    cover = 1,
+    fill_box = 2,
+    scale_down = 3,
+};
+
+
 pub const DragBounds = struct {
     x: f32 = 0,
     y: f32 = 0,
@@ -552,6 +565,26 @@ const CChartSpec = extern struct {
     height: f32 = 160,
     flags: u8 = 1,
     _pad: [3]u8 = .{ 0, 0, 0 },
+};
+
+const CPieSpec = extern struct {
+    values_ptr: usize = 0,
+    values_len: usize = 0,
+    colors_ptr: usize = 0,
+    colors_len: usize = 0,
+    height: f32 = 180,
+    inner: f32 = 0,
+    pad: f32 = 0.02,
+    _pad: [4]u8 = .{ 0, 0, 0, 0 },
+};
+
+const CVideoGIFSpec = extern struct {
+    key_ptr: usize = 0,
+    key_len: usize = 0,
+    gif_ptr: usize = 0,
+    gif_len: usize = 0,
+    loop: u8 = 1,
+    _pad: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
 };
 
 pub const RouterState = struct {
@@ -2386,12 +2419,14 @@ pub const Context = struct {
     }
 
     /// Lets the pointer move the current element by *x/*y.
+    /// Optional `snap` points are nearest-snap targets on release.
     pub fn draggable(
         self: *Context,
         x: *f32,
         y: *f32,
         axis: DragAxis,
         bounds: ?DragBounds,
+        snap: []const [2]f32,
     ) void {
         self.writeOp(@intFromEnum(CoreOp.draggable));
         self.writeF32(x.*);
@@ -2407,9 +2442,103 @@ pub const Context = struct {
         } else {
             self.writeU8(0);
         }
+        self.writeU16(@intCast(snap.len));
+        for (snap) |pt| {
+            self.writeF32(pt[0]);
+            self.writeF32(pt[1]);
+        }
         const q = self.flushQuery();
         x.* = @floatCast(q.num_val);
         y.* = @floatCast(q.num_val2);
+    }
+
+    /// Registers GIF bytes once (by key) for later `video` embeds.
+    pub fn registerVideoGIF(_: *Context, key: []const u8, gif: []const u8, loop: bool) void {
+        var spec = CVideoGIFSpec{
+            .key_ptr = mygo.sliceAddr(key),
+            .key_len = key.len,
+            .gif_ptr = mygo.sliceAddr(gif),
+            .gif_len = gif.len,
+            .loop = @intFromBool(loop),
+        };
+        _ = mygo.dispatch(.video_gif, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    /// Plays a previously registered GIF (`registerVideoGIF`).
+    pub fn video(self: *Context, key: []const u8, fit: Fit) Element {
+        self.writeOp(@intFromEnum(CoreOp.video));
+        self.writeStr(key);
+        self.writeU8(@intFromEnum(fit));
+        return .{ .ctx = self };
+    }
+
+    pub fn videoPlay(self: *Context, key: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(1);
+        self.flush();
+    }
+
+    pub fn videoPause(self: *Context, key: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(2);
+        self.flush();
+    }
+
+    pub fn videoClose(self: *Context, key: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(3);
+        self.flush();
+    }
+
+    /// Nested `Route.View` for a `{name...}` layout page.
+    pub fn routeView(
+        self: *Context,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime pageFn: fn (StatePtr, Route) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onPage(page_handle: usize, info: *const CRouteInfo, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var page_ctx = Context{
+                    .frame_handle = page_handle,
+                    .window = .{ .id = info.window_id },
+                    .width_dip = 0,
+                    .height_dip = 0,
+                    .window_active = true,
+                    .ui_theme = Theme.fromC(info.theme),
+                };
+                pageFn(s, .{ .ctx = &page_ctx, .path = info.path() });
+                page_ctx.flush();
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_route_handlers[mygo.ui_route_count] = &S.onPage;
+            mygo.ui_route_count += 1;
+            S.cb_id = mygo.ui_route_count;
+        }
+        self.writeOp(@intFromEnum(CoreOp.route_view));
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+        return .{ .ctx = self };
+    }
+
+    /// `ui.Route.Match` — must precede `routeView` for `{name...}` layouts.
+    pub fn routeMatch(self: *Context, pattern: []const u8) bool {
+        self.writeOp(@intFromEnum(CoreOp.route_match));
+        self.writeStr(pattern);
+        return self.flushQuery().bool_val != 0;
+    }
+
+    /// Wildcard captured by the last successful `routeMatch`.
+    pub fn routeParam(self: *Context, name: []const u8, buf: []u8, len: *usize) void {
+        self.writeOp(@intFromEnum(CoreOp.route_param));
+        self.writeStr(name);
+        _ = self.flushChosenID(buf, len);
     }
 
     fn chartSpec(xs: []const f32, ys: []const f32, color: Color, height: f32, show_axes: bool) CChartSpec {
@@ -2450,6 +2579,47 @@ pub const Context = struct {
         self.flush();
         var spec = chartSpec(&.{}, ys, color, height, show_axes);
         _ = mygo.dispatch(.bar_chart, self.frame_handle, @intFromPtr(&spec), 0, 0);
+        return .{ .ctx = self };
+    }
+
+    /// Filled area chart under a monotone line.
+    pub fn areaChart(
+        self: *Context,
+        xs: []const f32,
+        ys: []const f32,
+        color: Color,
+        height: f32,
+        show_axes: bool,
+    ) Element {
+        self.flush();
+        var spec = chartSpec(xs, ys, color, height, show_axes);
+        _ = mygo.dispatch(.area_chart, self.frame_handle, @intFromPtr(&spec), 0, 0);
+        return .{ .ctx = self };
+    }
+
+    /// Pie / donut chart. `inner` is hole radius as a fraction of outer (0 = pie).
+    pub fn pieChart(
+        self: *Context,
+        values: []const f64,
+        colors: []const Color,
+        height: f32,
+        inner: f32,
+        pad: f32,
+    ) Element {
+        self.flush();
+        var packed_colors: [32]u32 = undefined;
+        const n = @min(colors.len, packed_colors.len);
+        for (colors[0..n], 0..) |col, i| packed_colors[i] = col.toU32();
+        var spec = CPieSpec{
+            .values_ptr = if (values.len > 0) @intFromPtr(values.ptr) else 0,
+            .values_len = values.len,
+            .colors_ptr = if (n > 0) @intFromPtr(&packed_colors) else 0,
+            .colors_len = n,
+            .height = height,
+            .inner = inner,
+            .pad = pad,
+        };
+        _ = mygo.dispatch(.pie_chart, self.frame_handle, @intFromPtr(&spec), 0, 0);
         return .{ .ctx = self };
     }
 

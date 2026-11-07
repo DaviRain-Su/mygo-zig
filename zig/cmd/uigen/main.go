@@ -429,8 +429,8 @@ func writeZigElement(methods []methodSpec) {
     }
 
     /// Free-move drag of this element; updates *x/*y each frame.
-    pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds: ?ui.DragBounds) Element {
-        self.ctx.draggable(x, y, axis, bounds);
+    pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds: ?ui.DragBounds, snap: []const [2]f32) Element {
+        self.ctx.draggable(x, y, axis, bounds, snap);
         return self;
     }
 

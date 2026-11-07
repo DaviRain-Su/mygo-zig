@@ -55,7 +55,18 @@ const (
 	HostOpDiffView       uintptr = 211
 	HostOpLineChart      uintptr = 220
 	HostOpBarChart       uintptr = 221
+	HostOpAreaChart      uintptr = 222
+	HostOpPieChart       uintptr = 223
+	HostOpVideoGIF       uintptr = 230 // a0 = *CVideoGIFSpec
 )
+
+// CVideoGIFSpec registers a looping GIF player by key for later Video() ops.
+type CVideoGIFSpec struct {
+	KeyPtr, KeyLen uintptr
+	GIFPtr, GIFLen uintptr
+	Loop           uint8
+	_              [7]byte
+}
 
 // Window control sub-opcodes for HostOpWindowControl.
 const (
@@ -141,7 +152,7 @@ var EditorDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
 
-// CChartSpec is the line/bar chart payload from Zig (`zig/sdk/ui.zig`).
+// CChartSpec is the line/bar/area chart payload from Zig (`zig/sdk/ui.zig`).
 type CChartSpec struct {
 	XSPtr, XSLen uintptr
 	YSPtr, YSLen uintptr
@@ -149,6 +160,16 @@ type CChartSpec struct {
 	Height       float32
 	Flags        uint8 // bit0 = show axes
 	_            [3]byte
+}
+
+// CPieSpec is the pie/donut chart payload from Zig.
+type CPieSpec struct {
+	ValuesPtr, ValuesLen uintptr
+	ColorsPtr, ColorsLen uintptr
+	Height               float32
+	Inner                float32 // hole radius as fraction of outer (0 = pie)
+	Pad                  float32 // gap between slices, 0..1 of full circle
+	_                    [4]byte
 }
 
 // PtrTo reinterprets a non-zero C/Zig address as *T without triggering unsafeptr warnings.
@@ -173,6 +194,22 @@ func Float32View(addr, n uintptr) []float32 {
 		return nil
 	}
 	return unsafe.Slice(*(**float32)(unsafe.Pointer(&addr)), int(n))
+}
+
+// Float64View returns a non-owning view of `n` float64s at `addr`.
+func Float64View(addr, n uintptr) []float64 {
+	if addr == 0 || n == 0 {
+		return nil
+	}
+	return unsafe.Slice(*(**float64)(unsafe.Pointer(&addr)), int(n))
+}
+
+// Uint32View returns a non-owning view of `n` uint32s at `addr`.
+func Uint32View(addr, n uintptr) []uint32 {
+	if addr == 0 || n == 0 {
+		return nil
+	}
+	return unsafe.Slice(*(**uint32)(unsafe.Pointer(&addr)), int(n))
 }
 
 // CopyBytes copies `n` bytes from `addr` into a new Go slice.

@@ -136,6 +136,11 @@ const (
 	opDragData         uint16 = 305
 	opDropData         uint16 = 306
 	opDataDragOver     uint16 = 307
+	opVideo            uint16 = 308
+	opVideoControl     uint16 = 309
+	opRouteView        uint16 = 310
+	opRouteMatch       uint16 = 311
+	opRouteParam       uint16 = 312
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -289,6 +294,7 @@ type uiWindowHost struct {
 	routers  map[string]*mygoui.Router
 	webviews map[string]*mygo.WebView
 	wvURLs   map[string]string
+	videos   map[string]*mygoui.VideoPlayer
 }
 
 var assetCache sync.Map // hash key → *SVG | ImageSource
@@ -299,7 +305,15 @@ type uiFrame struct {
 	scopes []mygoui.FFIScope
 	host   *uiWindowHost
 	theme  cUITheme
+	route  *mygoui.Route // set while a router/route page callback runs
 }
+
+type gifAsset struct {
+	data []byte
+	loop bool
+}
+
+var gifRegistry sync.Map // key → gifAsset
 
 var (
 	activeFrames   []*uiFrame
@@ -370,6 +384,16 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 	case host.HostOpUIPaintFlush:
 		flushPaint(a0, a1, a2)
 		return 0
+	case host.HostOpVideoGIF:
+		spec := host.PtrTo[host.CVideoGIFSpec](a0)
+		if spec == nil || spec.KeyLen == 0 || spec.GIFLen == 0 {
+			host.SetError(errors.New("zighost: video GIF registration needs key and bytes"))
+			return ^uintptr(0)
+		}
+		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
+		data := host.CopyBytes(spec.GIFPtr, spec.GIFLen)
+		gifRegistry.Store(key, gifAsset{data: data, loop: spec.Loop != 0})
+		return 0
 	}
 	return ^uintptr(0)
 }
@@ -392,6 +416,7 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 		routers:  map[string]*mygoui.Router{},
 		webviews: map[string]*mygo.WebView{},
 		wvURLs:   map[string]string{},
+		videos:   map[string]*mygoui.VideoPlayer{},
 	}
 
 	opts := host.ParseWindowOptions(rawOpts)
@@ -432,6 +457,10 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 		clear(wh.routers)
 		clear(wh.webviews)
 		clear(wh.wvURLs)
+		for _, p := range wh.videos {
+			p.Close()
+		}
+		clear(wh.videos)
 	})
 	host.SetError(nil)
 	return uintptr(wh.winID)
@@ -1891,6 +1920,9 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 					PathLen:  uintptr(len(path)),
 				}
 				runFrame(c, wh, th, func(pageHandle uintptr) {
+					if idx := int(pageHandle) - 1; idx >= 0 && idx < len(activeFrames) {
+						activeFrames[idx].route = route
+					}
 					wh.callZig(host.ZigEventUIRoute, uintptr(pageCbID), pageHandle, uintptr(unsafe.Pointer(&info)), uintptr(pageUD))
 				})
 			})
@@ -2104,11 +2136,144 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				opts.Bounds = &bounds
 				opts.Rigid = rigid != 0
 			}
+			snapCount, okSnap := r.u16()
+			if !okSnap {
+				return
+			}
+			if snapCount > 0 {
+				points := make([]mygoui.Point, int(snapCount))
+				for i := range points {
+					sx, okSX := r.f32()
+					sy, okSY := r.f32()
+					if !okSX || !okSY {
+						return
+					}
+					points[i] = mygoui.Point{X: sx, Y: sy}
+				}
+				opts.Snap = mygoui.Nearest(points...)
+			}
 			f.cur = f.cur.Draggable(&off, opts)
 			if out != nil {
 				out.NumVal = float64(off.X)
 				out.NumVal2 = float64(off.Y)
 			}
+
+		case opVideo:
+			key, ok1 := r.str()
+			fit, ok2 := r.u8()
+			if !ok1 || !ok2 {
+				return
+			}
+			p := f.host.videos[key]
+			if p == nil {
+				raw, ok := gifRegistry.Load(key)
+				if !ok {
+					host.SetError(fmt.Errorf("zighost: video %q not registered (call registerVideoGIF first)", key))
+					return
+				}
+				asset := raw.(gifAsset)
+				d, err := mygoui.NewGIFDecoder(asset.data)
+				if err != nil {
+					host.SetError(err)
+					return
+				}
+				p, err = mygoui.NewVideoPlayer(d)
+				if err != nil {
+					host.SetError(err)
+					return
+				}
+				if asset.loop {
+					p.SetLoop(true)
+				}
+				f.host.videos[key] = p
+			}
+			e := mygoui.Video(c, p)
+			switch fit {
+			case 1:
+				e = e.Fit(mygoui.Cover)
+			case 2:
+				e = e.Fit(mygoui.FillBox)
+			case 3:
+				e = e.Fit(mygoui.ScaleDown)
+			default:
+				e = e.Fit(mygoui.Contain)
+			}
+			f.cur = e
+			if out != nil {
+				out.BoolVal = u8Bool(p.Playing())
+			}
+
+		case opVideoControl:
+			key, ok1 := r.str()
+			ctl, ok2 := r.u8() // 1=play, 2=pause, 3=close
+			if !ok1 || !ok2 {
+				return
+			}
+			p := f.host.videos[key]
+			if p == nil {
+				return
+			}
+			switch ctl {
+			case 1:
+				p.Play()
+			case 2:
+				p.Pause()
+			case 3:
+				p.Close()
+				delete(f.host.videos, key)
+			}
+
+		case opRouteMatch:
+			pattern, ok := r.str()
+			if !ok {
+				return
+			}
+			if f.route == nil {
+				if out != nil {
+					out.BoolVal = 0
+				}
+				return
+			}
+			if out != nil {
+				out.BoolVal = u8Bool(f.route.Match(pattern))
+			}
+
+		case opRouteParam:
+			name, ok := r.str()
+			if !ok {
+				return
+			}
+			if f.route == nil {
+				return
+			}
+			writeChosenID(out, savedBufPtr, savedBufCap, f.route.Param(name))
+
+		case opRouteView:
+			pageCbID, ok1 := r.u64()
+			pageUD, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			if f.route == nil {
+				host.SetError(errors.New("zighost: routeView only works inside a router page"))
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = f.route.View(c, func(inner *mygoui.Route) {
+				path := inner.Path()
+				info := cUIRouteInfo{
+					WindowID: wh.winID,
+					Theme:    th,
+					PathPtr:  uintptr(unsafe.Pointer(unsafe.StringData(path))),
+					PathLen:  uintptr(len(path)),
+				}
+				runFrame(c, wh, th, func(pageHandle uintptr) {
+					if idx := int(pageHandle) - 1; idx >= 0 && idx < len(activeFrames) {
+						activeFrames[idx].route = inner
+					}
+					wh.callZig(host.ZigEventUIRoute, uintptr(pageCbID), pageHandle, uintptr(unsafe.Pointer(&info)), uintptr(pageUD))
+				})
+			})
 
 		case opWebView:
 			key, ok1 := r.str()

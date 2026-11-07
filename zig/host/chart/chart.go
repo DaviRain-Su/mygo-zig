@@ -1,6 +1,6 @@
 //go:build !js
 
-// Package chart registers `ui/chart` line/bar plots into `zig/host`.
+// Package chart registers `ui/chart` line/bar/area/pie plots into `zig/host`.
 //
 // Import with `_ "github.com/egoist/mygo/zig/host/chart"` in Zig apps that
 // draw charts.
@@ -24,6 +24,29 @@ func dispatchChart(op, frameHandle, specPtr, _, _ uintptr) uintptr {
 	if specPtr == 0 {
 		return ^uintptr(0)
 	}
+	if op == host.HostOpPieChart {
+		spec := host.PtrTo[host.CPieSpec](specPtr)
+		if spec == nil {
+			return ^uintptr(0)
+		}
+		vals := copyF64(spec.ValuesPtr, spec.ValuesLen)
+		cols := copyU32(spec.ColorsPtr, spec.ColorsLen)
+		if len(vals) == 0 {
+			return ^uintptr(0)
+		}
+		height := spec.Height
+		if height <= 0 {
+			height = 180
+		}
+		ok := zigui.BindFrameElement(frameHandle, func(c *mygoui.Context, _ int32) mygoui.Element {
+			return pieChart(c, vals, cols, height, spec.Inner, spec.Pad)
+		})
+		if !ok {
+			return ^uintptr(0)
+		}
+		return 0
+	}
+
 	spec := host.PtrTo[host.CChartSpec](specPtr)
 	if spec == nil {
 		return ^uintptr(0)
@@ -55,6 +78,8 @@ func dispatchChart(op, frameHandle, specPtr, _, _ uintptr) uintptr {
 		switch op {
 		case host.HostOpBarChart:
 			return barChart(c, ys, color, height, showAxes)
+		case host.HostOpAreaChart:
+			return areaChart(c, xs, ys, color, height, showAxes)
 		default:
 			return lineChart(c, xs, ys, color, height, showAxes)
 		}
@@ -86,6 +111,76 @@ func lineChart(c *mygoui.Context, xs, ys []float32, color mygoui.Color, height f
 			p.StrokePath(uichart.Line(r, fx, fy, uichart.CurveMonotone), 2, color)
 		})
 	}).Height(height).Gap(6)
+}
+
+func areaChart(c *mygoui.Context, xs, ys []float32, color mygoui.Color, height float32, showAxes bool) mygoui.Element {
+	xLo, xHi := extent32(xs)
+	yLo, yHi := extent32(ys)
+	if yLo > 0 {
+		yLo = 0
+	}
+	xScale := uichart.NewLinear(float64(xLo), float64(xHi)).Nice(4)
+	yScale := uichart.NewLinear(float64(yLo), float64(yHi)).Nice(4)
+	fx := make([]float32, len(xs))
+	fy := make([]float32, len(ys))
+	for i := range xs {
+		fx[i] = xScale.At(float64(xs[i]))
+		fy[i] = yScale.At(float64(ys[i]))
+	}
+	axes := uichart.Axes{}
+	if showAxes {
+		axes.Left = yScale.Ticks(4)
+		axes.Bottom = xScale.Ticks(4)
+	}
+	fill := color
+	fill.A = uint8(float32(fill.A) * 0.35)
+	if fill.A == 0 {
+		fill.A = 90
+	}
+	return uichart.Plot(c, axes, func(area mygoui.Element) {
+		area.Draw(func(p *mygoui.Painter, r mygoui.Rect) {
+			p.FillPath(uichart.Area(r, fx, nil, fy, uichart.CurveMonotone), fill)
+			p.StrokePath(uichart.Line(r, fx, fy, uichart.CurveMonotone), 2, color)
+		})
+	}).Height(height).Gap(6)
+}
+
+func pieChart(c *mygoui.Context, values []float64, colors []uint32, height, innerFrac, pad float32) mygoui.Element {
+	if pad < 0 {
+		pad = 0
+	}
+	slices := uichart.Pie(values, float64(pad))
+	defaultColors := []mygoui.Color{
+		mygoui.RGB(59, 130, 246),
+		mygoui.RGB(16, 185, 129),
+		mygoui.RGB(245, 158, 11),
+		mygoui.RGB(239, 68, 68),
+		mygoui.RGB(139, 92, 246),
+		mygoui.RGB(236, 72, 153),
+	}
+	cols := make([]mygoui.Color, len(slices))
+	for i := range cols {
+		if i < len(colors) {
+			cols[i] = unpackColor(colors[i])
+		} else {
+			cols[i] = defaultColors[i%len(defaultColors)]
+		}
+	}
+	if innerFrac < 0 {
+		innerFrac = 0
+	}
+	if innerFrac > 0.9 {
+		innerFrac = 0.9
+	}
+	return mygoui.Box(c).Height(height).FillWidth().Draw(func(p *mygoui.Painter, r mygoui.Rect) {
+		cx := r.X + r.W/2
+		cy := r.Y + r.H/2
+		outer := min(r.W, r.H) * 0.42
+		inner := outer * innerFrac
+		for i, s := range slices {
+			p.FillPath(uichart.Sector(cx, cy, inner, outer, s), cols[i])
+		}
+	})
 }
 
 func barChart(c *mygoui.Context, ys []float32, color mygoui.Color, height float32, showAxes bool) mygoui.Element {
@@ -121,6 +216,26 @@ func copyF32(ptr, n uintptr) []float32 {
 		return nil
 	}
 	out := make([]float32, len(src))
+	copy(out, src)
+	return out
+}
+
+func copyF64(ptr, n uintptr) []float64 {
+	src := host.Float64View(ptr, n)
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]float64, len(src))
+	copy(out, src)
+	return out
+}
+
+func copyU32(ptr, n uintptr) []uint32 {
+	src := host.Uint32View(ptr, n)
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]uint32, len(src))
 	copy(out, src)
 	return out
 }
