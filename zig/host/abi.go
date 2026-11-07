@@ -312,8 +312,9 @@ type CDialogOpenSpec struct {
 	DefaultPathPtr, DefaultPathLen uintptr
 	ButtonLabelPtr, ButtonLabelLen uintptr
 	MessagePtr, MessageLen         uintptr
-	FilterNamePtr, FilterNameLen   uintptr
-	FilterExtPtr, FilterExtLen     uintptr // comma-separated extensions, e.g. "png,jpg"
+	FilterNamePtr, FilterNameLen   uintptr // legacy single filter (ignored if FiltersLen>0)
+	FilterExtPtr, FilterExtLen     uintptr
+	FiltersPtr, FiltersLen         uintptr // packed multi-filter blob
 	Flags                          uint32  // 1=dir 2=multi 4=hidden 8=createDirs 16=packages
 	_                              [4]byte
 }
@@ -328,6 +329,7 @@ type CDialogSaveSpec struct {
 	NameFieldLabelPtr, NameFieldLen uintptr
 	FilterNamePtr, FilterNameLen    uintptr
 	FilterExtPtr, FilterExtLen      uintptr
+	FiltersPtr, FiltersLen          uintptr
 	Flags                           uint32 // 4=hidden 8=createDirs 16=packages
 	_                               [4]byte
 }
@@ -401,5 +403,5 @@ type CFlyoutSpec struct {
 	CornerRadius               int32
 	PlacementPtr, PlacementLen uintptr
 	Flags                      uint32 // 1=focusable 2=hidden 4=shadow 8=popover 16=fit_content
-	_                          [4]byte
+	VibrancyPtr, VibrancyLen   uintptr
 }

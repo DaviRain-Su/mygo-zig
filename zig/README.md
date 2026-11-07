@@ -65,7 +65,7 @@ go run ./zig/cmd/scaffold -dir ./apps/x demo
 File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 
 ### Flyout
-`newFlyoutUi` · parent/tray anchor · placement/gap/flags · `Window.setAnchor`
+`newFlyoutUi` · parent/tray · vibrancy · placement/gap/flags · `Window.setAnchor` · `Context.hasVibrancy`
 
 ### Tray
 `Tray.new` · `setIcon`/`setTitle`/`setToolTip`/`setMenuJSON` · `onClick`/`registerMenuHandler`
@@ -87,9 +87,9 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Drag / toast / video / routes | Done | Incl. stream push + toast userdata |
 | Motion / timing | Done | Ops 322–332 |
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
-| File dialogs | Done | `Dialog.open`/`save`/`message` |
+| File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
-| Flyout | Done | `newFlyoutUi` (parent or tray) + `Window.setAnchor` |
+| Flyout | Done | `newFlyoutUi` + vibrancy + `Window.setAnchor` |
 | Bitmap / Canvas / Fonts | Done | `registerBitmap`/`bitmap`, `registerFont`, `registerCanvas` + Painter `canvasBegin`/`End`/`image` |
 | File dialogs / tray | Open | only if/when host `mygo` exposes them to Zig |
 | DX: CI + one-shot build | Done | `.github/workflows/zig.yml`; `go run ./zig/cmd/build <app>`; `scaffold -build` |

@@ -7,6 +7,7 @@ package host
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -909,10 +910,7 @@ func hostDialog(kind, specPtr, outPtr, outCap uintptr) uintptr {
 		if spec.ParentWinID != 0 {
 			opts.Parent = mygo.WindowByID(int(spec.ParentWinID))
 		}
-		if name := CopyString(spec.FilterNamePtr, spec.FilterNameLen); name != "" || spec.FilterExtLen > 0 {
-			exts := splitCSV(CopyString(spec.FilterExtPtr, spec.FilterExtLen))
-			opts.Filters = []mygo.FileFilter{{Name: name, Extensions: exts}}
-		}
+		opts.Filters = parseDialogFilters(spec.FiltersPtr, spec.FiltersLen, spec.FilterNamePtr, spec.FilterNameLen, spec.FilterExtPtr, spec.FilterExtLen)
 		paths, err := mygo.Dialog.Open(opts)
 		if err != nil {
 			SetError(err)
@@ -940,10 +938,7 @@ func hostDialog(kind, specPtr, outPtr, outCap uintptr) uintptr {
 		if spec.ParentWinID != 0 {
 			opts.Parent = mygo.WindowByID(int(spec.ParentWinID))
 		}
-		if name := CopyString(spec.FilterNamePtr, spec.FilterNameLen); name != "" || spec.FilterExtLen > 0 {
-			exts := splitCSV(CopyString(spec.FilterExtPtr, spec.FilterExtLen))
-			opts.Filters = []mygo.FileFilter{{Name: name, Extensions: exts}}
-		}
+		opts.Filters = parseDialogFilters(spec.FiltersPtr, spec.FiltersLen, spec.FilterNamePtr, spec.FilterNameLen, spec.FilterExtPtr, spec.FilterExtLen)
 		path, err := mygo.Dialog.Save(opts)
 		if err != nil {
 			SetError(err)
@@ -1290,6 +1285,56 @@ func TrayByID(id uintptr) *mygo.Tray {
 	defer trayMu.Unlock()
 	if slot := trays[id]; slot != nil {
 		return slot.tray
+	}
+	return nil
+}
+
+// parseDialogFilters unpacks the Zig multi-filter blob, or falls back to a
+// single name/ext pair. Blob layout: u8 count, then for each filter:
+// u16le name_len + name, u16le ext_csv_len + ext_csv, u16le mime_csv_len + mime_csv.
+func parseDialogFilters(blobPtr, blobLen, namePtr, nameLen, extPtr, extLen uintptr) []mygo.FileFilter {
+	if blobLen > 0 && blobPtr != 0 {
+		b := BytesView(blobPtr, blobLen)
+		off := 0
+		if off >= len(b) {
+			return nil
+		}
+		n := int(b[off])
+		off++
+		out := make([]mygo.FileFilter, 0, n)
+		for i := 0; i < n && off+2 <= len(b); i++ {
+			nl := int(binary.LittleEndian.Uint16(b[off : off+2]))
+			off += 2
+			if off+nl > len(b) {
+				break
+			}
+			name := string(append([]byte(nil), b[off:off+nl]...))
+			off += nl
+			if off+2 > len(b) {
+				break
+			}
+			el := int(binary.LittleEndian.Uint16(b[off : off+2]))
+			off += 2
+			if off+el > len(b) {
+				break
+			}
+			exts := splitCSV(string(b[off : off+el]))
+			off += el
+			var mimes []string
+			if off+2 <= len(b) {
+				ml := int(binary.LittleEndian.Uint16(b[off : off+2]))
+				off += 2
+				if off+ml <= len(b) {
+					mimes = splitCSV(string(b[off : off+ml]))
+					off += ml
+				}
+			}
+			out = append(out, mygo.FileFilter{Name: name, Extensions: exts, MIMETypes: mimes})
+		}
+		return out
+	}
+	if name := CopyString(namePtr, nameLen); name != "" || extLen > 0 {
+		return []mygo.FileFilter{{Name: name, Extensions: splitCSV(CopyString(extPtr, extLen))}}
 	}
 	return nil
 }

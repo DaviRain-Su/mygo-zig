@@ -574,6 +574,38 @@ pub const MessageResult = struct {
     checkbox_checked: bool = false,
 };
 
+pub const FileFilter = struct {
+    name: []const u8 = "",
+    /// Comma-separated extensions, e.g. "png,jpg".
+    extensions: []const u8 = "",
+    /// Comma-separated MIME types, e.g. "image/*".
+    mime_types: []const u8 = "",
+};
+
+fn packFileFilters(buf: []u8, filters: []const FileFilter) usize {
+    if (filters.len == 0 or buf.len == 0) return 0;
+    const n: u8 = @intCast(@min(filters.len, 16));
+    var off: usize = 0;
+    buf[off] = n;
+    off += 1;
+    for (filters[0..n]) |f| {
+        if (off + 6 + f.name.len + f.extensions.len + f.mime_types.len > buf.len) break;
+        std.mem.writeInt(u16, buf[off..][0..2], @intCast(f.name.len), .little);
+        off += 2;
+        @memcpy(buf[off .. off + f.name.len], f.name);
+        off += f.name.len;
+        std.mem.writeInt(u16, buf[off..][0..2], @intCast(f.extensions.len), .little);
+        off += 2;
+        @memcpy(buf[off .. off + f.extensions.len], f.extensions);
+        off += f.extensions.len;
+        std.mem.writeInt(u16, buf[off..][0..2], @intCast(f.mime_types.len), .little);
+        off += 2;
+        @memcpy(buf[off .. off + f.mime_types.len], f.mime_types);
+        off += f.mime_types.len;
+    }
+    return off;
+}
+
 pub const Dialog = struct {
     const COpenSpec = extern struct {
         parent_win_id: usize = 0,
@@ -589,6 +621,8 @@ pub const Dialog = struct {
         filter_name_len: usize = 0,
         filter_ext_ptr: usize = 0,
         filter_ext_len: usize = 0,
+        filters_ptr: usize = 0,
+        filters_len: usize = 0,
         flags: u32 = 0,
         _pad: [4]u8 = @splat(0),
     };
@@ -609,6 +643,8 @@ pub const Dialog = struct {
         filter_name_len: usize = 0,
         filter_ext_ptr: usize = 0,
         filter_ext_len: usize = 0,
+        filters_ptr: usize = 0,
+        filters_len: usize = 0,
         flags: u32 = 0,
         _pad: [4]u8 = @splat(0),
     };
@@ -642,21 +678,19 @@ pub const Dialog = struct {
 
     /// Open a file/directory picker. Returns NUL-separated paths (empty on cancel).
     /// Caller owns the returned slice. Shows the dialog once.
-    pub fn open(allocator: std.mem.Allocator, parent: ?Window, title: []const u8, default_path: []const u8, filter_name: []const u8, filter_ext: []const u8, flags: u32) Error![]u8 {
+    pub fn open(allocator: std.mem.Allocator, parent: ?Window, title: []const u8, default_path: []const u8, filters: []const FileFilter, flags: u32) Error![]u8 {
+        var filter_buf: [4096]u8 = undefined;
+        const filters_len = packFileFilters(&filter_buf, filters);
         var spec = COpenSpec{
             .parent_win_id = if (parent) |w| @intCast(w.id) else 0,
             .title_ptr = sliceAddr(title),
             .title_len = title.len,
             .default_path_ptr = sliceAddr(default_path),
             .default_path_len = default_path.len,
-            .filter_name_ptr = sliceAddr(filter_name),
-            .filter_name_len = filter_name.len,
-            .filter_ext_ptr = sliceAddr(filter_ext),
-            .filter_ext_len = filter_ext.len,
+            .filters_ptr = if (filters_len > 0) @intFromPtr(&filter_buf) else 0,
+            .filters_len = filters_len,
             .flags = flags,
         };
-        // One call — host returns needed size; if our buffer is short we grow once
-        // from a cached host-side result is not available, so use a large scratch.
         var scratch: [65536]u8 = undefined;
         const got = dispatch(.dialog, 1, @intFromPtr(&spec), @intFromPtr(&scratch), scratch.len);
         if (got == std.math.maxInt(usize)) return Error.MyGoError;
@@ -665,17 +699,17 @@ pub const Dialog = struct {
         return try allocator.dupe(u8, scratch[0..n]);
     }
 
-    pub fn save(allocator: std.mem.Allocator, parent: ?Window, title: []const u8, default_path: []const u8, filter_name: []const u8, filter_ext: []const u8, flags: u32) Error![]u8 {
+    pub fn save(allocator: std.mem.Allocator, parent: ?Window, title: []const u8, default_path: []const u8, filters: []const FileFilter, flags: u32) Error![]u8 {
+        var filter_buf: [4096]u8 = undefined;
+        const filters_len = packFileFilters(&filter_buf, filters);
         var spec = CSaveSpec{
             .parent_win_id = if (parent) |w| @intCast(w.id) else 0,
             .title_ptr = sliceAddr(title),
             .title_len = title.len,
             .default_path_ptr = sliceAddr(default_path),
             .default_path_len = default_path.len,
-            .filter_name_ptr = sliceAddr(filter_name),
-            .filter_name_len = filter_name.len,
-            .filter_ext_ptr = sliceAddr(filter_ext),
-            .filter_ext_len = filter_ext.len,
+            .filters_ptr = if (filters_len > 0) @intFromPtr(&filter_buf) else 0,
+            .filters_len = filters_len,
             .flags = flags,
         };
         var scratch: [65536]u8 = undefined;
@@ -1021,6 +1055,7 @@ pub const FlyoutOptions = struct {
     max_height: i32 = 0,
     corner_radius: i32 = 0,
     flags: u32 = FlyoutFlag.focusable | FlyoutFlag.shadow,
+    vibrancy: []const u8 = "",
 };
 
 const CFlyoutSpec = extern struct {
@@ -1038,7 +1073,8 @@ const CFlyoutSpec = extern struct {
     placement_ptr: usize = 0,
     placement_len: usize = 0,
     flags: u32 = 0,
-    _pad: [4]u8 = @splat(0),
+    vibrancy_ptr: usize = 0,
+    vibrancy_len: usize = 0,
 };
 
 /// Create a flyout window with Native UI content (same view callback as `newWindowUi`).
@@ -1075,6 +1111,8 @@ pub fn newFlyoutUi(
         .placement_ptr = sliceAddr(opts.placement),
         .placement_len = opts.placement.len,
         .flags = opts.flags,
+        .vibrancy_ptr = sliceAddr(opts.vibrancy),
+        .vibrancy_len = opts.vibrancy.len,
     };
     const id: i32 = @intCast(@as(isize, @bitCast(dispatch(
         .flyout_new_ui,

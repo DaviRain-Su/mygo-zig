@@ -538,7 +538,7 @@ const Gallery = struct {
         defer root.end();
         _ = c.box().fillWidth().height(8).radius(4).linearGradient(90, t.accent, t.success, false);
         _ = c.text("Flyout panel").fontSize(16).bold();
-        _ = c.text("Native UI Content over NewFlyout.").fontSize(12).textColor(t.text_muted);
+        _ = c.textf("Native UI · vibrancy={s}", .{if (c.hasVibrancy()) "yes" else "no"}).fontSize(12).textColor(t.text_muted);
         _ = c.textf("tray clicks={d}", .{self.tray_clicks}).fontSize(12);
         if (c.primaryButton("fly-close", "Close").clicked()) {
             if (self.flyout_id != 0) {
@@ -564,6 +564,8 @@ const Gallery = struct {
             .width = 260,
             .height = 180,
             .flags = mygo.FlyoutFlag.focusable | mygo.FlyoutFlag.shadow,
+            .vibrancy = "glass",
+            .corner_radius = 12,
         }, Gallery.viewFlyout) catch return;
         self.flyout_id = fl.id;
     }
@@ -582,6 +584,7 @@ const Gallery = struct {
             .width = 280,
             .height = 200,
             .flags = mygo.FlyoutFlag.focusable | mygo.FlyoutFlag.shadow | mygo.FlyoutFlag.popover,
+            .vibrancy = "popover",
         }, Gallery.viewFlyout) catch return;
         self.flyout_id = fl.id;
     }
@@ -1222,7 +1225,12 @@ const Gallery = struct {
             if (c.button("dlg-msg", "Message…").clicked()) {
                 const res = mygo.Dialog.message(c.window, .question, "Gallery", "Run the open dialog next?", "Dialog bindings", &.{ "Open", "Cancel" }) catch mygo.MessageResult{};
                 if (res.button == 0) {
-                    if (mygo.Dialog.open(std.heap.page_allocator, c.window, "Open a file", "", "Images", "png,jpg,gif", 0)) |paths| {
+                    const filters = [_]mygo.FileFilter{
+                        .{ .name = "Images", .extensions = "png,jpg,gif", .mime_types = "image/*" },
+                        .{ .name = "Zig", .extensions = "zig" },
+                        .{ .name = "All", .extensions = "*" },
+                    };
+                    if (mygo.Dialog.open(std.heap.page_allocator, c.window, "Open a file", "", &filters, 0)) |paths| {
                         defer std.heap.page_allocator.free(paths);
                         const n = @min(paths.len, self.dialog_buf.len);
                         @memcpy(self.dialog_buf[0..n], paths[0..n]);
@@ -1233,7 +1241,11 @@ const Gallery = struct {
                 }
             }
             if (c.button("dlg-save", "Save…").clicked()) {
-                if (mygo.Dialog.save(std.heap.page_allocator, c.window, "Save as", "out.txt", "Text", "txt", mygo.DialogFlag.create_dirs)) |path| {
+                const filters = [_]mygo.FileFilter{
+                    .{ .name = "Text", .extensions = "txt" },
+                    .{ .name = "Markdown", .extensions = "md" },
+                };
+                if (mygo.Dialog.save(std.heap.page_allocator, c.window, "Save as", "out.txt", &filters, mygo.DialogFlag.create_dirs)) |path| {
                     defer std.heap.page_allocator.free(path);
                     const n = @min(path.len, self.dialog_buf.len);
                     @memcpy(self.dialog_buf[0..n], path[0..n]);

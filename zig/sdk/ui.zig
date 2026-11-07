@@ -344,7 +344,8 @@ pub const CFrameInfo = extern struct {
     width: f32,
     height: f32,
     window_active: u8,
-    _pad: [3]u8 = .{ 0, 0, 0 },
+    vibrancy: u8 = 0,
+    _pad: [2]u8 = .{ 0, 0 },
     theme: CTheme,
 };
 
@@ -1155,6 +1156,7 @@ pub const Context = struct {
     width_dip: f32,
     height_dip: f32,
     window_active: bool,
+    vibrancy: bool = false,
     ui_theme: Theme,
     buf: [16384]u8 = undefined,
     len: usize = 0,
@@ -1166,8 +1168,14 @@ pub const Context = struct {
             .width_dip = info.width,
             .height_dip = info.height,
             .window_active = info.window_active != 0,
+            .vibrancy = info.vibrancy != 0,
             .ui_theme = Theme.fromC(info.theme),
         };
+    }
+
+    /// True when the window shows a system vibrancy/material behind content.
+    pub fn hasVibrancy(self: *const Context) bool {
+        return self.vibrancy;
     }
 
     pub fn initForRow(handle: usize, info: *const CListRowInfo) Context {

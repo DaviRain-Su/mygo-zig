@@ -231,7 +231,8 @@ type cUIFrameInfo struct {
 	Width        float32
 	Height       float32
 	WindowActive uint8
-	_            [3]byte
+	Vibrancy     uint8
+	_            [2]byte
 	Theme        cUITheme
 }
 
@@ -742,6 +743,25 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 	return ^uintptr(0)
 }
 
+func makeFrameInfo(wh *uiWindowHost, c *mygoui.Context, th cUITheme) cUIFrameInfo {
+	w, h := c.Size()
+	var active, vib uint8
+	if c.WindowActive() {
+		active = 1
+	}
+	if c.Vibrancy() {
+		vib = 1
+	}
+	return cUIFrameInfo{
+		WindowID:     wh.winID,
+		Width:        w,
+		Height:       h,
+		WindowActive: active,
+		Vibrancy:     vib,
+		Theme:        th,
+	}
+}
+
 func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID, userdata uintptr) (winID uintptr) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -766,19 +786,8 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 	opts := host.ParseWindowOptions(rawOpts)
 	opts.URL = ""
 	opts.Content = mygoui.View(func(c *mygoui.Context) {
-		w, h := c.Size()
 		th := buildTheme(c.Theme())
-		var active uint8
-		if c.WindowActive() {
-			active = 1
-		}
-		info := cUIFrameInfo{
-			WindowID:     wh.winID,
-			Width:        w,
-			Height:       h,
-			WindowActive: active,
-			Theme:        th,
-		}
+		info := makeFrameInfo(wh, c, th)
 		runFrame(c, wh, th, func(handle uintptr) {
 			wh.callZig(host.ZigEventUIView, wh.viewCbID, handle, uintptr(unsafe.Pointer(&info)), wh.userdata)
 		})
@@ -859,20 +868,10 @@ func newUIFlyout(callZig host.CallZigFn, spec *host.CFlyoutSpec, viewCbID, userd
 		Shadow:       spec.Flags&4 != 0,
 		Popover:      spec.Flags&8 != 0,
 		FitContent:   spec.Flags&16 != 0,
+		Vibrancy:     mygo.Vibrancy(host.CopyString(spec.VibrancyPtr, spec.VibrancyLen)),
 		Content: mygoui.View(func(c *mygoui.Context) {
-			w, h := c.Size()
 			th := buildTheme(c.Theme())
-			var active uint8
-			if c.WindowActive() {
-				active = 1
-			}
-			info := cUIFrameInfo{
-				WindowID:     wh.winID,
-				Width:        w,
-				Height:       h,
-				WindowActive: active,
-				Theme:        th,
-			}
+			info := makeFrameInfo(wh, c, th)
 			runFrame(c, wh, th, func(handle uintptr) {
 				wh.callZig(host.ZigEventUIView, wh.viewCbID, handle, uintptr(unsafe.Pointer(&info)), wh.userdata)
 			})
