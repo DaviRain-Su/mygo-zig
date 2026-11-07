@@ -11,3 +11,5 @@ mygo.ts
 benchmarks/*/target/
 zig/**/.zig-cache/
 zig/**/zig-out/
+zig/examples/*/resources/
+zig/examples/*/dist/

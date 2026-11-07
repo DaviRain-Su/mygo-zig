@@ -1,4 +1,4 @@
-//go:build mygo_ffi && !js
+//go:build !js
 
 package mygo
 
@@ -12,7 +12,8 @@ import (
 )
 
 // FFIBindRaw binds a raw JSON method ("Service.Method") for non-Go hosts
-// linking libmygo, without invoking reflect.Type.Method or linking tsgen.
+// without invoking reflect.Type.Method or linking internal/tsgen.
+// Pure Go apps never call it, so the linker drops it completely.
 func FFIBindRaw(fullName string, fn func(ctx context.Context, argsJSON []byte) ([]byte, error)) error {
 	if fn == nil {
 		return errors.New("mygo: cannot bind nil FFI handler")

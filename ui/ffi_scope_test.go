@@ -1,5 +1,3 @@
-//go:build mygo_ffi
-
 package ui
 
 import "testing"
@@ -26,7 +24,6 @@ func TestFFIPushPopParent(t *testing.T) {
 	}, 240, 180)
 
 	tt.Frame()
-	// Click the centered 60x36 button inside the 240x180 window.
 	tt.PressButton(0, 120, 80)
 	tt.ReleaseButton(0, 120, 80)
 	tt.Frame()

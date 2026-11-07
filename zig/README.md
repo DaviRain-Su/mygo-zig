@@ -1,28 +1,37 @@
-# Writing MyGo Apps in Zig (`zig/`)
+# Writing MyGo Apps in Zig (`zig/` — `CGO_ENABLED=0` Purego Architecture)
 
-Proof-of-concept bindings allowing full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`ui`)** apps—to be written in **Zig**, with zero overhead to pure-Go MyGo builds (`+0 bytes` on `examples/hello` and `examples/counter-native`, `CGO_ENABLED=0` preserved for default builds).
+Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`package ui`)** apps—written in **Zig**, built on a **100% `CGO_ENABLED=0` `purego` host**:
 
-## Layout
+- **Zero `cgo` (`CGO_ENABLED=0`)** across macOS, Linux, and Windows (`amd64` & `arm64`).
+- **Single `purego.NewCallback` (`hostDispatch`)** and **single Zig symbol (`mygo_zig_entry`)** for the entire framework.
+- **Zero overhead on pure-Go MyGo apps** (`+0 bytes` on `examples/hello` and `examples/counter-native`).
+- **Pay-only-for-what-you-use**: WebView Zig apps (`zig/host` alone) build to a **7.1 MB** signed `.app` without linking `package ui`; Native GPU UI Zig apps (`_ "github.com/egoist/mygo/zig/host/ui"`) build to a **9.9 MB** signed `.app`.
+- **Full `mygo` CLI integration out of the box**:
+  - `mygo generate` synthesizes a typed `src/mygo.ts` (`mygo-runtime`) directly from Zig `comptime` function & struct reflection!
+  - `mygo build` packages and codesigns `.app` + `.dmg` (macOS), `.deb` / `.tar.gz` (Linux), and NSIS installers (Windows).
 
-- `include/mygo.h` — C99 ABI (`(ptr, len)` zero-copy slices, integer window handles, sync & deferred async IPC reply handles, UI `CommandBuffer` opcodes).
-- `ffi.go`, `shell.go`, `ui.go` — Go host exports (`-tags mygo_ffi`, plus opt-in `-tags mygo_ffi_ui` so WebView-only Zig apps link none of `package ui`).
-- `sdk/mygo.zig` — Idiomatic Zig SDK: `comptime`-typed `mygo.bind("Service.method", fn)` with per-call `ArenaAllocator`, typed `Window.emit` / `mygo.broadcast`, zero-copy `@embedFile` frontend serving (`mygo://localhost/`), clipboard, dialogs, menus, tray, shortcuts, and shell.
-- `sdk/ui.zig` — Zero-allocation 16 KiB stack `CommandBuffer` client for `package ui`: layout containers, text, and chained style modifiers record compact binary opcodes with **0 FFI calls**, flushing only on interactive state queries (`.clicked()`, `slider`, `checkbox`, `textInput`, `shortcut`) or frame end.
-- `examples/hello-zig/` — Single-binary Zig + MyGo WebView app (~7.5 MB on macOS arm64, ~7.1 MB on Linux x86_64, ~7.5 MB on Windows x86_64).
-- `examples/counter-native-zig/` — Single-binary Zig + MyGo GPU-rendered Native UI app (~10.0 MB on macOS arm64, zero WebView, Metal/D3D11/OpenGL + CoreText/DirectWrite/Pango IME).
+## Directory layout
+
+- `cmd/uigen/` — AST code generator parsing `ui/api_gen.go` to emit **189 `ui.Element` style & layout modifiers** for both Go (`host/ui/modifiers_gen.go`) and Zig (`sdk/element_gen.zig`).
+- `host/` — Pure-Go (`CGO_ENABLED=0`) `purego` host: WebView windows, raw JSON IPC (sync & deferred async), zero-copy `@embedFile` `.rodata` frontend serving (`mygo://localhost/`), TypeScript client writer (`MYGO_GENERATE`), clipboard, menus, shell, and window events.
+- `host/ui/` — Opt-in Native GPU UI plugin: 16-bit `CommandBuffer` decoder, **100,000+ row virtualized `ui.List`**, and **custom GPU vector `ui.Painter`** (`Element.Draw`).
+- `sdk/mygo.zig` — Idiomatic Zig SDK (`mygo.exportApp`, `comptime` `mygo.bind` & `mygo.declareEvent`, `mygo.addEmbeddedAsset`, `Window`, `Clipboard`, `Shell`).
+- `sdk/ui.zig` & `sdk/element_gen.zig` — Zero-allocation 16 KiB stack `CommandBuffer` + 8 KiB stack `PaintBuffer` for `package ui`.
+- `examples/hello-zig/` — WebView + `comptime` TypeScript client (`src/mygo.ts`) + zero-copy `@embedFile` frontend (`7.1 MB` `.app`).
+- `examples/counter-native-zig/` — Pure GPU Native UI showcase: rolling numeric transitions, `ui.Painter` animated vector wave, `100,000`-row virtualized `ui.List`, `Slider`, `Checkbox`, and CJK IME `TextInput` (`9.9 MB` `.app`).
 
 ## Quick start
 
 ```sh
-# 1. WebView + comptime IPC + zero-copy @embedFile frontend
-cd zig/examples/hello-zig
-zig build -Doptimize=ReleaseSmall run
+# Regenerate the 189 Element modifiers from ui/api_gen.go:
+go run ./zig/cmd/uigen
 
-# Cross-compile single binaries for Linux & Windows from macOS:
-zig build -Dtarget=x86_64-linux-gnu -Doptimize=ReleaseSmall
-zig build -Dtarget=x86_64-windows-gnu -Doptimize=ReleaseSmall
+# 1. WebView app: build Zig library, generate src/mygo.ts, and package Hello Zig.app
+(cd zig/examples/hello-zig && zig build -Doptimize=ReleaseSmall)
+go run ./cmd/mygo generate zig/examples/hello-zig
+go run ./cmd/mygo build -skip-dmg zig/examples/hello-zig
 
-# 2. GPU-rendered Native UI counter (zero WebView)
-cd ../counter-native-zig
-zig build -Doptimize=ReleaseSmall run
+# 2. GPU Native UI app: build Zig library and package Counter Zig.app
+(cd zig/examples/counter-native-zig && zig build -Doptimize=ReleaseSmall)
+go run ./cmd/mygo build -skip-dmg zig/examples/counter-native-zig
 ```

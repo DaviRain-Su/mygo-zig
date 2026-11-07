@@ -1,4 +1,4 @@
-//go:build mygo_ffi && !js
+//go:build !js
 
 package mygo
 
@@ -30,7 +30,6 @@ func TestFFIRawBindAndEmit(t *testing.T) {
 		t.Fatalf("FFIBindRaw(greet): %v", err)
 	}
 
-	// Multiple methods under the same FFI service must coexist.
 	if err := FFIBindRaw("FFIGreeter.fail", func(ctx context.Context, argsJSON []byte) ([]byte, error) {
 		return nil, errors.New("boom")
 	}); err != nil {

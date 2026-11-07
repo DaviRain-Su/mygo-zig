@@ -4,16 +4,20 @@ const mygo = @import("mygo");
 
 var counter: std.atomic.Value(i64) = .init(0);
 
-const GreetResponse = struct {
+pub const GreetResponse = struct {
     message: []const u8,
     zigVersion: []const u8,
     windowId: i32,
 };
 
+pub const CountEvent = struct {
+    count: i64,
+};
+
 fn greet(ctx: mygo.CallContext, name: []const u8) !GreetResponse {
     const msg = try std.fmt.allocPrint(
         ctx.allocator,
-        "Hello {s}, from Zig {s} + MyGo!",
+        "Hello {s}, from Zig {s} + MyGo (purego, CGO_ENABLED=0)!",
         .{ name, builtin.zig_version_string },
     );
     return .{
@@ -25,7 +29,7 @@ fn greet(ctx: mygo.CallContext, name: []const u8) !GreetResponse {
 
 fn add(ctx: mygo.CallContext, delta: i64) !i64 {
     const next = counter.fetchAdd(delta, .seq_cst) + delta;
-    try ctx.window.emit("zig:count", .{ .count = next });
+    try ctx.window.emit("zig:count", CountEvent{ .count = next });
     return next;
 }
 
@@ -41,33 +45,41 @@ fn isAutotest() bool {
     return false;
 }
 
-fn onReady() void {
-    const autotest = isAutotest();
-    _ = mygo.newWindow(.{
-        .title = "MyGo + Zig",
-        .url = "/",
-        .width = 520,
-        .height = 360,
-        .hidden = autotest,
-    }) catch |err| {
-        var buf: [256]u8 = undefined;
-        std.debug.print("newWindow failed ({s}): {s}\n", .{ @errorName(err), mygo.lastError(&buf) });
-        mygo.quit();
-        return;
-    };
-}
-
-pub fn main() !void {
+fn init() !void {
     mygo.setName("Hello Zig");
     if (isAutotest()) {
         try mygo.addEmbeddedAsset("index.html", autotest_page);
     } else {
         try mygo.addEmbeddedAsset("index.html", interactive_page);
     }
+    mygo.declareEvent("zig:count", CountEvent);
     try mygo.bind("Greeter.greet", greet);
     try mygo.bind("Counter.add", add);
-    try mygo.bind("Autotest.done", autotestDone);
-    try mygo.run(onReady);
+    if (isAutotest()) {
+        try mygo.bind("Autotest.done", autotestDone);
+    }
+}
+
+fn onReady() void {
+    const autotest = isAutotest();
+    _ = mygo.newWindow(.{
+        .title = "MyGo + Zig (CGO_ENABLED=0)",
+        .url = "/",
+        .width = 540,
+        .height = 360,
+        .hidden = autotest,
+    }) catch |err| {
+        var buf: [256]u8 = undefined;
+        std.debug.print("newWindow failed ({s}): {s}\n", .{ @errorName(err), mygo.lastError(&buf) });
+        mygo.quit();
+    };
+}
+
+comptime {
+    mygo.exportApp(.{
+        .init = init,
+        .ready = onReady,
+    });
 }
 
 const interactive_page =
@@ -119,13 +131,12 @@ const autotest_page =
     \\<!doctype html>
     \\<html><body><script>
     \\  (async () => {
-    \\    let eventCount = null;
     \\    const gotEvent = new Promise((resolve) => {
     \\      mygo.on("zig:count", (p) => resolve(p.count));
     \\    });
     \\    const g = await mygo.call("Greeter.greet", "World");
     \\    const c = await mygo.call("Counter.add", 7);
-    \\    eventCount = await gotEvent;
+    \\    const eventCount = await gotEvent;
     \\    await mygo.call("Autotest.done", `${g.message} | count=${c} | event=${eventCount}`);
     \\  })();
     \\</script></body></html>

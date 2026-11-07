@@ -1,0 +1,6 @@
+{
+  "name": "Hello Zig",
+  "identifier": "dev.mygo.hellozig",
+  "version": "0.1.0",
+  "bindings": "src/mygo.ts"
+}

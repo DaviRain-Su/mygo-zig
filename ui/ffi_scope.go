@@ -1,9 +1,8 @@
-//go:build mygo_ffi
-
 package ui
 
-// FFIScope saves the parent and theme state of an open container while an FFI
-// CommandBuffer flushes mid-tree.
+// FFIScope saves the parent and theme state of an open container while a
+// CommandBuffer flushes mid-tree. Pure Go apps never call FFIPushParent, so
+// the linker drops these symbols completely.
 type FFIScope struct {
 	elem           *node
 	savedParent    *node
