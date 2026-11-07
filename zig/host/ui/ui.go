@@ -152,6 +152,17 @@ const (
 	opDropMIME         uint16 = 319
 	opDragMIMELazy     uint16 = 320
 	opAddToast         uint16 = 321
+	opAfter            uint16 = 322
+	opAnimationFrame   uint16 = 323
+	opDisableAnims     uint16 = 324
+	opInvalidate       uint16 = 325
+	opCloseToast       uint16 = 326
+	opAnimate          uint16 = 327
+	opAnimateTo        uint16 = 328
+	opArrived          uint16 = 329
+	opAnimateColor     uint16 = 330
+	opAnimatePose      uint16 = 331
+	opSpring           uint16 = 332
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -429,6 +440,45 @@ var (
 // BindFrameElement builds an element inside the active frame for opt-in sibling
 // packages (`zig/host/markdown`, `zig/host/editor`) and sets it as `f.cur` so
 // subsequent Element modifier opcodes apply to it.
+
+
+func colorToU32(c mygoui.Color) uint32 {
+	return uint32(c.R)<<24 | uint32(c.G)<<16 | uint32(c.B)<<8 | uint32(c.A)
+}
+
+func colorFromU32(v uint32) mygoui.Color {
+	return mygoui.Color{R: uint8(v >> 24), G: uint8(v >> 16), B: uint8(v >> 8), A: uint8(v)}
+}
+
+func zigAnim(preset uint8, durMS, delayMS int32, bounce float32, nonMotion, oklab bool) mygoui.Animation {
+	a := mygoui.Animation{
+		Delay:     time.Duration(delayMS) * time.Millisecond,
+		NonMotion: nonMotion,
+		Oklab:     oklab,
+	}
+	switch preset {
+	case 1:
+		a.Spring = mygoui.Smooth.Spring
+	case 2:
+		a.Spring = mygoui.Snappy.Spring
+	case 3:
+		a.Spring = mygoui.Bouncy.Spring
+	default:
+		if durMS > 0 {
+			a.Duration = time.Duration(durMS) * time.Millisecond
+		} else {
+			a.Spring = mygoui.Smooth.Spring
+		}
+	}
+	if bounce != 0 && a.Duration == 0 {
+		a.Spring.Bounce = float64(bounce)
+	}
+	if durMS > 0 && a.Duration == 0 && preset >= 1 {
+		a.Spring.Duration = time.Duration(durMS) * time.Millisecond
+	}
+	return a
+}
+
 func BindFrameElement(frameHandle uintptr, build func(c *mygoui.Context, winID int32) mygoui.Element) bool {
 	idx := int(frameHandle) - 1
 	if idx < 0 || idx >= len(activeFrames) {
@@ -2957,6 +3007,127 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			if out != nil {
 				out.BoolVal = u8Bool(c.Shortcut(mygoui.Modifiers(mods), mygoui.Key(key)))
 			}
+
+		case opAfter:
+			ms, ok := r.i32()
+			if !ok {
+				return
+			}
+			if ms < 0 {
+				ms = 0
+			}
+			c.After(time.Duration(ms) * time.Millisecond)
+
+		case opAnimationFrame:
+			c.AnimationFrame()
+
+		case opDisableAnims:
+			c.DisableAnimations()
+
+		case opInvalidate:
+			c.Invalidate()
+
+		case opCloseToast:
+			id, ok := r.str()
+			if !ok {
+				return
+			}
+			c.CloseToast(id)
+
+		case opAnimate:
+			key, ok1 := r.str()
+			target, ok2 := r.f32()
+			durMS, ok3 := r.i32()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			v := f.cur.Animate(key, target, time.Duration(durMS)*time.Millisecond)
+			if out != nil {
+				out.NumVal = float64(v)
+			}
+
+		case opAnimateTo:
+			key, ok1 := r.str()
+			target, ok2 := r.f32()
+			preset, ok3 := r.u8()
+			durMS, ok4 := r.i32()
+			delayMS, ok5 := r.i32()
+			nonMotion, ok6 := r.u8()
+			bounce, ok7 := r.f32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
+				return
+			}
+			a := zigAnim(preset, durMS, delayMS, bounce, nonMotion != 0, false)
+			v := f.cur.AnimateTo(key, target, a)
+			if out != nil {
+				out.NumVal = float64(v)
+			}
+
+		case opArrived:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			if out != nil {
+				out.BoolVal = u8Bool(f.cur.Arrived(key))
+			}
+
+		case opAnimateColor:
+			key, ok1 := r.str()
+			rgba, ok2 := r.u32()
+			preset, ok3 := r.u8()
+			durMS, ok4 := r.i32()
+			delayMS, ok5 := r.i32()
+			nonMotion, ok6 := r.u8()
+			oklab, ok7 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
+				return
+			}
+			target := colorFromU32(rgba)
+			a := zigAnim(preset, durMS, delayMS, 0, nonMotion != 0, oklab != 0)
+			col := f.cur.AnimateColor(key, target, a)
+			if out != nil {
+				out.IntVal = int64(colorToU32(col))
+			}
+
+		case opAnimatePose:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			scale, ok3 := r.f32()
+			rotate, ok4 := r.f32()
+			fade, ok5 := r.f32()
+			xPct, ok6 := r.f32()
+			yPct, ok7 := r.f32()
+			preset, ok8 := r.u8()
+			durMS, ok9 := r.i32()
+			delayMS, ok10 := r.i32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 || !ok9 || !ok10 {
+				return
+			}
+			a := zigAnim(preset, durMS, delayMS, 0, false, false)
+			f.cur = f.cur.AnimatePose(mygoui.Pose{
+				X: x, Y: y, Scale: scale, Rotate: rotate, Fade: fade,
+				XPercent: xPct, YPercent: yPct,
+			}, a)
+
+		case opSpring:
+			key, ok1 := r.str()
+			target, ok2 := r.f32()
+			bounce, ok3 := r.f32()
+			durMS, ok4 := r.i32()
+			velocity, ok5 := r.f32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			opt := mygoui.SpringOptions{Bounce: float64(bounce), Velocity: velocity}
+			if durMS > 0 {
+				opt.Duration = time.Duration(durMS) * time.Millisecond
+			}
+			v := f.cur.Spring(key, target, opt)
+			if out != nil {
+				out.NumVal = float64(v)
+			}
+
 		default:
 			return
 		}

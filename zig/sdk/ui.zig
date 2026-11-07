@@ -256,6 +256,17 @@ pub const CoreOp = enum(u16) {
     drop_mime = 319,
     drag_mime_lazy = 320,
     add_toast = 321,
+    after = 322,
+    animation_frame = 323,
+    disable_animations = 324,
+    invalidate = 325,
+    close_toast = 326,
+    animate = 327,
+    animate_to = 328,
+    arrived = 329,
+    animate_color = 330,
+    animate_pose = 331,
+    spring = 332,
 };
 
 const PaintOp = enum(u8) {
@@ -562,6 +573,24 @@ pub const DragAxis = enum(u8) {
     vertical = 2,
 };
 
+
+pub const AnimPreset = enum(u8) {
+    /// Duration-based EaseOut curve (or Smooth spring when duration_ms == 0).
+    custom = 0,
+    smooth = 1,
+    snappy = 2,
+    bouncy = 3,
+};
+
+pub const Pose = struct {
+    x: f32 = 0,
+    y: f32 = 0,
+    scale: f32 = 1,
+    rotate: f32 = 0,
+    fade: f32 = 0,
+    x_percent: f32 = 0,
+    y_percent: f32 = 0,
+};
 pub const Fit = enum(u8) {
     contain = 0,
     cover = 1,
@@ -2522,6 +2551,39 @@ pub const Context = struct {
         const q = self.flushQuery();
         x.* = @floatCast(q.num_val);
         y.* = @floatCast(q.num_val2);
+    }
+
+
+    /// Schedule another view build after `ms` milliseconds (`ui.Context.After`).
+    pub fn after(self: *Context, ms: i32) void {
+        self.writeOp(@intFromEnum(CoreOp.after));
+        self.writeI32(ms);
+        self.flush();
+    }
+
+    /// Ask for another frame as soon as the display can show it.
+    pub fn animationFrame(self: *Context) void {
+        self.writeOp(@intFromEnum(CoreOp.animation_frame));
+        self.flush();
+    }
+
+    /// Settle animated values / transitions in this frame at their targets.
+    pub fn disableAnimations(self: *Context) void {
+        self.writeOp(@intFromEnum(CoreOp.disable_animations));
+        self.flush();
+    }
+
+    /// Rebuild the view as soon as possible (`ui.Context.Invalidate`).
+    pub fn invalidate(self: *Context) void {
+        self.writeOp(@intFromEnum(CoreOp.invalidate));
+        self.flush();
+    }
+
+    /// Close the toast with `id`, or every toast when `id` is empty.
+    pub fn closeToast(self: *Context, id: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.close_toast));
+        self.writeStr(id);
+        self.flush();
     }
 
     /// Registers GIF bytes once (by key) for later `video` embeds.

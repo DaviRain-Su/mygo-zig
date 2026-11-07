@@ -86,6 +86,12 @@ var handWrittenZigNames = map[string]bool{
 	"dragMIME":          true,
 	"dropMIME":          true,
 	"dragMIMELazy":      true,
+	"animate":           true,
+	"animateTo":         true,
+	"arrived":           true,
+	"animateColor":      true,
+	"animatePose":       true,
+	"spring":            true,
 }
 
 func toCamel(s string) string {
@@ -482,6 +488,88 @@ func writeZigElement(methods []methodSpec) {
 
     pub fn dropMIME(self: Element, formats: []const []const u8, buf: []u8, len: *usize) bool {
         return self.ctx.dropMIME(formats, buf, len);
+    }
+
+    pub fn animate(self: Element, key: []const u8, target: f32, duration_ms: i32) f32 {
+        self.ctx.writeOp(@intFromEnum(CoreOp.animate));
+        self.ctx.writeStr(key);
+        self.ctx.writeF32(target);
+        self.ctx.writeI32(duration_ms);
+        return @floatCast(self.ctx.flushQuery().num_val);
+    }
+
+    pub fn animateTo(
+        self: Element,
+        key: []const u8,
+        target: f32,
+        preset: ui.AnimPreset,
+        duration_ms: i32,
+        delay_ms: i32,
+        non_motion: bool,
+        bounce: f32,
+    ) f32 {
+        self.ctx.writeOp(@intFromEnum(CoreOp.animate_to));
+        self.ctx.writeStr(key);
+        self.ctx.writeF32(target);
+        self.ctx.writeU8(@intFromEnum(preset));
+        self.ctx.writeI32(duration_ms);
+        self.ctx.writeI32(delay_ms);
+        self.ctx.writeU8(@intFromBool(non_motion));
+        self.ctx.writeF32(bounce);
+        return @floatCast(self.ctx.flushQuery().num_val);
+    }
+
+    pub fn arrived(self: Element, key: []const u8) bool {
+        self.ctx.writeOp(@intFromEnum(CoreOp.arrived));
+        self.ctx.writeStr(key);
+        return self.ctx.flushQuery().bool_val != 0;
+    }
+
+    pub fn animateColor(
+        self: Element,
+        key: []const u8,
+        target: Color,
+        preset: ui.AnimPreset,
+        duration_ms: i32,
+        delay_ms: i32,
+        non_motion: bool,
+        oklab: bool,
+    ) Color {
+        self.ctx.writeOp(@intFromEnum(CoreOp.animate_color));
+        self.ctx.writeStr(key);
+        self.ctx.writeU32(target.toU32());
+        self.ctx.writeU8(@intFromEnum(preset));
+        self.ctx.writeI32(duration_ms);
+        self.ctx.writeI32(delay_ms);
+        self.ctx.writeU8(@intFromBool(non_motion));
+        self.ctx.writeU8(@intFromBool(oklab));
+        const q = self.ctx.flushQuery();
+        return Color.fromU32(@intCast(q.int_val));
+    }
+
+    pub fn animatePose(self: Element, pose: ui.Pose, preset: ui.AnimPreset, duration_ms: i32, delay_ms: i32) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.animate_pose));
+        self.ctx.writeF32(pose.x);
+        self.ctx.writeF32(pose.y);
+        self.ctx.writeF32(pose.scale);
+        self.ctx.writeF32(pose.rotate);
+        self.ctx.writeF32(pose.fade);
+        self.ctx.writeF32(pose.x_percent);
+        self.ctx.writeF32(pose.y_percent);
+        self.ctx.writeU8(@intFromEnum(preset));
+        self.ctx.writeI32(duration_ms);
+        self.ctx.writeI32(delay_ms);
+        return self;
+    }
+
+    pub fn spring(self: Element, key: []const u8, target: f32, bounce: f32, duration_ms: i32, velocity: f32) f32 {
+        self.ctx.writeOp(@intFromEnum(CoreOp.spring));
+        self.ctx.writeStr(key);
+        self.ctx.writeF32(target);
+        self.ctx.writeF32(bounce);
+        self.ctx.writeI32(duration_ms);
+        self.ctx.writeF32(velocity);
+        return @floatCast(self.ctx.flushQuery().num_val);
     }
 `)
 

@@ -179,6 +179,8 @@ const Gallery = struct {
     frames_registered: bool = false,
     stream_registered: bool = false,
     stream_tick: u32 = 0,
+    motion_on: bool = false,
+    motion_entered: bool = false,
     toast_id_buf: [64]u8 = undefined,
     last_toast_id_len: usize = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
@@ -897,6 +899,7 @@ const Gallery = struct {
             }
         }
         c.pushVideoFrame("stream", 33, pixels[0..]);
+        c.after(16);
     }
 
     fn ensureFrameVideo(self: *Gallery, c: *ui.Context) void {
@@ -1014,7 +1017,41 @@ const Gallery = struct {
                 const tid = c.addToast("Upload done", "report.pdf", "success", "id:42", "Open", 6000, 42, *Gallery, self, Gallery.onRichToast, self.toast_id_buf[0..]);
                 self.last_toast_id_len = tid.len;
             }
+            if (self.last_toast_id_len > 0) {
+                if (c.button("close-toast", "Close toast").clicked()) {
+                    c.closeToast(self.toast_id_buf[0..self.last_toast_id_len]);
+                    self.last_toast_id_len = 0;
+                }
+            }
+            if (c.button("motion", if (self.motion_on) "Reset motion" else "Animate").clicked()) {
+                self.motion_on = !self.motion_on;
+                self.motion_entered = false;
+                c.invalidate();
+            }
             _ = c.menuButton("file", "Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
+        }
+
+
+        // Motion: AnimateTo + AnimatePose
+        {
+            const target: f32 = if (self.motion_on) 1.0 else 0.0;
+            const card = c.box().fillWidth().padding(14).radius(12).border(1, t.border).background(t.surface);
+            const op = card.animateTo("fade", target, .snappy, 0, 0, true, 0);
+            _ = card.opacity(0.35 + 0.65 * op);
+            var pose: ui.Pose = .{};
+            if (!self.motion_entered) {
+                pose = .{ .y = 12, .fade = 1 };
+                self.motion_entered = true;
+                c.invalidate();
+            }
+            _ = card.animatePose(pose, .snappy, 0, 0);
+            {
+                const body = card.begin();
+                defer body.end();
+                _ = c.textf("Motion op={d:.2} (AnimateTo fade + Pose enter)", .{op}).fontSize(13);
+                const w = card.animate("w", if (self.motion_on) 220.0 else 80.0, 280);
+                _ = c.box().width(w).height(8).radius(4).background(t.accent);
+            }
         }
 
         // RichText with an inline object chip
