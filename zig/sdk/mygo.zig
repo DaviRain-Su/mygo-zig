@@ -73,6 +73,8 @@ const ZigEvent = enum(usize) {
     ui_paint = 9,
     ui_subview = 10,
     ui_table_cell = 11,
+    ui_action = 12,
+    ui_grid_item = 13,
 };
 
 pub const CStr = extern struct {
@@ -180,6 +182,12 @@ pub var ui_subview_count: usize = 0;
 pub var ui_table_cell_handlers: [64]ui.RawTableCellHandler = undefined;
 pub var ui_table_cell_count: usize = 0;
 
+pub var ui_action_handlers: [64]ui.RawActionHandler = undefined;
+pub var ui_action_count: usize = 0;
+
+pub var ui_grid_item_handlers: [64]ui.RawGridItemHandler = undefined;
+pub var ui_grid_item_count: usize = 0;
+
 var bytes_handlers: [32]RawBytesHandler = undefined;
 var bytes_count: usize = 0;
 
@@ -261,6 +269,17 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_table_cell_count) return 0;
                     const info: *const ui.CTableCellInfo = @ptrFromInt(a2);
                     ui_table_cell_handlers[a0 - 1](a1, info, a3);
+                    return 0;
+                },
+                .ui_action => {
+                    if (a0 == 0 or a0 > ui_action_count) return 0;
+                    ui_action_handlers[a0 - 1](a3);
+                    return 0;
+                },
+                .ui_grid_item => {
+                    if (a0 == 0 or a0 > ui_grid_item_count) return 0;
+                    const info: *const ui.CGridItemInfo = @ptrFromInt(a2);
+                    ui_grid_item_handlers[a0 - 1](a1, info, a3);
                     return 0;
                 },
             }

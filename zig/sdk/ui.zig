@@ -18,6 +18,8 @@ pub const RawViewHandler = *const fn (frame_handle: usize, info: *const CFrameIn
 pub const RawListRowHandler = *const fn (frame_handle: usize, info: *const CListRowInfo, userdata: usize) void;
 pub const RawTableCellHandler = *const fn (frame_handle: usize, info: *const CTableCellInfo, userdata: usize) void;
 pub const RawPaintHandler = *const fn (painter_handle: usize, rect: *const CRect, userdata: usize) void;
+pub const RawActionHandler = *const fn (userdata: usize) void;
+pub const RawGridItemHandler = *const fn (frame_handle: usize, info: *const CGridItemInfo, userdata: usize) void;
 
 pub const Align = enum(u8) {
     start = 0,
@@ -193,6 +195,17 @@ pub const CoreOp = enum(u16) {
     token_field = 64,
     tree = 65,
     tree_item = 66,
+    grid = 67,
+    editable_text = 68,
+    find_bar = 69,
+    toolbar = 70,
+    themed = 71,
+    icon = 72,
+    image = 73,
+    toast = 74,
+    toast_action = 75,
+    menu_button = 76,
+    grid_view = 77,
 
     query_clicked = 80,
     query_hovered = 81,
@@ -254,6 +267,14 @@ pub const CTableCellInfo = extern struct {
     window_id: i32,
     row: i32,
     col: i32,
+    selected: u8,
+    _pad: [3]u8 = .{ 0, 0, 0 },
+    theme: CTheme,
+};
+
+pub const CGridItemInfo = extern struct {
+    window_id: i32,
+    index: i32,
     selected: u8,
     _pad: [3]u8 = .{ 0, 0, 0 },
     theme: CTheme,
@@ -343,6 +364,18 @@ pub const TableCell = struct {
     row: usize,
     col: usize,
     selected: bool,
+};
+
+pub const GridItem = struct {
+    ctx: *Context,
+    index: usize,
+    selected: bool,
+};
+
+pub const FindBarState = struct {
+    open: bool = false,
+    query_len: usize = 0,
+    current: i32 = 0,
 };
 
 pub const Theme = struct {
@@ -1571,6 +1604,199 @@ pub const Context = struct {
         self.writeU64(@intCast(body_id));
         self.writeU64(@intCast(@intFromPtr(state)));
         open.* = self.flushQuery().bool_val != 0;
+        return .{ .ctx = self };
+    }
+
+    pub fn grid(self: *Context, key: []const u8) Element {
+        self.ensureSpace(6 + key.len);
+        self.writeOp(@intFromEnum(CoreOp.grid));
+        self.writeStr(key);
+        return .{ .ctx = self };
+    }
+
+    pub fn editableText(self: *Context, key: []const u8, buf: []u8, len: *usize) Element {
+        self.ensureSpace(10 + key.len + len.*);
+        self.writeOp(@intFromEnum(CoreOp.editable_text));
+        self.writeStr(key);
+        self.writeStr(buf[0..len.*]);
+        var q = CQuery{
+            .text_buf_ptr = if (buf.len > 0) @intFromPtr(buf.ptr) else 0,
+            .text_buf_cap = buf.len,
+        };
+        self.flushQueryInto(&q);
+        if (q.bool_val != 0) len.* = @min(q.text_len, buf.len);
+        return .{ .ctx = self };
+    }
+
+    pub fn findBar(
+        self: *Context,
+        key: []const u8,
+        open: *bool,
+        query_buf: []u8,
+        query_len: *usize,
+        matches: i32,
+        current: *i32,
+    ) Element {
+        self.writeOp(@intFromEnum(CoreOp.find_bar));
+        self.writeStr(key);
+        self.writeU8(@intFromBool(open.*));
+        self.writeStr(query_buf[0..query_len.*]);
+        self.writeI32(matches);
+        self.writeI32(current.*);
+        var q = CQuery{
+            .text_buf_ptr = if (query_buf.len > 0) @intFromPtr(query_buf.ptr) else 0,
+            .text_buf_cap = query_buf.len,
+        };
+        self.flushQueryInto(&q);
+        open.* = q.bool_val != 0;
+        current.* = @intCast(q.int_val);
+        query_len.* = @min(q.text_len, query_buf.len);
+        return .{ .ctx = self };
+    }
+
+    pub fn toolbar(
+        self: *Context,
+        key: []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime bodyFn: fn (StatePtr, *Context) void,
+    ) Element {
+        return self.groupBody(.toolbar, key, StatePtr, state, bodyFn);
+    }
+
+    /// Applies a local theme to children (use `.begin()` / `.end()`).
+    pub fn themed(self: *Context, th: Theme) Element {
+        self.ensureSpace(1 + 4 * 12 + 4 * 3);
+        self.writeOp(@intFromEnum(CoreOp.themed));
+        self.writeU8(@intFromBool(th.dark));
+        self.writeU32(th.background.toU32());
+        self.writeU32(th.surface.toU32());
+        self.writeU32(th.surface_hover.toU32());
+        self.writeU32(th.surface_pressed.toU32());
+        self.writeU32(th.border.toU32());
+        self.writeU32(th.text.toU32());
+        self.writeU32(th.text_muted.toU32());
+        self.writeU32(th.accent.toU32());
+        self.writeU32(th.accent_text.toU32());
+        self.writeU32(th.danger.toU32());
+        self.writeU32(th.warning.toU32());
+        self.writeU32(th.success.toU32());
+        self.writeF32(th.radius);
+        self.writeF32(th.spacing);
+        self.writeF32(th.font_size);
+        return .{ .ctx = self };
+    }
+
+    /// Renders an SVG icon (`ui.ParseSVG`); bytes are cached on the host.
+    pub fn icon(self: *Context, svg_bytes: []const u8) Element {
+        self.ensureSpace(6 + svg_bytes.len);
+        self.writeOp(@intFromEnum(CoreOp.icon));
+        self.writeStr(svg_bytes);
+        return .{ .ctx = self };
+    }
+
+    /// Renders a bitmap or SVG (`ui.DecodeImage`); bytes are cached on the host.
+    pub fn image(self: *Context, image_bytes: []const u8) Element {
+        self.ensureSpace(6 + image_bytes.len);
+        self.writeOp(@intFromEnum(CoreOp.image));
+        self.writeStr(image_bytes);
+        return .{ .ctx = self };
+    }
+
+    pub fn toast(self: *Context, message: []const u8) void {
+        self.ensureSpace(6 + message.len);
+        self.writeOp(@intFromEnum(CoreOp.toast));
+        self.writeStr(message);
+        self.flush();
+    }
+
+    pub fn toastAction(
+        self: *Context,
+        message: []const u8,
+        label: []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime actionFn: fn (StatePtr) void,
+    ) void {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onAction(ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                actionFn(s);
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_action_handlers[mygo.ui_action_count] = &S.onAction;
+            mygo.ui_action_count += 1;
+            S.cb_id = mygo.ui_action_count;
+        }
+        self.ensureSpace(22 + message.len + label.len);
+        self.writeOp(@intFromEnum(CoreOp.toast_action));
+        self.writeStr(message);
+        self.writeStr(label);
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+        self.flush();
+    }
+
+    /// Flat menu button. Items equal to `"-"` become separators.
+    /// Returns the chosen item index, or `-1`.
+    pub fn menuButton(self: *Context, key: []const u8, lbl: []const u8, items: []const []const u8) i32 {
+        self.writeOp(@intFromEnum(CoreOp.menu_button));
+        self.writeStr(key);
+        self.writeStr(lbl);
+        self.writeStrSlice(items);
+        const q = self.flushQuery();
+        if (q.bool_val == 0) return -1;
+        return @intCast(q.int_val);
+    }
+
+    pub fn gridView(
+        self: *Context,
+        key: []const u8,
+        count: usize,
+        selected: *i32,
+        min_width: f32,
+        row_height: f32,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime itemFn: fn (StatePtr, GridItem) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onItem(item_handle: usize, info: *const CGridItemInfo, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var item_ctx = Context{
+                    .frame_handle = item_handle,
+                    .window = .{ .id = info.window_id },
+                    .width_dip = 0,
+                    .height_dip = 0,
+                    .window_active = true,
+                    .ui_theme = Theme.fromC(info.theme),
+                };
+                itemFn(s, .{
+                    .ctx = &item_ctx,
+                    .index = @intCast(info.index),
+                    .selected = info.selected != 0,
+                });
+                item_ctx.flush();
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_grid_item_handlers[mygo.ui_grid_item_count] = &S.onItem;
+            mygo.ui_grid_item_count += 1;
+            S.cb_id = mygo.ui_grid_item_count;
+        }
+        self.ensureSpace(38 + key.len);
+        self.writeOp(@intFromEnum(CoreOp.grid_view));
+        self.writeStr(key);
+        self.writeI32(@intCast(count));
+        self.writeI32(selected.*);
+        self.writeF32(min_width);
+        self.writeF32(row_height);
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+        selected.* = @intCast(self.flushQuery().int_val);
         return .{ .ctx = self };
     }
 

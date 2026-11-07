@@ -29,16 +29,16 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 ## Native UI surface (Zig)
 
 ### Layout & chrome
-`column` · `row` · `box` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `overlay` · `tree` / `treeItem`
+`column` · `row` · `box` · `grid` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `toolbar` · `overlay` · `tree` / `treeItem` · `themed`
 
 ### Controls
-`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `searchField` / `autocomplete` / `tokenField` · `selectIndex` · `combobox` · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `alertDialog` · `modal` · `popover`
+`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction`
 
 ### Dates & color
 `dateInput` · `timeInput` · `calendar` · `colorPicker` · `colorWell`
 
 ### Data
-Virtualized `list` (100k+ rows) · multi-column `table` · custom `draw` + `Painter`
+Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · custom `draw` + `Painter`
 
 ### Opt-in rich text
 `markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`)
@@ -47,7 +47,7 @@ Virtualized `list` (100k+ rows) · multi-column `table` · custom `draw` + `Pain
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, …
 
 ### Intentionally deferred (need extra host infra)
-Menus (`MenuButton` / `ContextMenu` / `PopoverMenu*`), `Outline` / `OutlineTable` / `Grid` / `GridView`, `Image` / `Icon` / `SVG` / `Video` / `WebView`, `Toast*`, drag/drop, `Themed`, `Router` / `BackButton` / `ForwardButton`, `EditableText` / `RichText`, `FindBar`, `Toolbar` / `Chart`.
+`ContextMenu` / `PopoverMenu*` / nested `Menu.Submenu`, `Outline` / `OutlineTable`, charts, `Video` / `WebView`, drag/drop, `Router` / `BackButton` / `ForwardButton`, `RichText` / `EditableText` spans, `ToastViewportBase` custom look.
 
 ## Quick start
 

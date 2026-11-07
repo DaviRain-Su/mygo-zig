@@ -13,8 +13,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -99,6 +101,17 @@ const (
 	opTokenField       uint16 = 64
 	opTree             uint16 = 65
 	opTreeItem         uint16 = 66
+	opGrid             uint16 = 67
+	opEditableText     uint16 = 68
+	opFindBar          uint16 = 69
+	opToolbar          uint16 = 70
+	opThemed           uint16 = 71
+	opIcon             uint16 = 72
+	opImage            uint16 = 73
+	opToast            uint16 = 74
+	opToastAction      uint16 = 75
+	opMenuButton       uint16 = 76
+	opGridView         uint16 = 77
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -166,6 +179,14 @@ type cUITableCellInfo struct {
 	Theme    cUITheme
 }
 
+type cUIGridItemInfo struct {
+	WindowID int32
+	Index    int32
+	Selected uint8
+	_        [3]byte
+	Theme    cUITheme
+}
+
 type cUIRect struct {
 	X, Y, W, H float32
 	NowMillis  int64
@@ -187,13 +208,21 @@ type zigList struct {
 	selected int
 }
 
+type zigGrid struct {
+	state    mygoui.GridState
+	selected int
+}
+
 type uiWindowHost struct {
 	winID    int32
 	callZig  host.CallZigFn
 	viewCbID uintptr
 	userdata uintptr
 	lists    map[string]*zigList
+	grids    map[string]*zigGrid
 }
+
+var assetCache sync.Map // hash key → *SVG | ImageSource
 
 type uiFrame struct {
 	ctx    *mygoui.Context
@@ -289,6 +318,7 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 		viewCbID: viewCbID,
 		userdata: userdata,
 		lists:    map[string]*zigList{},
+		grids:    map[string]*zigGrid{},
 	}
 
 	opts := host.ParseWindowOptions(rawOpts)
@@ -320,6 +350,7 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 	wh.winID = int32(w.ID())
 	w.OnClosed(func() {
 		clear(wh.lists)
+		clear(wh.grids)
 	})
 	host.SetError(nil)
 	return uintptr(wh.winID)
@@ -457,6 +488,59 @@ func u8Bool(b bool) uint8 {
 
 // writeStrList packs strings as u16 count + length-prefixed UTF-8 into dst.
 // Returns bytes written (0 if they do not fit).
+func hashBytes(b []byte) string {
+	h := fnv.New64a()
+	_, _ = h.Write(b)
+	return strconv.FormatUint(h.Sum64(), 16)
+}
+
+func cachedSVG(data []byte) (*mygoui.SVG, error) {
+	key := "svg:" + hashBytes(data)
+	if v, ok := assetCache.Load(key); ok {
+		return v.(*mygoui.SVG), nil
+	}
+	s, err := mygoui.ParseSVG(data)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := assetCache.LoadOrStore(key, s)
+	return actual.(*mygoui.SVG), nil
+}
+
+func cachedImage(data []byte) (mygoui.ImageSource, error) {
+	key := "img:" + hashBytes(data)
+	if v, ok := assetCache.Load(key); ok {
+		return v.(mygoui.ImageSource), nil
+	}
+	src, err := mygoui.DecodeImage(data)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := assetCache.LoadOrStore(key, src)
+	return actual.(mygoui.ImageSource), nil
+}
+
+func themeFromC(th cUITheme) *mygoui.Theme {
+	return &mygoui.Theme{
+		Dark:           th.Dark != 0,
+		Background:     unpackColor(th.Background),
+		Surface:        unpackColor(th.Surface),
+		SurfaceHover:   unpackColor(th.SurfaceHover),
+		SurfacePressed: unpackColor(th.SurfacePressed),
+		Border:         unpackColor(th.Border),
+		Text:           unpackColor(th.Text),
+		TextMuted:      unpackColor(th.TextMuted),
+		Accent:         unpackColor(th.Accent),
+		AccentText:     unpackColor(th.AccentText),
+		Danger:         unpackColor(th.Danger),
+		Warning:        unpackColor(th.Warning),
+		Success:        unpackColor(th.Success),
+		Radius:         th.Radius,
+		Spacing:        th.Spacing,
+		FontSize:       th.FontSize,
+	}
+}
+
 func writeStrList(dst []byte, items []string) int {
 	if len(dst) < 2 {
 		return 0
@@ -1315,6 +1399,210 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			f.cur = mygoui.TreeItem(keyedCtx(c, key), label, openPtr, kids)
 			if out != nil && hasKids != 0 {
 				out.BoolVal = u8Bool(open)
+			}
+
+		case opGrid:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = mygoui.Grid(keyedCtx(c, key))
+
+		case opEditableText:
+			key, ok1 := r.str()
+			val, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return
+			}
+			curText := val
+			f.cur = mygoui.EditableText(keyedCtx(c, key), &curText)
+			if out != nil && (curText != val || f.cur.Changed()) {
+				out.BoolVal = 1
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(curText), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), curText[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opFindBar:
+			key, ok1 := r.str()
+			openByte, ok2 := r.u8()
+			query, ok3 := r.str()
+			matches, ok4 := r.i32()
+			currentIn, ok5 := r.i32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			open := openByte != 0
+			curQuery := query
+			current := int(currentIn)
+			f.cur = mygoui.FindBar(keyedCtx(c, key), &open, &curQuery, int(matches), &current)
+			if out != nil {
+				out.BoolVal = u8Bool(open)
+				out.IntVal = int64(current)
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(curQuery), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), curQuery[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opToolbar:
+			key, ok1 := r.str()
+			bodyCbID, ok2 := r.u64()
+			bodyUD, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Toolbar(keyedCtx(c, key), func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opThemed:
+			dark, ok0 := r.u8()
+			bg, ok1 := r.u32()
+			surf, ok2 := r.u32()
+			surfH, ok3 := r.u32()
+			surfP, ok4 := r.u32()
+			border, ok5 := r.u32()
+			textC, ok6 := r.u32()
+			muted, ok7 := r.u32()
+			accent, ok8 := r.u32()
+			accentT, ok9 := r.u32()
+			danger, ok10 := r.u32()
+			warn, ok11 := r.u32()
+			succ, ok12 := r.u32()
+			radius, ok13 := r.f32()
+			spacing, ok14 := r.f32()
+			fontSize, ok15 := r.f32()
+			if !ok0 || !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 || !ok9 || !ok10 || !ok11 || !ok12 || !ok13 || !ok14 || !ok15 {
+				return
+			}
+			f.cur = mygoui.Themed(c, themeFromC(cUITheme{
+				Dark:           dark,
+				Background:     bg,
+				Surface:        surf,
+				SurfaceHover:   surfH,
+				SurfacePressed: surfP,
+				Border:         border,
+				Text:           textC,
+				TextMuted:      muted,
+				Accent:         accent,
+				AccentText:     accentT,
+				Danger:         danger,
+				Warning:        warn,
+				Success:        succ,
+				Radius:         radius,
+				Spacing:        spacing,
+				FontSize:       fontSize,
+			}))
+
+		case opIcon:
+			data, ok := r.str()
+			if !ok {
+				return
+			}
+			if svg, err := cachedSVG([]byte(data)); err == nil {
+				f.cur = mygoui.Icon(c, svg)
+			} else {
+				f.cur = mygoui.Box(c)
+			}
+
+		case opImage:
+			data, ok := r.str()
+			if !ok {
+				return
+			}
+			if src, err := cachedImage([]byte(data)); err == nil {
+				f.cur = mygoui.Image(c, src)
+			} else {
+				f.cur = mygoui.Box(c)
+			}
+
+		case opToast:
+			msg, ok := r.str()
+			if !ok {
+				return
+			}
+			c.Toast(msg)
+
+		case opToastAction:
+			msg, ok1 := r.str()
+			label, ok2 := r.str()
+			cbID, ok3 := r.u64()
+			ud, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			wh := f.host
+			c.ToastAction(msg, label, func() {
+				wh.callZig(host.ZigEventUIAction, uintptr(cbID), 0, 0, uintptr(ud))
+			})
+
+		case opMenuButton:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			items, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			chosen := -1
+			f.cur = mygoui.MenuButton(keyedCtx(c, key), label, func(m *mygoui.Menu) {
+				for i, it := range items {
+					if it == "-" {
+						m.Separator()
+						continue
+					}
+					if m.Item(it).Chosen() {
+						chosen = i
+					}
+				}
+			})
+			if out != nil {
+				out.IntVal = int64(chosen)
+				out.BoolVal = u8Bool(chosen >= 0)
+			}
+
+		case opGridView:
+			key, ok1 := r.str()
+			count, ok2 := r.i32()
+			selectedIn, ok3 := r.i32()
+			minW, ok4 := r.f32()
+			height, ok5 := r.f32()
+			itemCbID, ok6 := r.u64()
+			itemUD, ok7 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
+				return
+			}
+			zg := f.host.grids[key]
+			if zg == nil {
+				zg = &zigGrid{selected: int(selectedIn)}
+				f.host.grids[key] = zg
+			} else {
+				zg.selected = int(selectedIn)
+			}
+			zg.state.Selected = &zg.selected
+			wh, th := f.host, f.theme
+			f.cur = mygoui.GridView(keyedCtx(c, key), &zg.state, int(count), minW, height, func(i int) {
+				info := cUIGridItemInfo{
+					WindowID: wh.winID,
+					Index:    int32(i),
+					Selected: u8Bool(zg.selected == i),
+					Theme:    th,
+				}
+				runFrame(c, wh, th, func(itemHandle uintptr) {
+					wh.callZig(host.ZigEventUIGridItem, uintptr(itemCbID), itemHandle, uintptr(unsafe.Pointer(&info)), uintptr(itemUD))
+				})
+			})
+			if out != nil {
+				out.IntVal = int64(zg.selected)
+				out.BoolVal = u8Bool(f.cur.Changed())
 			}
 
 		case opPushParent:

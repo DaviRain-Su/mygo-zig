@@ -5,7 +5,13 @@ const std = @import("std");
 const mygo = @import("mygo");
 const ui = mygo.ui;
 
-const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "Markdown", "Editor" };
+const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Markdown", "Editor" };
+const menu_items = [_][]const u8{ "New", "Open…", "-", "Save", "-", "Quit" };
+const star_svg =
+    \\<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+    \\<path fill="currentColor" d="M8 1.5l1.8 3.7 4.1.6-3 2.9.7 4.1L8 11.2l-3.6 1.9.7-4.1-3-2.9 4.1-.6z"/>
+    \\</svg>
+;
 const themes = [_][]const u8{ "System", "Light", "Dark" };
 const fruits = [_][]const u8{ "Apple", "Banana", "Cherry", "Durian", "Elderberry" };
 const cities = [_][]const u8{ "Amsterdam", "Berlin", "Chicago", "Dubai", "Edinburgh", "Fukuoka" };
@@ -106,6 +112,15 @@ const Gallery = struct {
     tag_count: usize = 3,
     tag_pack: [512]u8 = undefined,
     tag_pack_len: usize = 0,
+    edit_buf: [64]u8 = initBuf64("Rename me"),
+    edit_len: usize = 9,
+    find_open: bool = false,
+    find_buf: [64]u8 = @splat(0),
+    find_len: usize = 0,
+    find_current: i32 = 0,
+    grid_sel: i32 = 0,
+    last_menu: i32 = -1,
+    toast_undos: u32 = 0,
 
     fn initBuf64(comptime seed: []const u8) [64]u8 {
         var b: [64]u8 = @splat(0);
@@ -410,6 +425,107 @@ const Gallery = struct {
         _ = c;
     }
 
+    fn toolbarBody(self: *Gallery, c: *ui.Context) void {
+        const row = c.row().gap(6).center().begin();
+        defer row.end();
+        _ = c.icon(star_svg);
+        if (c.button("tb-save", "Save").clicked()) c.toast("Saved");
+        if (c.button("tb-find", "Find").clicked()) self.find_open = true;
+        const chosen = c.menuButton("tb-menu", "File", &menu_items);
+        if (chosen >= 0) self.last_menu = chosen;
+        _ = c.spacer();
+        _ = c.badge("toolbar").fontSize(11);
+    }
+
+    fn renderGridItem(self: *Gallery, item: ui.GridItem) void {
+        _ = self;
+        const c = item.ctx;
+        const t = c.theme();
+        const box = c.box().fill().padding(8).gap(4).center().begin();
+        defer box.end();
+        _ = c.icon(star_svg);
+        _ = c.textf("#{d}", .{item.index}).fontSize(12);
+        if (item.selected) {
+            _ = c.badge("sel").fontSize(10).textColor(t.accent);
+        }
+    }
+
+    fn onToastUndo(self: *Gallery) void {
+        self.toast_undos += 1;
+    }
+
+    fn viewMore(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        _ = c.text("Toolbar · Grid · Icon · Themed · Find · Toast · Menu").fontSize(16).bold();
+
+        _ = c.toolbar("tb", *Gallery, self, Gallery.toolbarBody).fillWidth();
+
+        _ = c.findBar("find", &self.find_open, self.find_buf[0..], &self.find_len, 12, &self.find_current)
+            .fillWidth();
+
+        {
+            const row = c.row().fillWidth().gap(10).center().begin();
+            defer row.end();
+            _ = c.editableText("name", self.edit_buf[0..], &self.edit_len).grow(1.0);
+            if (c.button("toast", "Toast").clicked()) c.toast("Hello from Zig");
+            if (c.button("undoable", "Delete…").clicked()) {
+                c.toastAction("Item deleted", "Undo", *Gallery, self, Gallery.onToastUndo);
+            }
+            const chosen = c.menuButton("file", "Menu", &menu_items);
+            if (chosen >= 0) self.last_menu = chosen;
+        }
+
+        if (self.last_menu >= 0) {
+            _ = c.textf("menu chose index {d}", .{self.last_menu}).fontSize(12).textColor(t.text_muted);
+        }
+        if (self.toast_undos > 0) {
+            _ = c.textf("toast undos={d}", .{self.toast_undos}).fontSize(12).textColor(t.text_muted);
+        }
+
+        // Side-by-side themed panels
+        {
+            const row = c.row().fillWidth().gap(12).begin();
+            defer row.end();
+            {
+                var light = t;
+                light.dark = false;
+                light.background = ui.Color.rgb(250, 250, 252);
+                light.surface = ui.Color.rgb(255, 255, 255);
+                light.text = ui.Color.rgb(20, 20, 30);
+                light.text_muted = ui.Color.rgb(100, 100, 120);
+                light.border = ui.Color.rgb(210, 210, 220);
+                light.accent = ui.Color.rgb(99, 102, 241);
+                const panel = c.themed(light).grow(1.0).padding(12).gap(6).radius(8).begin();
+                defer panel.end();
+                _ = c.text("Light theme").bold();
+                _ = c.primaryButton("l-ok", "OK");
+            }
+            {
+                var dark = t;
+                dark.dark = true;
+                dark.background = ui.Color.rgb(24, 24, 28);
+                dark.surface = ui.Color.rgb(36, 36, 42);
+                dark.text = ui.Color.rgb(240, 240, 245);
+                dark.text_muted = ui.Color.rgb(160, 160, 175);
+                dark.border = ui.Color.rgb(60, 60, 70);
+                dark.accent = ui.Color.rgb(129, 140, 248);
+                const panel = c.themed(dark).grow(1.0).padding(12).gap(6).radius(8).begin();
+                defer panel.end();
+                _ = c.text("Dark theme").bold();
+                _ = c.primaryButton("d-ok", "OK");
+            }
+        }
+
+        _ = c.text("GridView (virtualized)").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.gridView("icons", 500, &self.grid_sel, 72, 72, *Gallery, self, Gallery.renderGridItem)
+            .fillWidth()
+            .grow(1.0)
+            .border(1, t.border)
+            .radius(8)
+            .gap(8)
+            .padding(8);
+    }
+
     fn viewTree(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
         _ = c.text("Tree & TokenField").fontSize(16).bold();
@@ -525,7 +641,8 @@ const Gallery = struct {
             2 => self.viewLayout(c),
             3 => self.viewData(c),
             4 => self.viewTree(c),
-            5 => self.viewMarkdown(c),
+            5 => self.viewMore(c),
+            6 => self.viewMarkdown(c),
             else => self.viewEditor(c),
         }
     }
