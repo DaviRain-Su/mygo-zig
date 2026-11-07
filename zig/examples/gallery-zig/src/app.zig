@@ -177,6 +177,10 @@ const Gallery = struct {
     show_video: bool = false,
     video_registered: bool = false,
     frames_registered: bool = false,
+    stream_registered: bool = false,
+    stream_tick: u32 = 0,
+    toast_id_buf: [64]u8 = undefined,
+    last_toast_id_len: usize = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
     mime_drop: [256]u8 = undefined,
@@ -759,6 +763,15 @@ const Gallery = struct {
                     self.ensureFrameVideo(c);
                 }
             }
+            if (c.button("toggle-stream", if (self.stream_registered) "Hide stream" else "Stream video").clicked()) {
+                if (self.stream_registered) {
+                    c.endVideoStream("stream");
+                    c.videoClose("stream");
+                    self.stream_registered = false;
+                } else {
+                    self.ensureStreamVideo(c);
+                }
+            }
             if (self.show_video) {
                 if (c.button("pause-video", "Pause").clicked()) c.videoPause("waves");
                 if (c.button("play-video", "Play").clicked()) c.videoPlay("waves");
@@ -770,6 +783,11 @@ const Gallery = struct {
         }
         if (self.frames_registered) {
             _ = c.video("frames", .contain).width(80).height(80).border(1, t.border).radius(6);
+        }
+
+        if (self.stream_registered) {
+            self.pumpStream(c);
+            _ = c.video("stream", .contain).fillWidth().height(140);
         }
     }
 
@@ -849,6 +867,38 @@ const Gallery = struct {
         self.toast_undos += 1;
     }
 
+    
+    fn ensureStreamVideo(self: *Gallery, c: *ui.Context) void {
+        if (self.stream_registered) return;
+        c.openVideoStream("stream", 160, 90, 8, false);
+        self.stream_registered = true;
+        self.stream_tick = 0;
+        self.pumpStream(c);
+    }
+
+    fn pumpStream(self: *Gallery, c: *ui.Context) void {
+        if (!self.stream_registered) return;
+        // Generate a simple sweeping RGBA frame each view pass.
+        const w: u32 = 160;
+        const h: u32 = 90;
+        var pixels: [160 * 90 * 4]u8 = undefined;
+        const tick = self.stream_tick;
+        self.stream_tick +%= 1;
+        var y: u32 = 0;
+        while (y < h) : (y += 1) {
+            var x: u32 = 0;
+            while (x < w) : (x += 1) {
+                const i = (y * w + x) * 4;
+                const v: u8 = @truncate(x +% tick);
+                pixels[i + 0] = v;
+                pixels[i + 1] = @truncate(y *% 2);
+                pixels[i + 2] = 200;
+                pixels[i + 3] = 255;
+            }
+        }
+        c.pushVideoFrame("stream", 33, pixels[0..]);
+    }
+
     fn ensureFrameVideo(self: *Gallery, c: *ui.Context) void {
         if (self.frames_registered) return;
         // Tiny 16×16 bouncing square, 4 frames.
@@ -918,7 +968,7 @@ const Gallery = struct {
                         _ = c.text(info.description).fontSize(11).textColor(t.text_muted);
                     }
                     if (info.data.len > 0) {
-                        _ = c.textf("data={s}", .{info.data}).fontSize(10).textColor(t.accent);
+                        _ = c.textf("data={s} ud={d}", .{ info.data, info.userdata }).fontSize(10).textColor(t.accent);
                     }
                 }
                 if (info.has_action) {
@@ -961,7 +1011,8 @@ const Gallery = struct {
                 self.custom_toasts = !self.custom_toasts;
             }
             if (c.button("rich-toast", "Toast+Data").clicked()) {
-                c.addToast("Upload done", "report.pdf", "success", "id:42", "Open", 6000, *Gallery, self, Gallery.onRichToast);
+                const tid = c.addToast("Upload done", "report.pdf", "success", "id:42", "Open", 6000, 42, *Gallery, self, Gallery.onRichToast, self.toast_id_buf[0..]);
+                self.last_toast_id_len = tid.len;
             }
             _ = c.menuButton("file", "Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
         }

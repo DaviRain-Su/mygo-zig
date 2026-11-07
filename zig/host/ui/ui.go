@@ -329,6 +329,11 @@ type gifAsset struct {
 	loop bool
 }
 
+type ZigToastData struct {
+	Text string
+	User uintptr
+}
+
 type framesAsset struct {
 	w, h   int
 	loop  bool
@@ -343,11 +348,12 @@ type frameRGBA struct {
 var (
 	gifRegistry    sync.Map // key → gifAsset
 	framesRegistry sync.Map // key → framesAsset
+	streamRegistry sync.Map // key → *streamAsset
 )
 
 // rgbaFramesDecoder plays a registered RGBA sequence.
 type rgbaFramesDecoder struct {
-	w, h  int
+	w, h    int
 	frames []frameRGBA
 	i      int
 }
@@ -365,6 +371,53 @@ func (d *rgbaFramesDecoder) Next() (mygoui.VideoFrame, error) {
 
 func (d *rgbaFramesDecoder) Rewind() error {
 	d.i = 0
+	return nil
+}
+
+// streamAsset is a push-driven frame queue. Zig (or any producer) pushes
+// RGBA frames from any goroutine; VideoPlayer.Next blocks until a frame
+// or End arrives. This is the streaming alternative to embedding a full
+// GIF / frame table up front.
+type streamAsset struct {
+	w, h int
+	loop bool
+	ch   chan frameRGBA
+	done chan struct{}
+	mu   sync.Mutex
+	end  bool
+}
+
+type streamDecoder struct {
+	a *streamAsset
+}
+
+func (d *streamDecoder) Next() (mygoui.VideoFrame, error) {
+	select {
+	case <-d.a.done:
+		return mygoui.VideoFrame{}, io.EOF
+	case f, ok := <-d.a.ch:
+		if !ok {
+			return mygoui.VideoFrame{}, io.EOF
+		}
+		img := image.NewRGBA(image.Rect(0, 0, d.a.w, d.a.h))
+		copy(img.Pix, f.pix)
+		return mygoui.VideoFrame{Image: img, Duration: f.dur}, nil
+	}
+}
+
+func (d *streamDecoder) Rewind() error {
+	// Streams are live; looping reuses the same open channel.
+	return nil
+}
+
+func (d *streamDecoder) Close() error {
+	d.a.mu.Lock()
+	defer d.a.mu.Unlock()
+	if !d.a.end {
+		d.a.end = true
+		close(d.a.done)
+		close(d.a.ch)
+	}
 	return nil
 }
 
@@ -475,6 +528,93 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
 		framesRegistry.Store(key, framesAsset{w: w, h: h, loop: spec.Loop != 0, frames: frames})
+		return 0
+	case host.HostOpVideoStream:
+		spec := host.PtrTo[host.CVideoStreamSpec](a0)
+		if spec == nil || spec.KeyLen == 0 || spec.Width == 0 || spec.Height == 0 {
+			host.SetError(errors.New("zighost: video stream needs key and size"))
+			return ^uintptr(0)
+		}
+		capN := int(spec.Capacity)
+		if capN <= 0 {
+			capN = 4
+		}
+		if capN > 64 {
+			capN = 64
+		}
+		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
+		if old, ok := streamRegistry.Load(key); ok {
+			if s := old.(*streamAsset); s != nil {
+				_ = (&streamDecoder{a: s}).Close()
+			}
+		}
+		s := &streamAsset{
+			w:    int(spec.Width),
+			h:    int(spec.Height),
+			loop: spec.Loop != 0,
+			ch:   make(chan frameRGBA, capN),
+			done: make(chan struct{}),
+		}
+		// Seed a blank frame so NewVideoPlayer can take its required first frame
+		// before Zig pushes real content.
+		blank := make([]byte, s.w*s.h*4)
+		s.ch <- frameRGBA{pix: blank, dur: 50 * time.Millisecond}
+		streamRegistry.Store(key, s)
+		return 0
+	case host.HostOpVideoPush:
+		spec := host.PtrTo[host.CVideoPushSpec](a0)
+		if spec == nil || spec.KeyLen == 0 {
+			return ^uintptr(0)
+		}
+		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
+		raw, ok := streamRegistry.Load(key)
+		if !ok {
+			host.SetError(fmt.Errorf("zighost: video stream %q not open", key))
+			return ^uintptr(0)
+		}
+		s := raw.(*streamAsset)
+		need := s.w * s.h * 4
+		if int(spec.PixelsLen) < need {
+			host.SetError(fmt.Errorf("zighost: video push too short (%d < %d)", spec.PixelsLen, need))
+			return ^uintptr(0)
+		}
+		chunk := host.CopyBytes(spec.PixelsPtr, uintptr(need))
+		dur := 100 * time.Millisecond
+		if spec.DurationMS > 0 {
+			dur = time.Duration(spec.DurationMS) * time.Millisecond
+		}
+		s.mu.Lock()
+		ended := s.end
+		s.mu.Unlock()
+		if ended {
+			return ^uintptr(0)
+		}
+		select {
+		case s.ch <- frameRGBA{pix: chunk, dur: dur}:
+			return 0
+		case <-s.done:
+			return ^uintptr(0)
+		default:
+			// Drop oldest to keep live streams moving.
+			select {
+			case <-s.ch:
+			default:
+			}
+			select {
+			case s.ch <- frameRGBA{pix: chunk, dur: dur}:
+				return 0
+			default:
+				return ^uintptr(0)
+			}
+		}
+	case host.HostOpVideoEnd:
+		key := host.CopyString(a0, a1)
+		if key == "" {
+			return ^uintptr(0)
+		}
+		if raw, ok := streamRegistry.Load(key); ok {
+			_ = (&streamDecoder{a: raw.(*streamAsset)}).Close()
+		}
 		return 0
 	}
 	return ^uintptr(0)
@@ -2299,8 +2439,12 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 					asset := raw.(framesAsset)
 					dec = &rgbaFramesDecoder{w: asset.w, h: asset.h, frames: asset.frames}
 					loop = asset.loop
+				} else if raw, ok := streamRegistry.Load(key); ok {
+					asset := raw.(*streamAsset)
+					dec = &streamDecoder{a: asset}
+					loop = asset.loop
 				} else {
-					host.SetError(fmt.Errorf("zighost: video %q not registered (registerVideoGIF/Frames first)", key))
+					host.SetError(fmt.Errorf("zighost: video %q not registered (GIF/Frames/Stream first)", key))
 					return
 				}
 				if err != nil {
@@ -2469,9 +2613,17 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			if out != nil {
 				out.BoolVal = u8Bool(ts.Action != "")
 				// Title\nDescription\nType\nAction\nData
-				dataStr, _ := ts.Data.(string)
+				dataStr := ""
+				var user uintptr
+				switch d := ts.Data.(type) {
+				case ZigToastData:
+					dataStr, user = d.Text, d.User
+				case string:
+					dataStr = d
+				}
 				payload := ts.Title + "\n" + ts.Description + "\n" + ts.Type + "\n" + ts.Action + "\n" + dataStr
 				writeChosenID(out, savedBufPtr, savedBufCap, payload)
+				out.NumVal = float64(user)
 			}
 
 		case opToastCloseBtn:
@@ -2595,16 +2747,20 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			timeoutMS, ok6 := r.i32()
 			cbID, ok7 := r.u64()
 			ud, ok8 := r.u64()
-			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 {
+			userData, ok9 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 || !ok9 {
 				return
 			}
 			ts := mygoui.Toast{
 				Title:       title,
 				Description: desc,
 				Type:        typ,
-				Data:        data,
-				Action:      action,
-				Timeout:     time.Duration(timeoutMS) * time.Millisecond,
+				Data: ZigToastData{
+					Text: data,
+					User: uintptr(userData),
+				},
+				Action:  action,
+				Timeout: time.Duration(timeoutMS) * time.Millisecond,
 			}
 			if action != "" && cbID != 0 {
 				wh := f.host
@@ -2612,7 +2768,11 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 					wh.callZig(host.ZigEventUIAction, uintptr(cbID), 0, 0, uintptr(ud))
 				}
 			}
-			c.AddToast(ts)
+			id := c.AddToast(ts)
+			if out != nil {
+				writeChosenID(out, savedBufPtr, savedBufCap, id)
+				out.NumVal = float64(userData)
+			}
 
 		case opDropData:
 			opts := transfer.DropOptions{

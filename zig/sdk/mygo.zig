@@ -48,6 +48,9 @@ pub const HostOp = enum(usize) {
     pie_chart = 223,
     video_gif = 230,
     video_frames = 231,
+    video_stream = 232,
+    video_push = 233,
+    video_end = 234,
 };
 
 pub const WinCtl = enum(usize) {

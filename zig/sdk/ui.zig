@@ -622,6 +622,25 @@ const CVideoFramesSpec = extern struct {
     pixels_len: usize = 0,
 };
 
+const CVideoStreamSpec = extern struct {
+    key_ptr: usize = 0,
+    key_len: usize = 0,
+    width: u32 = 0,
+    height: u32 = 0,
+    capacity: u32 = 4,
+    loop: u8 = 0,
+    _pad: [3]u8 = .{ 0, 0, 0 },
+};
+
+const CVideoPushSpec = extern struct {
+    key_ptr: usize = 0,
+    key_len: usize = 0,
+    duration_ms: u32 = 0,
+    _pad: [4]u8 = .{ 0, 0, 0, 0 },
+    pixels_ptr: usize = 0,
+    pixels_len: usize = 0,
+};
+
 pub const RouterState = struct {
     key: []const u8,
     path_buf: [256]u8 = undefined,
@@ -2541,7 +2560,37 @@ pub const Context = struct {
         _ = mygo.dispatch(.video_frames, @intFromPtr(&spec), 0, 0, 0);
     }
 
-    /// Full toast with optional action callback and opaque `data` string.
+    /// Opens a push-driven RGBA stream. Push frames with `pushVideoFrame`, then
+    /// show with `video(key, ...)`. Seeded with a blank first frame on the host.
+    pub fn openVideoStream(_: *Context, key: []const u8, width: u32, height: u32, capacity: u32, loop: bool) void {
+        var spec = CVideoStreamSpec{
+            .key_ptr = mygo.sliceAddr(key),
+            .key_len = key.len,
+            .width = width,
+            .height = height,
+            .capacity = if (capacity == 0) 4 else capacity,
+            .loop = @intFromBool(loop),
+        };
+        _ = mygo.dispatch(.video_stream, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    pub fn pushVideoFrame(_: *Context, key: []const u8, duration_ms: u32, pixels: []const u8) void {
+        var spec = CVideoPushSpec{
+            .key_ptr = mygo.sliceAddr(key),
+            .key_len = key.len,
+            .duration_ms = duration_ms,
+            .pixels_ptr = mygo.sliceAddr(pixels),
+            .pixels_len = pixels.len,
+        };
+        _ = mygo.dispatch(.video_push, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    pub fn endVideoStream(_: *Context, key: []const u8) void {
+        _ = mygo.dispatch(.video_end, mygo.sliceAddr(key), key.len, 0, 0);
+    }
+
+    /// Full toast with optional action, UTF-8 `data`, and opaque `userdata`.
+    /// Returns the toast id written by the host (empty on tape overflow).
     pub fn addToast(
         self: *Context,
         title: []const u8,
@@ -2550,10 +2599,12 @@ pub const Context = struct {
         data: []const u8,
         action: []const u8,
         timeout_ms: i32,
+        userdata: usize,
         comptime StatePtr: type,
         state: StatePtr,
         comptime actionFn: fn (StatePtr) void,
-    ) void {
+        id_buf: []u8,
+    ) []const u8 {
         var cb_id: usize = 0;
         var ud: usize = 0;
         if (action.len > 0) {
@@ -2581,7 +2632,14 @@ pub const Context = struct {
         self.writeI32(timeout_ms);
         self.writeU64(@intCast(cb_id));
         self.writeU64(@intCast(ud));
-        self.flush();
+        self.writeU64(@intCast(userdata));
+        var q = CQuery{
+            .text_buf_ptr = if (id_buf.len > 0) @intFromPtr(id_buf.ptr) else 0,
+            .text_buf_cap = id_buf.len,
+        };
+        self.flushQueryInto(&q);
+        const n = @min(q.text_len, id_buf.len);
+        return id_buf[0..n];
     }
 
     /// Plays a previously registered GIF (`registerVideoGIF`).
@@ -2692,6 +2750,7 @@ pub const Context = struct {
         type: []const u8 = "",
         action: []const u8 = "",
         data: []const u8 = "",
+        userdata: usize = 0,
         has_action: bool = false,
     };
 
@@ -2743,6 +2802,7 @@ pub const Context = struct {
         const len = @min(q.text_len, info_buf.len);
         info.* = .{};
         info.has_action = q.bool_val != 0;
+        info.userdata = @intFromFloat(q.num_val);
         if (len > 0) {
             const raw = info_buf[0..len];
             var parts: [5][]const u8 = .{ "", "", "", "", "" };

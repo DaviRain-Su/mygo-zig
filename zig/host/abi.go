@@ -60,6 +60,9 @@ const (
 	HostOpPieChart       uintptr = 223
 	HostOpVideoGIF       uintptr = 230 // a0 = *CVideoGIFSpec
 	HostOpVideoFrames    uintptr = 231 // a0 = *CVideoFramesSpec
+	HostOpVideoStream    uintptr = 232 // a0 = *CVideoStreamSpec (open)
+	HostOpVideoPush      uintptr = 233 // a0 = *CVideoPushSpec
+	HostOpVideoEnd       uintptr = 234 // a0 = key ptr, a1 = key len
 )
 
 // CVideoGIFSpec registers a looping GIF player by key for later Video() ops.
@@ -79,6 +82,23 @@ type CVideoFramesSpec struct {
 	_                    [3]byte
 	DurationsPtr         uintptr // frameCount × uint32 milliseconds
 	PixelsPtr, PixelsLen uintptr // contiguous RGBA, frameCount×w×h×4
+}
+
+// CVideoStreamSpec opens a push-driven stream decoder (Zig pushes frames).
+type CVideoStreamSpec struct {
+	KeyPtr, KeyLen uintptr
+	Width, Height  uint32
+	Capacity       uint32 // buffered frames; 0 → 4
+	Loop           uint8
+	_              [3]byte
+}
+
+// CVideoPushSpec appends one RGBA frame to an open stream.
+type CVideoPushSpec struct {
+	KeyPtr, KeyLen       uintptr
+	DurationMS           uint32
+	_                    [4]byte
+	PixelsPtr, PixelsLen uintptr
 }
 
 // Window control sub-opcodes for HostOpWindowControl.
