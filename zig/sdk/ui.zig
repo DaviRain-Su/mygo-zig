@@ -19,6 +19,7 @@ pub const RawListRowHandler = *const fn (frame_handle: usize, info: *const CList
 pub const RawTableCellHandler = *const fn (frame_handle: usize, info: *const CTableCellInfo, userdata: usize) void;
 pub const RawPaintHandler = *const fn (painter_handle: usize, rect: *const CRect, userdata: usize) void;
 pub const RawActionHandler = *const fn (userdata: usize) void;
+pub const RawProvideHandler = *const fn (buf: []u8, userdata: usize) usize;
 pub const RawGridItemHandler = *const fn (frame_handle: usize, info: *const CGridItemInfo, userdata: usize) void;
 pub const RawOutlineRowHandler = *const fn (frame_handle: usize, info: *const COutlineRowInfo, userdata: usize) void;
 pub const RawRouteHandler = *const fn (frame_handle: usize, info: *const CRouteInfo, userdata: usize) void;
@@ -253,6 +254,8 @@ pub const CoreOp = enum(u16) {
     toast_action_btn = 317,
     drag_mime = 318,
     drop_mime = 319,
+    drag_mime_lazy = 320,
+    add_toast = 321,
 };
 
 const PaintOp = enum(u8) {
@@ -604,6 +607,19 @@ const CVideoGIFSpec = extern struct {
     gif_len: usize = 0,
     loop: u8 = 1,
     _pad: [7]u8 = .{ 0, 0, 0, 0, 0, 0, 0 },
+};
+
+const CVideoFramesSpec = extern struct {
+    key_ptr: usize = 0,
+    key_len: usize = 0,
+    width: u32 = 0,
+    height: u32 = 0,
+    frame_count: u32 = 0,
+    loop: u8 = 1,
+    _pad: [3]u8 = .{ 0, 0, 0 },
+    durations_ptr: usize = 0,
+    pixels_ptr: usize = 0,
+    pixels_len: usize = 0,
 };
 
 pub const RouterState = struct {
@@ -2501,6 +2517,73 @@ pub const Context = struct {
         _ = mygo.dispatch(.video_gif, @intFromPtr(&spec), 0, 0, 0);
     }
 
+    /// Registers an RGBA frame sequence (w×h×4 bytes per frame).
+    pub fn registerVideoFrames(
+        _: *Context,
+        key: []const u8,
+        width: u32,
+        height: u32,
+        durations_ms: []const u32,
+        pixels: []const u8,
+        loop: bool,
+    ) void {
+        var spec = CVideoFramesSpec{
+            .key_ptr = mygo.sliceAddr(key),
+            .key_len = key.len,
+            .width = width,
+            .height = height,
+            .frame_count = @intCast(durations_ms.len),
+            .loop = @intFromBool(loop),
+            .durations_ptr = if (durations_ms.len > 0) @intFromPtr(durations_ms.ptr) else 0,
+            .pixels_ptr = mygo.sliceAddr(pixels),
+            .pixels_len = pixels.len,
+        };
+        _ = mygo.dispatch(.video_frames, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    /// Full toast with optional action callback and opaque `data` string.
+    pub fn addToast(
+        self: *Context,
+        title: []const u8,
+        description: []const u8,
+        typ: []const u8,
+        data: []const u8,
+        action: []const u8,
+        timeout_ms: i32,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime actionFn: fn (StatePtr) void,
+    ) void {
+        var cb_id: usize = 0;
+        var ud: usize = 0;
+        if (action.len > 0) {
+            const S = struct {
+                var id: usize = 0;
+                fn onAction(u: usize) void {
+                    const s: StatePtr = @ptrFromInt(u);
+                    actionFn(s);
+                }
+            };
+            if (S.id == 0) {
+                mygo.ui_action_handlers[mygo.ui_action_count] = &S.onAction;
+                mygo.ui_action_count += 1;
+                S.id = mygo.ui_action_count;
+            }
+            cb_id = S.id;
+            ud = @intFromPtr(state);
+        }
+        self.writeOp(@intFromEnum(CoreOp.add_toast));
+        self.writeStr(title);
+        self.writeStr(description);
+        self.writeStr(typ);
+        self.writeStr(data);
+        self.writeStr(action);
+        self.writeI32(timeout_ms);
+        self.writeU64(@intCast(cb_id));
+        self.writeU64(@intCast(ud));
+        self.flush();
+    }
+
     /// Plays a previously registered GIF (`registerVideoGIF`).
     pub fn video(self: *Context, key: []const u8, fit: Fit) Element {
         self.writeOp(@intFromEnum(CoreOp.video));
@@ -2608,6 +2691,7 @@ pub const Context = struct {
         description: []const u8 = "",
         type: []const u8 = "",
         action: []const u8 = "",
+        data: []const u8 = "",
         has_action: bool = false,
     };
 
@@ -2661,7 +2745,7 @@ pub const Context = struct {
         info.has_action = q.bool_val != 0;
         if (len > 0) {
             const raw = info_buf[0..len];
-            var parts: [4][]const u8 = .{ "", "", "", "" };
+            var parts: [5][]const u8 = .{ "", "", "", "", "" };
             var n: usize = 0;
             var start: usize = 0;
             for (raw, 0..) |ch, i| {
@@ -2678,6 +2762,7 @@ pub const Context = struct {
             info.description = parts[1];
             info.type = parts[2];
             info.action = parts[3];
+            info.data = parts[4];
         }
         return .{ .ctx = self };
     }
@@ -2700,6 +2785,60 @@ pub const Context = struct {
             self.writeStr(pair[0]);
             self.writeStr(pair[1]);
         }
+    }
+
+    /// Lazy multi-MIME drag: `provideFn` runs when the gesture starts and must
+    /// write the dragMIME tape into `buf` (u16 count + format/payload pairs),
+    /// returning bytes written.
+    pub fn dragMIMELazy(
+        self: *Context,
+        formats: []const []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime provideFn: fn (StatePtr, []u8) usize,
+    ) void {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onProvide(buf: []u8, ud: usize) usize {
+                const s: StatePtr = @ptrFromInt(ud);
+                return provideFn(s, buf);
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_provide_handlers[mygo.ui_provide_count] = &S.onProvide;
+            mygo.ui_provide_count += 1;
+            S.cb_id = mygo.ui_provide_count;
+        }
+        self.writeOp(@intFromEnum(CoreOp.drag_mime_lazy));
+        self.writeU16(@intCast(formats.len));
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+        for (formats) |fmt| self.writeStr(fmt);
+    }
+
+    /// Helper: encode MIME pairs into a provide buffer for `dragMIMELazy`.
+    /// Wire format matches CommandBuffer strings: u16 count, then (u32 len + bytes)*.
+    pub fn writeMIMETape(buf: []u8, parts: []const struct { []const u8, []const u8 }) usize {
+        var w: usize = 0;
+        if (buf.len < 2) return 0;
+        const n: u16 = @intCast(@min(parts.len, 32));
+        buf[0] = @truncate(n);
+        buf[1] = @truncate(n >> 8);
+        w = 2;
+        for (parts[0..n]) |pair| {
+            inline for (.{ pair[0], pair[1] }) |s| {
+                if (w + 4 + s.len > buf.len) return w;
+                const ln: u32 = @intCast(s.len);
+                buf[w] = @truncate(ln);
+                buf[w + 1] = @truncate(ln >> 8);
+                buf[w + 2] = @truncate(ln >> 16);
+                buf[w + 3] = @truncate(ln >> 24);
+                w += 4;
+                @memcpy(buf[w..][0..s.len], s);
+                w += s.len;
+            }
+        }
+        return w;
     }
 
     /// Native drop for explicit MIME list. Buffer receives `format\npayload`.

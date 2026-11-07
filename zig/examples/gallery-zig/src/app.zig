@@ -176,6 +176,7 @@ const Gallery = struct {
     show_web: bool = false,
     show_video: bool = false,
     video_registered: bool = false,
+    frames_registered: bool = false,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
     mime_drop: [256]u8 = undefined,
@@ -746,9 +747,17 @@ const Gallery = struct {
         {
             const row = c.row().fillWidth().gap(10).center().begin();
             defer row.end();
-            if (c.button("toggle-video", if (self.show_video) "Hide Video" else "Show Video").clicked()) {
+            if (c.button("toggle-video", if (self.show_video) "Hide GIF" else "Show GIF").clicked()) {
                 self.show_video = !self.show_video;
                 if (!self.show_video) c.videoClose("waves");
+            }
+            if (c.button("toggle-frames", if (self.frames_registered) "Hide frames" else "Frames video").clicked()) {
+                if (self.frames_registered) {
+                    c.videoClose("frames");
+                    self.frames_registered = false;
+                } else {
+                    self.ensureFrameVideo(c);
+                }
             }
             if (self.show_video) {
                 if (c.button("pause-video", "Pause").clicked()) c.videoPause("waves");
@@ -756,11 +765,11 @@ const Gallery = struct {
             }
         }
         if (self.show_video) {
-            if (!self.video_registered) {
-                c.registerVideoGIF("waves", waves_gif, true);
-                self.video_registered = true;
-            }
+            c.registerVideoGIF("waves", waves_gif, true);
             _ = c.video("waves", .cover).fillWidth().height(160).border(1, t.border).radius(8);
+        }
+        if (self.frames_registered) {
+            _ = c.video("frames", .contain).width(80).height(80).border(1, t.border).radius(6);
         }
     }
 
@@ -825,6 +834,57 @@ const Gallery = struct {
     }
 
 
+
+    fn provideLazyMIME(self: *Gallery, buf: []u8) usize {
+        // Fresh payload each drag start.
+        var tmp: [64]u8 = undefined;
+        const msg = std.fmt.bufPrint(&tmp, "lazy-{d}", .{self.toast_undos}) catch "lazy";
+        return ui.Context.writeMIMETape(buf, &.{
+            .{ "application/x-mygo-demo", msg },
+            .{ "text/plain", msg },
+        });
+    }
+
+    fn onRichToast(self: *Gallery) void {
+        self.toast_undos += 1;
+    }
+
+    fn ensureFrameVideo(self: *Gallery, c: *ui.Context) void {
+        if (self.frames_registered) return;
+        // Tiny 16×16 bouncing square, 4 frames.
+        const w: u32 = 16;
+        const h: u32 = 16;
+        var pixels: [16 * 16 * 4 * 4]u8 = @splat(0);
+        const durs = [_]u32{ 120, 120, 120, 120 };
+        var f: usize = 0;
+        while (f < 4) : (f += 1) {
+            const off = f * 16 * 16 * 4;
+            const cx: i32 = 4 + @as(i32, @intCast(f)) * 2;
+            const cy: i32 = 4 + @as(i32, @intCast(f % 2)) * 4;
+            var y: i32 = 0;
+            while (y < 16) : (y += 1) {
+                var x: i32 = 0;
+                while (x < 16) : (x += 1) {
+                    const i = off + @as(usize, @intCast(y * 16 + x)) * 4;
+                    const inside = x >= cx and x < cx + 6 and y >= cy and y < cy + 6;
+                    if (inside) {
+                        pixels[i] = 59;
+                        pixels[i + 1] = 130;
+                        pixels[i + 2] = 246;
+                        pixels[i + 3] = 255;
+                    } else {
+                        pixels[i + 3] = 255;
+                        pixels[i] = 20;
+                        pixels[i + 1] = 20;
+                        pixels[i + 2] = 30;
+                    }
+                }
+            }
+        }
+        c.registerVideoFrames("frames", w, h, &durs, pixels[0..], true);
+        self.frames_registered = true;
+    }
+
     fn paintRichObject(self: *Gallery, p: *ui.Painter, at: i32, r: ui.Rect) void {
         _ = self;
         _ = at;
@@ -856,6 +916,9 @@ const Gallery = struct {
                     _ = c.text(info.title).bold().fontSize(13);
                     if (info.description.len > 0) {
                         _ = c.text(info.description).fontSize(11).textColor(t.text_muted);
+                    }
+                    if (info.data.len > 0) {
+                        _ = c.textf("data={s}", .{info.data}).fontSize(10).textColor(t.accent);
                     }
                 }
                 if (info.has_action) {
@@ -897,6 +960,9 @@ const Gallery = struct {
             if (c.button("custom-toast-toggle", if (self.custom_toasts) "Default toasts" else "Custom toasts").clicked()) {
                 self.custom_toasts = !self.custom_toasts;
             }
+            if (c.button("rich-toast", "Toast+Data").clicked()) {
+                c.addToast("Upload done", "report.pdf", "success", "id:42", "Open", 6000, *Gallery, self, Gallery.onRichToast);
+            }
             _ = c.menuButton("file", "Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
         }
 
@@ -920,6 +986,10 @@ const Gallery = struct {
                 .padding(8)
                 .radius(6)
                 .dragMIME(&.{ .{ "application/x-mygo-demo", "zig-demo-v1" }, .{ "text/plain", "fallback text" } });
+            _ = c.badge("Lazy MIME")
+                .padding(8)
+                .radius(6)
+                .dragMIMELazy(&.{ "application/x-mygo-demo", "text/plain" }, *Gallery, self, Gallery.provideLazyMIME);
             const zone = c.box().padding(8).radius(6).border(1, t.border).grow(1.0);
             if (zone.dropMIME(&.{ "application/x-mygo-demo", "text/plain" }, self.mime_drop[0..], &self.mime_drop_len)) {}
             {

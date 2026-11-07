@@ -23,6 +23,7 @@ const (
 	ZigEventUIOutlineRow  uintptr = 14 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineRowInfo, a3 = userdata
 	ZigEventUIRoute       uintptr = 15 // a0 = cb_id, a1 = frame_handle, a2 = *CUIRouteInfo, a3 = userdata
 	ZigEventUIOutlineCell uintptr = 16 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineCellInfo, a3 = userdata
+	ZigEventUIProvide     uintptr = 17 // a0 = cb_id, a1 = out_buf_ptr, a2 = out_buf_cap, a3 = userdata → bytes written
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -58,6 +59,7 @@ const (
 	HostOpAreaChart      uintptr = 222
 	HostOpPieChart       uintptr = 223
 	HostOpVideoGIF       uintptr = 230 // a0 = *CVideoGIFSpec
+	HostOpVideoFrames    uintptr = 231 // a0 = *CVideoFramesSpec
 )
 
 // CVideoGIFSpec registers a looping GIF player by key for later Video() ops.
@@ -66,6 +68,17 @@ type CVideoGIFSpec struct {
 	GIFPtr, GIFLen uintptr
 	Loop           uint8
 	_              [7]byte
+}
+
+// CVideoFramesSpec registers an RGBA frame-sequence player by key.
+type CVideoFramesSpec struct {
+	KeyPtr, KeyLen       uintptr
+	Width, Height        uint32
+	FrameCount           uint32
+	Loop                 uint8
+	_                    [3]byte
+	DurationsPtr         uintptr // frameCount × uint32 milliseconds
+	PixelsPtr, PixelsLen uintptr // contiguous RGBA, frameCount×w×h×4
 }
 
 // Window control sub-opcodes for HostOpWindowControl.

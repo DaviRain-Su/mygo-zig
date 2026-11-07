@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"image"
+	"io"
 	"math"
 	"strconv"
 	"sync"
@@ -148,6 +150,8 @@ const (
 	opToastActionBtn   uint16 = 317
 	opDragMIME         uint16 = 318
 	opDropMIME         uint16 = 319
+	opDragMIMELazy     uint16 = 320
+	opAddToast         uint16 = 321
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -325,7 +329,44 @@ type gifAsset struct {
 	loop bool
 }
 
-var gifRegistry sync.Map // key → gifAsset
+type framesAsset struct {
+	w, h   int
+	loop  bool
+	frames []frameRGBA
+}
+
+type frameRGBA struct {
+	pix []byte
+	dur time.Duration
+}
+
+var (
+	gifRegistry    sync.Map // key → gifAsset
+	framesRegistry sync.Map // key → framesAsset
+)
+
+// rgbaFramesDecoder plays a registered RGBA sequence.
+type rgbaFramesDecoder struct {
+	w, h  int
+	frames []frameRGBA
+	i      int
+}
+
+func (d *rgbaFramesDecoder) Next() (mygoui.VideoFrame, error) {
+	if d.i >= len(d.frames) {
+		return mygoui.VideoFrame{}, io.EOF
+	}
+	f := d.frames[d.i]
+	d.i++
+	img := image.NewRGBA(image.Rect(0, 0, d.w, d.h))
+	copy(img.Pix, f.pix)
+	return mygoui.VideoFrame{Image: img, Duration: f.dur}, nil
+}
+
+func (d *rgbaFramesDecoder) Rewind() error {
+	d.i = 0
+	return nil
+}
 
 var (
 	activeFrames   []*uiFrame
@@ -405,6 +446,35 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
 		data := host.CopyBytes(spec.GIFPtr, spec.GIFLen)
 		gifRegistry.Store(key, gifAsset{data: data, loop: spec.Loop != 0})
+		return 0
+	case host.HostOpVideoFrames:
+		spec := host.PtrTo[host.CVideoFramesSpec](a0)
+		if spec == nil || spec.KeyLen == 0 || spec.FrameCount == 0 || spec.Width == 0 || spec.Height == 0 {
+			host.SetError(errors.New("zighost: video frames registration needs key, size, and frames"))
+			return ^uintptr(0)
+		}
+		w, h, n := int(spec.Width), int(spec.Height), int(spec.FrameCount)
+		frameBytes := w * h * 4
+		need := frameBytes * n
+		if int(spec.PixelsLen) < need {
+			host.SetError(fmt.Errorf("zighost: video frames pixels too short (%d < %d)", spec.PixelsLen, need))
+			return ^uintptr(0)
+		}
+		pix := host.CopyBytes(spec.PixelsPtr, uintptr(need))
+		durs := host.Uint32View(spec.DurationsPtr, uintptr(n))
+		frames := make([]frameRGBA, n)
+		for i := range frames {
+			start := i * frameBytes
+			chunk := make([]byte, frameBytes)
+			copy(chunk, pix[start:start+frameBytes])
+			dur := 100 * time.Millisecond
+			if i < len(durs) && durs[i] > 0 {
+				dur = time.Duration(durs[i]) * time.Millisecond
+			}
+			frames[i] = frameRGBA{pix: chunk, dur: dur}
+		}
+		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
+		framesRegistry.Store(key, framesAsset{w: w, h: h, loop: spec.Loop != 0, frames: frames})
 		return 0
 	}
 	return ^uintptr(0)
@@ -771,6 +841,25 @@ func writeChosenID(out *cUIQuery, savedBufPtr, savedBufCap uintptr, chosenID str
 		}
 		out.TextLen = uintptr(n)
 	}
+}
+
+// parseMIMETape reads the dragMIME wire format: u16 count, then (str, str)* pairs.
+func parseMIMETape(b []byte) ([]transfer.Representation, bool) {
+	r := tapeReader{b: b}
+	n, ok := r.u16()
+	if !ok {
+		return nil, false
+	}
+	reps := make([]transfer.Representation, 0, int(n))
+	for range int(n) {
+		format, ok1 := r.str()
+		payload, ok2 := r.str()
+		if !ok1 || !ok2 {
+			return nil, false
+		}
+		reps = append(reps, transfer.Bytes(transfer.Format(format), []byte(payload)))
+	}
+	return reps, true
 }
 
 func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
@@ -2197,23 +2286,33 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			}
 			p := f.host.videos[key]
 			if p == nil {
-				raw, ok := gifRegistry.Load(key)
-				if !ok {
-					host.SetError(fmt.Errorf("zighost: video %q not registered (call registerVideoGIF first)", key))
+				var (
+					dec  mygoui.VideoDecoder
+					loop bool
+					err  error
+				)
+				if raw, ok := gifRegistry.Load(key); ok {
+					asset := raw.(gifAsset)
+					dec, err = mygoui.NewGIFDecoder(asset.data)
+					loop = asset.loop
+				} else if raw, ok := framesRegistry.Load(key); ok {
+					asset := raw.(framesAsset)
+					dec = &rgbaFramesDecoder{w: asset.w, h: asset.h, frames: asset.frames}
+					loop = asset.loop
+				} else {
+					host.SetError(fmt.Errorf("zighost: video %q not registered (registerVideoGIF/Frames first)", key))
 					return
 				}
-				asset := raw.(gifAsset)
-				d, err := mygoui.NewGIFDecoder(asset.data)
 				if err != nil {
 					host.SetError(err)
 					return
 				}
-				p, err = mygoui.NewVideoPlayer(d)
+				p, err = mygoui.NewVideoPlayer(dec)
 				if err != nil {
 					host.SetError(err)
 					return
 				}
-				if asset.loop {
+				if loop {
 					p.SetLoop(true)
 				}
 				f.host.videos[key] = p
@@ -2369,11 +2468,9 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			f.cur = parts.Root
 			if out != nil {
 				out.BoolVal = u8Bool(ts.Action != "")
-				// Title\nDescription\nType into text buf
-				payload := ts.Title + "\n" + ts.Description + "\n" + ts.Type
-				if ts.Action != "" {
-					payload += "\n" + ts.Action
-				}
+				// Title\nDescription\nType\nAction\nData
+				dataStr, _ := ts.Data.(string)
+				payload := ts.Title + "\n" + ts.Description + "\n" + ts.Type + "\n" + ts.Action + "\n" + dataStr
 				writeChosenID(out, savedBufPtr, savedBufCap, payload)
 			}
 
@@ -2454,6 +2551,68 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				return
 			}
 			f.cur = f.cur.DragData(transfer.New(transfer.NewItem(reps...)))
+
+		case opDragMIMELazy:
+			// Advertised formats + Zig provider called when the gesture starts.
+			n, ok1 := r.u16()
+			cbID, ok2 := r.u64()
+			ud, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			formats := make([]transfer.Format, 0, int(n))
+			for range int(n) {
+				fmtName, okF := r.str()
+				if !okF {
+					return
+				}
+				formats = append(formats, transfer.Format(fmtName))
+			}
+			if len(formats) == 0 {
+				return
+			}
+			wh := f.host
+			f.cur = f.cur.DragDataFrom(func() transfer.Data {
+				buf := make([]byte, 64*1024)
+				nWritten := wh.callZig(host.ZigEventUIProvide, uintptr(cbID), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), uintptr(ud))
+				if nWritten == 0 || nWritten > uintptr(len(buf)) {
+					// Fall back to empty text so the drag still starts.
+					return transfer.TextData("")
+				}
+				reps, ok := parseMIMETape(buf[:nWritten])
+				if !ok || len(reps) == 0 {
+					return transfer.TextData("")
+				}
+				return transfer.New(transfer.NewItem(reps...))
+			})
+
+		case opAddToast:
+			title, ok1 := r.str()
+			desc, ok2 := r.str()
+			typ, ok3 := r.str()
+			data, ok4 := r.str()
+			action, ok5 := r.str()
+			timeoutMS, ok6 := r.i32()
+			cbID, ok7 := r.u64()
+			ud, ok8 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 {
+				return
+			}
+			ts := mygoui.Toast{
+				Title:       title,
+				Description: desc,
+				Type:        typ,
+				Data:        data,
+				Action:      action,
+				Timeout:     time.Duration(timeoutMS) * time.Millisecond,
+			}
+			if action != "" && cbID != 0 {
+				wh := f.host
+				ts.OnAction = func() {
+					wh.callZig(host.ZigEventUIAction, uintptr(cbID), 0, 0, uintptr(ud))
+				}
+			}
+			c.AddToast(ts)
 
 		case opDropData:
 			opts := transfer.DropOptions{

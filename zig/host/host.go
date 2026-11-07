@@ -334,7 +334,7 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return ChartDispatch(op, a0, a1, a2, a3)
 	}
-	if op == HostOpVideoGIF {
+	if op == HostOpVideoGIF || op == HostOpVideoFrames {
 		if UIDispatch == nil {
 			SetError(errors.New("zighost: UI support not linked (import _ \"github.com/egoist/mygo/zig/host/ui\")"))
 			return ^uintptr(0)

@@ -122,6 +122,17 @@ pub const Element = struct {
         return self;
     }
 
+    pub fn dragMIMELazy(
+        self: Element,
+        formats: []const []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime provideFn: fn (StatePtr, []u8) usize,
+    ) Element {
+        self.ctx.dragMIMELazy(formats, StatePtr, state, provideFn);
+        return self;
+    }
+
     pub fn dropMIME(self: Element, formats: []const []const u8, buf: []u8, len: *usize) bool {
         return self.ctx.dropMIME(formats, buf, len);
     }

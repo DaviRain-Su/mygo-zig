@@ -85,6 +85,7 @@ var handWrittenZigNames = map[string]bool{
 	"drawObjects":       true,
 	"dragMIME":          true,
 	"dropMIME":          true,
+	"dragMIMELazy":      true,
 }
 
 func toCamel(s string) string {
@@ -465,6 +466,17 @@ func writeZigElement(methods []methodSpec) {
 
     pub fn dragMIME(self: Element, parts: []const struct { []const u8, []const u8 }) Element {
         self.ctx.dragMIME(parts);
+        return self;
+    }
+
+    pub fn dragMIMELazy(
+        self: Element,
+        formats: []const []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime provideFn: fn (StatePtr, []u8) usize,
+    ) Element {
+        self.ctx.dragMIMELazy(formats, StatePtr, state, provideFn);
         return self;
     }
 

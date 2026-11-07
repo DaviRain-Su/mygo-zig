@@ -47,6 +47,7 @@ pub const HostOp = enum(usize) {
     area_chart = 222,
     pie_chart = 223,
     video_gif = 230,
+    video_frames = 231,
 };
 
 pub const WinCtl = enum(usize) {
@@ -83,6 +84,7 @@ const ZigEvent = enum(usize) {
     ui_outline_row = 14,
     ui_route = 15,
     ui_outline_cell = 16,
+    ui_provide = 17,
 };
 
 pub const CStr = extern struct {
@@ -192,6 +194,8 @@ pub var ui_table_cell_count: usize = 0;
 
 pub var ui_action_handlers: [64]ui.RawActionHandler = undefined;
 pub var ui_action_count: usize = 0;
+pub var ui_provide_handlers: [32]ui.RawProvideHandler = undefined;
+pub var ui_provide_count: usize = 0;
 
 pub var ui_grid_item_handlers: [64]ui.RawGridItemHandler = undefined;
 pub var ui_grid_item_count: usize = 0;
@@ -292,6 +296,12 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_action_count) return 0;
                     ui_action_handlers[a0 - 1](a3);
                     return 0;
+                },
+                .ui_provide => {
+                    if (a0 == 0 or a0 > ui_provide_count) return 0;
+                    const buf: []u8 = if (a1 != 0 and a2 > 0) @as([*]u8, @ptrFromInt(a1))[0..a2] else &.{};
+                    const n = ui_provide_handlers[a0 - 1](buf, a3);
+                    return @intCast(n);
                 },
                 .ui_grid_item => {
                     if (a0 == 0 or a0 > ui_grid_item_count) return 0;

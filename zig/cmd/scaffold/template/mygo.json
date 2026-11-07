@@ -1,0 +1,5 @@
+{
+  "name": "{{NAME}}",
+  "identifier": "{{IDENT}}",
+  "version": "0.1.0"
+}
