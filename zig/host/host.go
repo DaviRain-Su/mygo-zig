@@ -313,6 +313,20 @@ func takeReply(id uintptr) *replyState {
 }
 
 func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
+	if op == HostOpMarkdownView {
+		if MarkdownDispatch == nil {
+			SetError(errors.New("zighost: markdown not linked (import _ \"github.com/egoist/mygo/zig/host/markdown\")"))
+			return ^uintptr(0)
+		}
+		return MarkdownDispatch(a0, a1, a2, a3)
+	}
+	if op == HostOpEditorView || op == HostOpDiffView {
+		if EditorDispatch == nil {
+			SetError(errors.New("zighost: editor not linked (import _ \"github.com/egoist/mygo/zig/host/editor\")"))
+			return ^uintptr(0)
+		}
+		return EditorDispatch(op, a0, a1, a2, a3)
+	}
 	if op >= HostOpUIBase {
 		if UIDispatch == nil {
 			SetError(errors.New("zighost: UI support not linked (import _ \"github.com/egoist/mygo/zig/host/ui\")"))

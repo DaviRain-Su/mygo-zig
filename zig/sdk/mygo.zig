@@ -38,6 +38,10 @@ pub const HostOp = enum(usize) {
     window_new_ui = 100,
     ui_flush = 101,
     ui_paint_flush = 102,
+
+    markdown_view = 200,
+    editor_view = 210,
+    diff_view = 211,
 };
 
 pub const WinCtl = enum(usize) {
@@ -67,6 +71,8 @@ const ZigEvent = enum(usize) {
     ui_view = 7,
     ui_list_row = 8,
     ui_paint = 9,
+    ui_subview = 10,
+    ui_table_cell = 11,
 };
 
 pub const CStr = extern struct {
@@ -168,6 +174,12 @@ pub var ui_row_count: usize = 0;
 pub var ui_paint_handlers: [128]ui.RawPaintHandler = undefined;
 pub var ui_paint_count: usize = 0;
 
+pub var ui_subview_handlers: [128]ui.RawViewHandler = undefined;
+pub var ui_subview_count: usize = 0;
+
+pub var ui_table_cell_handlers: [64]ui.RawTableCellHandler = undefined;
+pub var ui_table_cell_count: usize = 0;
+
 var bytes_handlers: [32]RawBytesHandler = undefined;
 var bytes_count: usize = 0;
 
@@ -237,6 +249,18 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_paint_count) return 0;
                     const rect: *const ui.CRect = @ptrFromInt(a2);
                     ui_paint_handlers[a0 - 1](a1, rect, a3);
+                    return 0;
+                },
+                .ui_subview => {
+                    if (a0 == 0 or a0 > ui_subview_count) return 0;
+                    const info: *const ui.CFrameInfo = @ptrFromInt(a2);
+                    ui_subview_handlers[a0 - 1](a1, info, a3);
+                    return 0;
+                },
+                .ui_table_cell => {
+                    if (a0 == 0 or a0 > ui_table_cell_count) return 0;
+                    const info: *const ui.CTableCellInfo = @ptrFromInt(a2);
+                    ui_table_cell_handlers[a0 - 1](a1, info, a3);
                     return 0;
                 },
             }

@@ -1,7 +1,8 @@
 //go:build !js
 
 // Package ui registers the GPU-accelerated Native UI (`package ui`) CommandBuffer,
-// virtualized `List`, and custom `Painter` support into `zig/host`.
+// virtualized `List` & `Table`, interactive `Split`, `Tabs`, `Select`, `Sidebar`,
+// `Collapsible`, and custom `Painter` support into `zig/host`.
 //
 // Import with `_ "github.com/egoist/mygo/zig/host/ui"` in apps that show Native UI.
 package ui
@@ -13,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
+	"time"
 	"unsafe"
 
 	"github.com/egoist/mygo"
@@ -42,10 +45,60 @@ const (
 	opTextInput     uint16 = 14
 	opList          uint16 = 15
 
+	opBadge     uint16 = 16
+	opLink      uint16 = 17
+	opProgress  uint16 = 18
+	opMeter     uint16 = 19
+
 	opPushParent        uint16 = 20
 	opPopParent         uint16 = 21
 	opDraw              uint16 = 22
 	opNumericTransition uint16 = 23
+
+	opTabs        uint16 = 24
+	opSegmented   uint16 = 25
+	opSelect      uint16 = 26
+	opRadio       uint16 = 27
+	opTextArea    uint16 = 28
+	opCollapsible uint16 = 29
+	opSplit       uint16 = 30
+	opSidebar     uint16 = 31
+	opTable       uint16 = 32
+	opCombobox    uint16 = 33
+	opAlertDialog uint16 = 34
+
+	opSpinner          uint16 = 35
+	opSearchField      uint16 = 36
+	opAutocomplete     uint16 = 37
+	opNumberInput      uint16 = 38
+	opStepper          uint16 = 39
+	opStepSlider       uint16 = 40
+	opRangeSlider      uint16 = 41
+	opRating           uint16 = 42
+	opDateInput        uint16 = 43
+	opTimeInput        uint16 = 44
+	opColorPicker      uint16 = 45
+	opColorWell        uint16 = 46
+	opAvatar           uint16 = 47
+	opBreadcrumbs      uint16 = 48
+	opScrollHorizontal uint16 = 49
+	opScrollBoth       uint16 = 50
+	opDecimalInput     uint16 = 51
+	opCheckboxGroup    uint16 = 52
+	opRadioGroup       uint16 = 53
+	opToggleGroup      uint16 = 54
+	opFieldset         uint16 = 55
+	opAccordion        uint16 = 56
+	opAccordionItem    uint16 = 57
+	opModal            uint16 = 58
+	opPopover          uint16 = 59
+	opCalendar         uint16 = 60
+	opField            uint16 = 61
+	opForm             uint16 = 62
+	opOverlay          uint16 = 63
+	opTokenField       uint16 = 64
+	opTree             uint16 = 65
+	opTreeItem         uint16 = 66
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -104,6 +157,15 @@ type cUIListRowInfo struct {
 	Theme    cUITheme
 }
 
+type cUITableCellInfo struct {
+	WindowID int32
+	Row      int32
+	Col      int32
+	Selected uint8
+	_        [3]byte
+	Theme    cUITheme
+}
+
 type cUIRect struct {
 	X, Y, W, H float32
 	NowMillis  int64
@@ -113,6 +175,7 @@ type cUIQuery struct {
 	BoolVal    uint8
 	_          [7]byte
 	NumVal     float64
+	NumVal2    float64
 	IntVal     int64
 	TextBufPtr uintptr
 	TextBufCap uintptr
@@ -144,6 +207,22 @@ var (
 	activeFrames   []*uiFrame
 	activePainters []*mygoui.Painter
 )
+
+// BindFrameElement builds an element inside the active frame for opt-in sibling
+// packages (`zig/host/markdown`, `zig/host/editor`) and sets it as `f.cur` so
+// subsequent Element modifier opcodes apply to it.
+func BindFrameElement(frameHandle uintptr, build func(c *mygoui.Context, winID int32) mygoui.Element) bool {
+	idx := int(frameHandle) - 1
+	if idx < 0 || idx >= len(activeFrames) {
+		return false
+	}
+	f := activeFrames[idx]
+	if f == nil {
+		return false
+	}
+	f.cur = build(f.ctx, f.host.winID)
+	return true
+}
 
 func packColor(c mygoui.Color) uint32 {
 	return uint32(c.R)<<24 | uint32(c.G)<<16 | uint32(c.B)<<8 | uint32(c.A)
@@ -260,6 +339,20 @@ func runFrame(c *mygoui.Context, wh *uiWindowHost, th cUITheme, fn func(handle u
 	activeFrames = activeFrames[:len(activeFrames)-1]
 }
 
+func runSubview(c *mygoui.Context, wh *uiWindowHost, th cUITheme, cbID, ud uintptr) {
+	w, h := c.Size()
+	info := cUIFrameInfo{
+		WindowID:     wh.winID,
+		Width:        w,
+		Height:       h,
+		WindowActive: 1,
+		Theme:        th,
+	}
+	runFrame(c, wh, th, func(subHandle uintptr) {
+		wh.callZig(host.ZigEventUISubview, cbID, subHandle, uintptr(unsafe.Pointer(&info)), ud)
+	})
+}
+
 type tapeReader struct {
 	b []byte
 	i int
@@ -332,6 +425,22 @@ func (r *tapeReader) str() (string, bool) {
 	return s, true
 }
 
+func (r *tapeReader) strList() ([]string, bool) {
+	cnt, ok := r.u16()
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, int(cnt))
+	for i := range int(cnt) {
+		s, ok := r.str()
+		if !ok {
+			return nil, false
+		}
+		out[i] = s
+	}
+	return out, true
+}
+
 func keyedCtx(c *mygoui.Context, key string) *mygoui.Context {
 	if key != "" {
 		return c.Key(key)
@@ -344,6 +453,30 @@ func u8Bool(b bool) uint8 {
 		return 1
 	}
 	return 0
+}
+
+// writeStrList packs strings as u16 count + length-prefixed UTF-8 into dst.
+// Returns bytes written (0 if they do not fit).
+func writeStrList(dst []byte, items []string) int {
+	if len(dst) < 2 {
+		return 0
+	}
+	need := 2
+	for _, s := range items {
+		need += 4 + len(s)
+	}
+	if need > len(dst) {
+		return 0
+	}
+	binary.LittleEndian.PutUint16(dst[0:2], uint16(len(items)))
+	off := 2
+	for _, s := range items {
+		binary.LittleEndian.PutUint32(dst[off:off+4], uint32(len(s)))
+		off += 4
+		copy(dst[off:off+len(s)], s)
+		off += len(s)
+	}
+	return off
 }
 
 func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
@@ -413,6 +546,33 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				return
 			}
 			f.cur = mygoui.Text(c, s)
+		case opBadge:
+			s, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = mygoui.Badge(c, s)
+		case opLink:
+			lbl, ok1 := r.str()
+			url, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return
+			}
+			f.cur = mygoui.Link(c, lbl, url)
+		case opProgress:
+			val, ok := r.f64()
+			if !ok {
+				return
+			}
+			f.cur = mygoui.Progress(c, val)
+		case opMeter:
+			val, ok1 := r.f64()
+			lo, ok2 := r.f64()
+			hi, ok3 := r.f64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			f.cur = mygoui.Meter(c, val, lo, hi, nil)
 		case opButton:
 			key, ok1 := r.str()
 			label, ok2 := r.str()
@@ -475,14 +635,18 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				out.NumVal = val
 				out.BoolVal = u8Bool(f.cur.Changed())
 			}
-		case opTextInput:
+		case opTextInput, opTextArea:
 			key, ok1 := r.str()
 			val, ok2 := r.str()
 			if !ok1 || !ok2 {
 				return
 			}
 			curText := val
-			f.cur = mygoui.TextInput(keyedCtx(c, key), &curText)
+			if op == opTextArea {
+				f.cur = mygoui.TextArea(keyedCtx(c, key), &curText)
+			} else {
+				f.cur = mygoui.TextInput(keyedCtx(c, key), &curText)
+			}
 			if out != nil && (curText != val || f.cur.Changed()) {
 				out.BoolVal = 1
 				if savedBufPtr != 0 && savedBufCap > 0 {
@@ -492,6 +656,190 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 					}
 					out.TextLen = uintptr(n)
 				}
+			}
+
+		case opTabs:
+			key, ok1 := r.str()
+			selIn, ok2 := r.i32()
+			labels, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			sel := int(selIn)
+			f.cur = mygoui.Tabs(keyedCtx(c, key), &sel, labels...)
+			if out != nil {
+				out.IntVal = int64(sel)
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opSegmented:
+			key, ok1 := r.str()
+			selIn, ok2 := r.i32()
+			labels, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			sel := int(selIn)
+			f.cur = mygoui.Segmented(keyedCtx(c, key), &sel, labels...)
+			if out != nil {
+				out.IntVal = int64(sel)
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opSelect:
+			key, ok1 := r.str()
+			selIn, ok2 := r.i32()
+			options, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			chosen := ""
+			if int(selIn) >= 0 && int(selIn) < len(options) {
+				chosen = options[selIn]
+			}
+			f.cur = mygoui.Select(keyedCtx(c, key), &chosen, options)
+			nextIdx := -1
+			for i, o := range options {
+				if o == chosen {
+					nextIdx = i
+					break
+				}
+			}
+			if out != nil {
+				out.IntVal = int64(nextIdx)
+				out.BoolVal = u8Bool(nextIdx != int(selIn))
+			}
+
+		case opAlertDialog:
+			openByte, ok1 := r.u8()
+			title, ok2 := r.str()
+			msg, ok3 := r.str()
+			buttons, ok4 := r.strList()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			open := openByte != 0
+			chosen := mygoui.AlertDialog(c, &open, title, msg, buttons...)
+			if out != nil {
+				out.BoolVal = u8Bool(open)
+				out.IntVal = int64(chosen)
+			}
+
+		case opCombobox:
+			key, ok1 := r.str()
+			selIn, ok2 := r.i32()
+			curText, ok3 := r.str()
+			options, ok4 := r.strList()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			chosen := curText
+			if chosen == "" && int(selIn) >= 0 && int(selIn) < len(options) {
+				chosen = options[selIn]
+			}
+			f.cur = mygoui.Combobox(keyedCtx(c, key), &chosen, options)
+			nextIdx := -1
+			for i, o := range options {
+				if o == chosen {
+					nextIdx = i
+					break
+				}
+			}
+			if out != nil {
+				out.IntVal = int64(nextIdx)
+				changed := nextIdx != int(selIn) || chosen != curText || f.cur.Changed()
+				out.BoolVal = u8Bool(changed)
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(chosen), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), chosen[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opRadio:
+			key, ok1 := r.str()
+			selIn, ok2 := r.i32()
+			valIn, ok3 := r.i32()
+			label, ok4 := r.str()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			sel := int(selIn)
+			f.cur = mygoui.Radio(keyedCtx(c, key), &sel, int(valIn), label)
+			if out != nil {
+				out.IntVal = int64(sel)
+				out.BoolVal = u8Bool(sel != int(selIn))
+			}
+
+		case opCollapsible:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			openByte, ok3 := r.u8()
+			bodyCbID, ok4 := r.u64()
+			bodyUD, ok5 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			open := openByte != 0
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Collapsible(keyedCtx(c, key), label, &open, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+			if out != nil {
+				out.BoolVal = u8Bool(open)
+			}
+
+		case opSplit:
+			key, ok1 := r.str()
+			mode, ok2 := r.u8()
+			size, ok3 := r.f32()
+			firstCbID, ok4 := r.u64()
+			secondCbID, ok5 := r.u64()
+			ud, ok6 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+				return
+			}
+			wh, th := f.host, f.theme
+			firstFn := func() { runSubview(c, wh, th, uintptr(firstCbID), uintptr(ud)) }
+			secondFn := func() { runSubview(c, wh, th, uintptr(secondCbID), uintptr(ud)) }
+			vertical := mode&1 != 0
+			percent := mode&2 != 0
+			switch {
+			case vertical && percent:
+				f.cur = mygoui.SplitVerticalPercent(keyedCtx(c, key), &size, firstFn, secondFn)
+			case percent:
+				f.cur = mygoui.SplitPercent(keyedCtx(c, key), &size, firstFn, secondFn)
+			case vertical:
+				f.cur = mygoui.SplitVertical(keyedCtx(c, key), &size, firstFn, secondFn)
+			default:
+				f.cur = mygoui.Split(keyedCtx(c, key), &size, firstFn, secondFn)
+			}
+			if out != nil {
+				out.NumVal = float64(size)
+			}
+
+		case opSidebar:
+			key, ok1 := r.str()
+			selIn, ok2 := r.i32()
+			items, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			chosenID := strconv.Itoa(int(selIn))
+			f.cur = mygoui.Sidebar(keyedCtx(c, key), &chosenID, func() {
+				for i, label := range items {
+					mygoui.SidebarItem(c, strconv.Itoa(i), nil, label)
+				}
+			})
+			nextIdx, err := strconv.Atoi(chosenID)
+			if err != nil {
+				nextIdx = int(selIn)
+			}
+			if out != nil {
+				out.IntVal = int64(nextIdx)
+				out.BoolVal = u8Bool(nextIdx != int(selIn))
 			}
 
 		case opList:
@@ -511,8 +859,7 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				zl.selected = int(selectedIn)
 			}
 			zl.state.Selected = &zl.selected
-			wh := f.host
-			th := f.theme
+			wh, th := f.host, f.theme
 			f.cur = mygoui.List(keyedCtx(c, key), &zl.state, int(count)).Rows(func(row mygoui.ListRow) {
 				rowInfo := cUIListRowInfo{
 					WindowID: wh.winID,
@@ -529,6 +876,445 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			if out != nil {
 				out.IntVal = int64(zl.selected)
 				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opTable:
+			key, ok1 := r.str()
+			colCount, ok2 := r.u16()
+			if !ok1 || !ok2 {
+				return
+			}
+			cols := make([]mygoui.TableColumn, int(colCount))
+			for i := range int(colCount) {
+				title, okT := r.str()
+				w, okW := r.f32()
+				al, okA := r.u8()
+				if !okT || !okW || !okA {
+					return
+				}
+				cols[i] = mygoui.TableColumn{
+					Title: title,
+					ID:    strconv.Itoa(i) + ":" + title,
+					Width: w,
+					Align: mygoui.Align(al),
+				}
+			}
+			rowCount, ok3 := r.i32()
+			selectedIn, ok4 := r.i32()
+			cellCbID, ok5 := r.u64()
+			cellUD, ok6 := r.u64()
+			if !ok3 || !ok4 || !ok5 || !ok6 {
+				return
+			}
+			zl := f.host.lists[key]
+			if zl == nil {
+				zl = &zigList{selected: int(selectedIn)}
+				f.host.lists[key] = zl
+			} else {
+				zl.selected = int(selectedIn)
+			}
+			zl.state.Selected = &zl.selected
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Table(keyedCtx(c, key), &zl.state, cols, int(rowCount), func(row, col int) {
+				cellInfo := cUITableCellInfo{
+					WindowID: wh.winID,
+					Row:      int32(row),
+					Col:      int32(col),
+					Selected: u8Bool(zl.selected == row),
+					Theme:    th,
+				}
+				runFrame(c, wh, th, func(cellHandle uintptr) {
+					wh.callZig(host.ZigEventUITableCell, uintptr(cellCbID), cellHandle, uintptr(unsafe.Pointer(&cellInfo)), uintptr(cellUD))
+				})
+			})
+			if out != nil {
+				out.IntVal = int64(zl.selected)
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opSpinner:
+			f.cur = mygoui.Spinner(c)
+
+		case opSearchField:
+			key, ok1 := r.str()
+			val, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return
+			}
+			curText := val
+			f.cur = mygoui.SearchField(keyedCtx(c, key), &curText)
+			if out != nil && (curText != val || f.cur.Changed()) {
+				out.BoolVal = 1
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(curText), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), curText[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opAutocomplete:
+			key, ok1 := r.str()
+			val, ok2 := r.str()
+			suggestions, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			curText := val
+			f.cur = mygoui.Autocomplete(keyedCtx(c, key), &curText, suggestions)
+			if out != nil && (curText != val || f.cur.Changed()) {
+				out.BoolVal = 1
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(curText), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), curText[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opNumberInput, opStepper, opStepSlider:
+			key, ok1 := r.str()
+			val, ok2 := r.f64()
+			lo, ok3 := r.f64()
+			hi, ok4 := r.f64()
+			step, ok5 := r.f64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			switch op {
+			case opStepper:
+				f.cur = mygoui.Stepper(keyedCtx(c, key), &val, lo, hi, step)
+			case opStepSlider:
+				f.cur = mygoui.StepSlider(keyedCtx(c, key), &val, lo, hi, step)
+			default:
+				f.cur = mygoui.NumberInput(keyedCtx(c, key), &val, lo, hi, step)
+			}
+			if out != nil {
+				out.NumVal = val
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opRangeSlider:
+			key, ok1 := r.str()
+			low, ok2 := r.f64()
+			high, ok3 := r.f64()
+			lo, ok4 := r.f64()
+			hi, ok5 := r.f64()
+			step, ok6 := r.f64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+				return
+			}
+			f.cur = mygoui.RangeSlider(keyedCtx(c, key), &low, &high, lo, hi, step)
+			if out != nil {
+				out.NumVal = low
+				out.NumVal2 = high
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opRating:
+			key, ok1 := r.str()
+			valIn, ok2 := r.i32()
+			maxIn, ok3 := r.i32()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			val := int(valIn)
+			f.cur = mygoui.Rating(keyedCtx(c, key), &val, int(maxIn))
+			if out != nil {
+				out.IntVal = int64(val)
+				out.BoolVal = u8Bool(val != int(valIn))
+			}
+
+		case opDateInput, opTimeInput, opCalendar:
+			key, ok1 := r.str()
+			ms, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			tm := time.UnixMilli(int64(ms)).UTC()
+			switch op {
+			case opTimeInput:
+				f.cur = mygoui.TimeInput(keyedCtx(c, key), &tm)
+			case opCalendar:
+				f.cur = mygoui.Calendar(keyedCtx(c, key), &tm)
+			default:
+				f.cur = mygoui.DateInput(keyedCtx(c, key), &tm)
+			}
+			if out != nil {
+				out.IntVal = tm.UnixMilli()
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opColorPicker, opColorWell:
+			key, ok1 := r.str()
+			rgba, ok2 := r.u32()
+			if !ok1 || !ok2 {
+				return
+			}
+			col := unpackColor(rgba)
+			if op == opColorWell {
+				f.cur = mygoui.ColorWell(keyedCtx(c, key), &col)
+			} else {
+				f.cur = mygoui.ColorPicker(keyedCtx(c, key), &col)
+			}
+			if out != nil {
+				out.IntVal = int64(packColor(col))
+				out.BoolVal = u8Bool(f.cur.Changed())
+			}
+
+		case opAvatar:
+			name, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = mygoui.Avatar(c, name, nil)
+
+		case opBreadcrumbs:
+			key, ok1 := r.str()
+			chosenIn, ok2 := r.i32()
+			items, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			chosen := int(chosenIn)
+			f.cur = mygoui.Breadcrumbs(keyedCtx(c, key), items, &chosen)
+			if out != nil {
+				out.IntVal = int64(chosen)
+				out.BoolVal = u8Bool(chosen != int(chosenIn))
+			}
+
+		case opScrollHorizontal:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = mygoui.ScrollHorizontal(keyedCtx(c, key))
+
+		case opScrollBoth:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = mygoui.ScrollBoth(keyedCtx(c, key))
+
+		case opDecimalInput:
+			key, ok1 := r.str()
+			val, ok2 := r.str()
+			lo, ok3 := r.str()
+			hi, ok4 := r.str()
+			step, ok5 := r.str()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			curText := val
+			f.cur = mygoui.DecimalInput(keyedCtx(c, key), &curText, lo, hi, step)
+			if out != nil && (curText != val || f.cur.Changed()) {
+				out.BoolVal = 1
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(curText), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), curText[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opCheckboxGroup:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			bodyCbID, ok3 := r.u64()
+			bodyUD, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.CheckboxGroup(keyedCtx(c, key), label, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opRadioGroup, opToggleGroup:
+			key, ok1 := r.str()
+			bodyCbID, ok2 := r.u64()
+			bodyUD, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			wh, th := f.host, f.theme
+			body := func() { runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD)) }
+			if op == opToggleGroup {
+				f.cur = mygoui.ToggleGroup(keyedCtx(c, key), body)
+			} else {
+				f.cur = mygoui.RadioGroup(keyedCtx(c, key), body)
+			}
+
+		case opFieldset:
+			key, ok1 := r.str()
+			legend, ok2 := r.str()
+			bodyCbID, ok3 := r.u64()
+			bodyUD, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Fieldset(keyedCtx(c, key), legend, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opAccordion:
+			key, ok1 := r.str()
+			bodyCbID, ok2 := r.u64()
+			bodyUD, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Accordion(keyedCtx(c, key), func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opAccordionItem:
+			key, ok1 := r.str()
+			title, ok2 := r.str()
+			openByte, ok3 := r.u8()
+			bodyCbID, ok4 := r.u64()
+			bodyUD, ok5 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			open := openByte != 0
+			wh, th := f.host, f.theme
+			f.cur = mygoui.AccordionItem(keyedCtx(c, key), title, &open, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+			if out != nil {
+				out.BoolVal = u8Bool(open)
+			}
+
+		case opModal:
+			key, ok1 := r.str()
+			openByte, ok2 := r.u8()
+			bodyCbID, ok3 := r.u64()
+			bodyUD, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			open := openByte != 0
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Modal(keyedCtx(c, key), &open, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+			if out != nil {
+				out.BoolVal = u8Bool(open)
+			}
+
+		case opPopover:
+			openByte, ok1 := r.u8()
+			bodyCbID, ok2 := r.u64()
+			bodyUD, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			open := openByte != 0
+			anchor := f.cur
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Popover(c, anchor, &open, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+			if out != nil {
+				out.BoolVal = u8Bool(open)
+			}
+
+		case opField:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			bodyCbID, ok3 := r.u64()
+			bodyUD, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Field(keyedCtx(c, key), label, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opForm:
+			key, ok1 := r.str()
+			bodyCbID, ok2 := r.u64()
+			bodyUD, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Form(keyedCtx(c, key), func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opOverlay:
+			bodyCbID, ok1 := r.u64()
+			bodyUD, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh, th := f.host, f.theme
+			mygoui.Overlay(c, func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opTokenField:
+			key, ok1 := r.str()
+			tokens, ok2 := r.strList()
+			suggestions, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			cur := append([]string(nil), tokens...)
+			f.cur = mygoui.TokenField(keyedCtx(c, key), &cur, suggestions)
+			if out != nil {
+				out.BoolVal = u8Bool(f.cur.Changed())
+				out.IntVal = int64(len(cur))
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := writeStrList(host.BytesView(savedBufPtr, savedBufCap), cur)
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opTree:
+			key, ok1 := r.str()
+			bodyCbID, ok2 := r.u64()
+			bodyUD, ok3 := r.u64()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Tree(keyedCtx(c, key), func() {
+				runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD))
+			})
+
+		case opTreeItem:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			openByte, ok3 := r.u8()
+			hasKids, ok4 := r.u8()
+			bodyCbID, ok5 := r.u64()
+			bodyUD, ok6 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+				return
+			}
+			open := openByte != 0
+			var openPtr *bool
+			if hasKids != 0 {
+				openPtr = &open
+			}
+			wh, th := f.host, f.theme
+			var kids func()
+			if hasKids != 0 {
+				kids = func() { runSubview(c, wh, th, uintptr(bodyCbID), uintptr(bodyUD)) }
+			}
+			f.cur = mygoui.TreeItem(keyedCtx(c, key), label, openPtr, kids)
+			if out != nil && hasKids != 0 {
+				out.BoolVal = u8Bool(open)
 			}
 
 		case opPushParent:

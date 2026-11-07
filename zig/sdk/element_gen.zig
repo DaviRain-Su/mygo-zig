@@ -83,101 +83,125 @@ pub const Element = struct {
         return self;
     }
 
-    pub fn aspectRatio(self: Element, r: f32) Element {
+    pub fn alignContent(self: Element, a: ui.Align) Element {
         self.ctx.writeOp(104);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn alignItems(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(105);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn alignSelf(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(106);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn aspectRatio(self: Element, r: f32) Element {
+        self.ctx.writeOp(107);
         self.ctx.writeF32(r);
         return self;
     }
 
     pub fn attachEdgeMargin(self: Element, v: f32) Element {
-        self.ctx.writeOp(105);
+        self.ctx.writeOp(108);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn attachedOrigin(self: Element) Element {
-        self.ctx.writeOp(106);
+        self.ctx.writeOp(109);
         return self;
     }
 
     pub fn autoFocus(self: Element) Element {
-        self.ctx.writeOp(107);
+        self.ctx.writeOp(110);
         return self;
     }
 
     pub fn backfaceHidden(self: Element) Element {
-        self.ctx.writeOp(108);
+        self.ctx.writeOp(111);
         return self;
     }
 
     pub fn background(self: Element, p0: Color) Element {
-        self.ctx.writeOp(109);
+        self.ctx.writeOp(112);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn balance(self: Element) Element {
-        self.ctx.writeOp(110);
+        self.ctx.writeOp(113);
         return self;
     }
 
     pub fn basis(self: Element, v: f32) Element {
-        self.ctx.writeOp(111);
+        self.ctx.writeOp(114);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn basisPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(112);
+        self.ctx.writeOp(115);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn blur(self: Element, sigma: f32) Element {
-        self.ctx.writeOp(113);
+        self.ctx.writeOp(116);
         self.ctx.writeF32(sigma);
         return self;
     }
 
     pub fn bold(self: Element) Element {
-        self.ctx.writeOp(114);
+        self.ctx.writeOp(117);
         return self;
     }
 
     pub fn border(self: Element, arg0: f32, p1: Color) Element {
-        self.ctx.writeOp(115);
+        self.ctx.writeOp(118);
         self.ctx.writeF32(arg0);
         self.ctx.writeU32(p1.toU32());
         return self;
     }
 
     pub fn borderColor(self: Element, p0: Color) Element {
-        self.ctx.writeOp(116);
+        self.ctx.writeOp(119);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn borderEndWidth(self: Element, v: f32) Element {
-        self.ctx.writeOp(117);
+        self.ctx.writeOp(120);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn borderStartWidth(self: Element, v: f32) Element {
-        self.ctx.writeOp(118);
+        self.ctx.writeOp(121);
         self.ctx.writeF32(v);
         return self;
     }
 
+    pub fn borderStyle(self: Element, s: ui.BorderStyle) Element {
+        self.ctx.writeOp(122);
+        self.ctx.writeU8(@intFromEnum(s));
+        return self;
+    }
+
     pub fn borderWidth(self: Element, v: f32) Element {
-        self.ctx.writeOp(119);
+        self.ctx.writeOp(123);
         self.ctx.writeU8(1);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn borderWidthValues(self: Element, vals: []const f32) Element {
-        self.ctx.writeOp(119);
+        self.ctx.writeOp(123);
         const n: usize = @min(vals.len, 4);
         self.ctx.writeU8(@intCast(n));
         for (vals[0..n]) |v| self.ctx.writeF32(v);
@@ -185,63 +209,63 @@ pub const Element = struct {
     }
 
     pub fn bottom(self: Element, v: f32) Element {
-        self.ctx.writeOp(120);
+        self.ctx.writeOp(124);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn bottomPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(121);
+        self.ctx.writeOp(125);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn browse(self: Element) Element {
-        self.ctx.writeOp(122);
+        self.ctx.writeOp(126);
         return self;
     }
 
     pub fn busy(self: Element, on: bool) Element {
-        self.ctx.writeOp(123);
+        self.ctx.writeOp(127);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn cache(self: Element) Element {
-        self.ctx.writeOp(124);
+        self.ctx.writeOp(128);
         return self;
     }
 
     pub fn caretColor(self: Element, p0: Color) Element {
-        self.ctx.writeOp(125);
+        self.ctx.writeOp(129);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn caretWidth(self: Element, arg0: f32) Element {
-        self.ctx.writeOp(126);
+        self.ctx.writeOp(130);
         self.ctx.writeF32(arg0);
         return self;
     }
 
     pub fn center(self: Element) Element {
-        self.ctx.writeOp(127);
+        self.ctx.writeOp(131);
         return self;
     }
 
     pub fn checked(self: Element, on: bool) Element {
-        self.ctx.writeOp(128);
+        self.ctx.writeOp(132);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn clip(self: Element) Element {
-        self.ctx.writeOp(129);
+        self.ctx.writeOp(133);
         return self;
     }
 
     pub fn clipInset(self: Element, arg0: f32, arg1: f32, arg2: f32, arg3: f32, arg4: f32) Element {
-        self.ctx.writeOp(130);
+        self.ctx.writeOp(134);
         self.ctx.writeF32(arg0);
         self.ctx.writeF32(arg1);
         self.ctx.writeF32(arg2);
@@ -251,7 +275,7 @@ pub const Element = struct {
     }
 
     pub fn clipInsetPercent(self: Element, arg0: f32, arg1: f32, arg2: f32, arg3: f32, arg4: f32) Element {
-        self.ctx.writeOp(131);
+        self.ctx.writeOp(135);
         self.ctx.writeF32(arg0);
         self.ctx.writeF32(arg1);
         self.ctx.writeF32(arg2);
@@ -261,219 +285,231 @@ pub const Element = struct {
     }
 
     pub fn clipX(self: Element) Element {
-        self.ctx.writeOp(132);
+        self.ctx.writeOp(136);
         return self;
     }
 
     pub fn clipY(self: Element) Element {
-        self.ctx.writeOp(133);
+        self.ctx.writeOp(137);
         return self;
     }
 
     pub fn column(self: Element) Element {
-        self.ctx.writeOp(134);
+        self.ctx.writeOp(138);
         return self;
     }
 
     pub fn columnCount(self: Element, n: i32) Element {
-        self.ctx.writeOp(135);
-        self.ctx.writeI32(n);
-        return self;
-    }
-
-    pub fn columnIndex(self: Element, i: i32) Element {
-        self.ctx.writeOp(136);
-        self.ctx.writeI32(i);
-        return self;
-    }
-
-    pub fn columnSpan(self: Element, n: i32) Element {
-        self.ctx.writeOp(137);
-        self.ctx.writeI32(n);
-        return self;
-    }
-
-    pub fn columnStart(self: Element, n: i32) Element {
-        self.ctx.writeOp(138);
-        self.ctx.writeI32(n);
-        return self;
-    }
-
-    pub fn columns(self: Element, n: i32) Element {
         self.ctx.writeOp(139);
         self.ctx.writeI32(n);
         return self;
     }
 
-    pub fn debug(self: Element) Element {
+    pub fn columnIndex(self: Element, i: i32) Element {
         self.ctx.writeOp(140);
+        self.ctx.writeI32(i);
+        return self;
+    }
+
+    pub fn columnSpan(self: Element, n: i32) Element {
+        self.ctx.writeOp(141);
+        self.ctx.writeI32(n);
+        return self;
+    }
+
+    pub fn columnStart(self: Element, n: i32) Element {
+        self.ctx.writeOp(142);
+        self.ctx.writeI32(n);
+        return self;
+    }
+
+    pub fn columns(self: Element, n: i32) Element {
+        self.ctx.writeOp(143);
+        self.ctx.writeI32(n);
+        return self;
+    }
+
+    pub fn cursor(self: Element, p0: ui.Cursor) Element {
+        self.ctx.writeOp(144);
+        self.ctx.writeU8(@intFromEnum(p0));
+        return self;
+    }
+
+    pub fn debug(self: Element) Element {
+        self.ctx.writeOp(145);
         return self;
     }
 
     pub fn decorationColor(self: Element, p0: Color) Element {
-        self.ctx.writeOp(141);
+        self.ctx.writeOp(146);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn decorationThickness(self: Element, v: f32) Element {
-        self.ctx.writeOp(142);
+        self.ctx.writeOp(147);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn description(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(143);
+        self.ctx.writeOp(148);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn dimDisabled(self: Element, dim: bool) Element {
-        self.ctx.writeOp(144);
+        self.ctx.writeOp(149);
         self.ctx.writeU8(@intFromBool(dim));
         return self;
     }
 
+    pub fn direction(self: Element, d: ui.Direction) Element {
+        self.ctx.writeOp(150);
+        self.ctx.writeU8(@intFromEnum(d));
+        return self;
+    }
+
     pub fn disabled(self: Element, d: bool) Element {
-        self.ctx.writeOp(145);
+        self.ctx.writeOp(151);
         self.ctx.writeU8(@intFromBool(d));
         return self;
     }
 
     pub fn dividers(self: Element, arg0: f32, p1: Color) Element {
-        self.ctx.writeOp(146);
+        self.ctx.writeOp(152);
         self.ctx.writeF32(arg0);
         self.ctx.writeU32(p1.toU32());
         return self;
     }
 
     pub fn dottedUnderline(self: Element) Element {
-        self.ctx.writeOp(147);
+        self.ctx.writeOp(153);
         return self;
     }
 
     pub fn dragWindow(self: Element) Element {
-        self.ctx.writeOp(148);
+        self.ctx.writeOp(154);
         return self;
     }
 
     pub fn ellipsis(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(149);
+        self.ctx.writeOp(155);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn end(self: Element, v: f32) Element {
-        self.ctx.writeOp(150);
+        self.ctx.writeOp(156);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn endPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(151);
+        self.ctx.writeOp(157);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn @"error"(self: Element, msg: []const u8) Element {
-        self.ctx.writeOp(152);
+        self.ctx.writeOp(158);
         self.ctx.writeStr(msg);
         return self;
     }
 
     pub fn expanded(self: Element, open: bool) Element {
-        self.ctx.writeOp(153);
+        self.ctx.writeOp(159);
         self.ctx.writeU8(@intFromBool(open));
         return self;
     }
 
     pub fn fill(self: Element) Element {
-        self.ctx.writeOp(154);
+        self.ctx.writeOp(160);
         return self;
     }
 
     pub fn fillHeight(self: Element) Element {
-        self.ctx.writeOp(155);
+        self.ctx.writeOp(161);
         return self;
     }
 
     pub fn fillWidth(self: Element) Element {
-        self.ctx.writeOp(156);
+        self.ctx.writeOp(162);
         return self;
     }
 
     pub fn fixedLineHeight(self: Element, v: f32) Element {
-        self.ctx.writeOp(157);
+        self.ctx.writeOp(163);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn focus(self: Element) Element {
-        self.ctx.writeOp(158);
+        self.ctx.writeOp(164);
         return self;
     }
 
     pub fn focusRing(self: Element, show: bool) Element {
-        self.ctx.writeOp(159);
+        self.ctx.writeOp(165);
         self.ctx.writeU8(@intFromBool(show));
         return self;
     }
 
     pub fn focusRingColor(self: Element, color: Color) Element {
-        self.ctx.writeOp(160);
+        self.ctx.writeOp(166);
         self.ctx.writeU32(color.toU32());
         return self;
     }
 
     pub fn focusRingOffset(self: Element, d: f32) Element {
-        self.ctx.writeOp(161);
+        self.ctx.writeOp(167);
         self.ctx.writeF32(d);
         return self;
     }
 
     pub fn focusable(self: Element) Element {
-        self.ctx.writeOp(162);
+        self.ctx.writeOp(168);
         return self;
     }
 
     pub fn font(self: Element, family: []const u8) Element {
-        self.ctx.writeOp(163);
+        self.ctx.writeOp(169);
         self.ctx.writeStr(family);
         return self;
     }
 
     pub fn fontSize(self: Element, v: f32) Element {
-        self.ctx.writeOp(164);
+        self.ctx.writeOp(170);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn fontWeight(self: Element, w: i32) Element {
-        self.ctx.writeOp(165);
+        self.ctx.writeOp(171);
         self.ctx.writeI32(w);
         return self;
     }
 
     pub fn gap(self: Element, v: f32) Element {
-        self.ctx.writeOp(166);
+        self.ctx.writeOp(172);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn gapX(self: Element, v: f32) Element {
-        self.ctx.writeOp(167);
+        self.ctx.writeOp(173);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn gapY(self: Element, v: f32) Element {
-        self.ctx.writeOp(168);
+        self.ctx.writeOp(174);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn gradient(self: Element, from: Color, to: Color, angle: f32) Element {
-        self.ctx.writeOp(169);
+        self.ctx.writeOp(175);
         self.ctx.writeU32(from.toU32());
         self.ctx.writeU32(to.toU32());
         self.ctx.writeF32(angle);
@@ -481,59 +517,59 @@ pub const Element = struct {
     }
 
     pub fn grayscale(self: Element) Element {
-        self.ctx.writeOp(170);
+        self.ctx.writeOp(176);
         return self;
     }
 
     pub fn grid(self: Element) Element {
-        self.ctx.writeOp(171);
+        self.ctx.writeOp(177);
         return self;
     }
 
     pub fn gridRows(self: Element, n: i32) Element {
-        self.ctx.writeOp(172);
+        self.ctx.writeOp(178);
         self.ctx.writeI32(n);
         return self;
     }
 
     pub fn grow(self: Element, f: f32) Element {
-        self.ctx.writeOp(173);
+        self.ctx.writeOp(179);
         self.ctx.writeF32(f);
         return self;
     }
 
     pub fn height(self: Element, v: f32) Element {
-        self.ctx.writeOp(174);
+        self.ctx.writeOp(180);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn heightPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(175);
+        self.ctx.writeOp(181);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn hidden(self: Element, hide: bool) Element {
-        self.ctx.writeOp(176);
+        self.ctx.writeOp(182);
         self.ctx.writeU8(@intFromBool(hide));
         return self;
     }
 
     pub fn ignoreInput(self: Element, ignore: bool) Element {
-        self.ctx.writeOp(177);
+        self.ctx.writeOp(183);
         self.ctx.writeU8(@intFromBool(ignore));
         return self;
     }
 
     pub fn inputMethod(self: Element, on: bool) Element {
-        self.ctx.writeOp(178);
+        self.ctx.writeOp(184);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn insetShadow(self: Element, x: f32, y: f32, arg2: f32, spread: f32, p4: Color) Element {
-        self.ctx.writeOp(179);
+        self.ctx.writeOp(185);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         self.ctx.writeF32(arg2);
@@ -543,95 +579,113 @@ pub const Element = struct {
     }
 
     pub fn invalid(self: Element, on: bool) Element {
-        self.ctx.writeOp(180);
+        self.ctx.writeOp(186);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn invisible(self: Element) Element {
-        self.ctx.writeOp(181);
+        self.ctx.writeOp(187);
         return self;
     }
 
     pub fn italic(self: Element) Element {
-        self.ctx.writeOp(182);
+        self.ctx.writeOp(188);
+        return self;
+    }
+
+    pub fn justify(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(189);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn justifyItems(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(190);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn justifySelf(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(191);
+        self.ctx.writeU8(@intFromEnum(a));
         return self;
     }
 
     pub fn keepFocus(self: Element) Element {
-        self.ctx.writeOp(183);
+        self.ctx.writeOp(192);
         return self;
     }
 
     pub fn keepOpen(self: Element) Element {
-        self.ctx.writeOp(184);
+        self.ctx.writeOp(193);
         return self;
     }
 
     pub fn keepScrollbars(self: Element, keep: bool) Element {
-        self.ctx.writeOp(185);
+        self.ctx.writeOp(194);
         self.ctx.writeU8(@intFromBool(keep));
         return self;
     }
 
     pub fn label(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(186);
+        self.ctx.writeOp(195);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn lang(self: Element, tag: []const u8) Element {
-        self.ctx.writeOp(187);
+        self.ctx.writeOp(196);
         self.ctx.writeStr(tag);
         return self;
     }
 
     pub fn left(self: Element, v: f32) Element {
-        self.ctx.writeOp(188);
+        self.ctx.writeOp(197);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn leftPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(189);
+        self.ctx.writeOp(198);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn letterSpacing(self: Element, v: f32) Element {
-        self.ctx.writeOp(190);
+        self.ctx.writeOp(199);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn level(self: Element, n: i32) Element {
-        self.ctx.writeOp(191);
+        self.ctx.writeOp(200);
         self.ctx.writeI32(n);
         return self;
     }
 
     pub fn lineHeight(self: Element, m: f32) Element {
-        self.ctx.writeOp(192);
+        self.ctx.writeOp(201);
         self.ctx.writeF32(m);
         return self;
     }
 
     pub fn lines(self: Element, min: i32, max: i32) Element {
-        self.ctx.writeOp(193);
+        self.ctx.writeOp(202);
         self.ctx.writeI32(min);
         self.ctx.writeI32(max);
         return self;
     }
 
     pub fn margin(self: Element, v: f32) Element {
-        self.ctx.writeOp(194);
+        self.ctx.writeOp(203);
         self.ctx.writeU8(1);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn marginValues(self: Element, vals: []const f32) Element {
-        self.ctx.writeOp(194);
+        self.ctx.writeOp(203);
         const n: usize = @min(vals.len, 4);
         self.ctx.writeU8(@intCast(n));
         for (vals[0..n]) |v| self.ctx.writeF32(v);
@@ -639,142 +693,142 @@ pub const Element = struct {
     }
 
     pub fn marginEnd(self: Element, v: f32) Element {
-        self.ctx.writeOp(195);
+        self.ctx.writeOp(204);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn marginStart(self: Element, v: f32) Element {
-        self.ctx.writeOp(196);
+        self.ctx.writeOp(205);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn marginX(self: Element, v: f32) Element {
-        self.ctx.writeOp(197);
-        self.ctx.writeF32(v);
-        return self;
-    }
-
-    pub fn marginY(self: Element, v: f32) Element {
-        self.ctx.writeOp(198);
-        self.ctx.writeF32(v);
-        return self;
-    }
-
-    pub fn maxHeight(self: Element, v: f32) Element {
-        self.ctx.writeOp(199);
-        self.ctx.writeF32(v);
-        return self;
-    }
-
-    pub fn maxHeightPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(200);
-        self.ctx.writeF32(p);
-        return self;
-    }
-
-    pub fn maxLength(self: Element, n: i32) Element {
-        self.ctx.writeOp(201);
-        self.ctx.writeI32(n);
-        return self;
-    }
-
-    pub fn maxLines(self: Element, n: i32) Element {
-        self.ctx.writeOp(202);
-        self.ctx.writeI32(n);
-        return self;
-    }
-
-    pub fn maxWidth(self: Element, v: f32) Element {
-        self.ctx.writeOp(203);
-        self.ctx.writeF32(v);
-        return self;
-    }
-
-    pub fn maxWidthPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(204);
-        self.ctx.writeF32(p);
-        return self;
-    }
-
-    pub fn maximizeButton(self: Element) Element {
-        self.ctx.writeOp(205);
-        return self;
-    }
-
-    pub fn minHeight(self: Element, v: f32) Element {
         self.ctx.writeOp(206);
         self.ctx.writeF32(v);
         return self;
     }
 
-    pub fn minHeightPercent(self: Element, p: f32) Element {
+    pub fn marginY(self: Element, v: f32) Element {
         self.ctx.writeOp(207);
-        self.ctx.writeF32(p);
+        self.ctx.writeF32(v);
         return self;
     }
 
-    pub fn minWidth(self: Element, v: f32) Element {
+    pub fn maxHeight(self: Element, v: f32) Element {
         self.ctx.writeOp(208);
         self.ctx.writeF32(v);
         return self;
     }
 
-    pub fn minWidthPercent(self: Element, p: f32) Element {
+    pub fn maxHeightPercent(self: Element, p: f32) Element {
         self.ctx.writeOp(209);
         self.ctx.writeF32(p);
         return self;
     }
 
-    pub fn mixed(self: Element) Element {
+    pub fn maxLength(self: Element, n: i32) Element {
         self.ctx.writeOp(210);
+        self.ctx.writeI32(n);
+        return self;
+    }
+
+    pub fn maxLines(self: Element, n: i32) Element {
+        self.ctx.writeOp(211);
+        self.ctx.writeI32(n);
+        return self;
+    }
+
+    pub fn maxWidth(self: Element, v: f32) Element {
+        self.ctx.writeOp(212);
+        self.ctx.writeF32(v);
+        return self;
+    }
+
+    pub fn maxWidthPercent(self: Element, p: f32) Element {
+        self.ctx.writeOp(213);
+        self.ctx.writeF32(p);
+        return self;
+    }
+
+    pub fn maximizeButton(self: Element) Element {
+        self.ctx.writeOp(214);
+        return self;
+    }
+
+    pub fn minHeight(self: Element, v: f32) Element {
+        self.ctx.writeOp(215);
+        self.ctx.writeF32(v);
+        return self;
+    }
+
+    pub fn minHeightPercent(self: Element, p: f32) Element {
+        self.ctx.writeOp(216);
+        self.ctx.writeF32(p);
+        return self;
+    }
+
+    pub fn minWidth(self: Element, v: f32) Element {
+        self.ctx.writeOp(217);
+        self.ctx.writeF32(v);
+        return self;
+    }
+
+    pub fn minWidthPercent(self: Element, p: f32) Element {
+        self.ctx.writeOp(218);
+        self.ctx.writeF32(p);
+        return self;
+    }
+
+    pub fn mixed(self: Element) Element {
+        self.ctx.writeOp(219);
         return self;
     }
 
     pub fn modal(self: Element) Element {
-        self.ctx.writeOp(211);
+        self.ctx.writeOp(220);
         return self;
     }
 
     pub fn multiselectable(self: Element, on: bool) Element {
-        self.ctx.writeOp(212);
+        self.ctx.writeOp(221);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn noShadow(self: Element) Element {
-        self.ctx.writeOp(213);
+        self.ctx.writeOp(222);
         return self;
     }
 
     pub fn noWrap(self: Element) Element {
-        self.ctx.writeOp(214);
+        self.ctx.writeOp(223);
         return self;
     }
 
     pub fn objectPosition(self: Element, x: f32, y: f32) Element {
-        self.ctx.writeOp(215);
+        self.ctx.writeOp(224);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         return self;
     }
 
     pub fn opacity(self: Element, o: f32) Element {
-        self.ctx.writeOp(216);
+        self.ctx.writeOp(225);
         self.ctx.writeF32(o);
         return self;
     }
 
     pub fn padding(self: Element, v: f32) Element {
-        self.ctx.writeOp(217);
+        self.ctx.writeOp(226);
         self.ctx.writeU8(1);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn paddingValues(self: Element, vals: []const f32) Element {
-        self.ctx.writeOp(217);
+        self.ctx.writeOp(226);
         const n: usize = @min(vals.len, 4);
         self.ctx.writeU8(@intCast(n));
         for (vals[0..n]) |v| self.ctx.writeF32(v);
@@ -782,83 +836,83 @@ pub const Element = struct {
     }
 
     pub fn paddingEnd(self: Element, v: f32) Element {
-        self.ctx.writeOp(218);
+        self.ctx.writeOp(227);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn paddingStart(self: Element, v: f32) Element {
-        self.ctx.writeOp(219);
+        self.ctx.writeOp(228);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn paddingX(self: Element, v: f32) Element {
-        self.ctx.writeOp(220);
+        self.ctx.writeOp(229);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn paddingY(self: Element, v: f32) Element {
-        self.ctx.writeOp(221);
+        self.ctx.writeOp(230);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn passThrough(self: Element) Element {
-        self.ctx.writeOp(222);
+        self.ctx.writeOp(231);
         return self;
     }
 
     pub fn password(self: Element) Element {
-        self.ctx.writeOp(223);
+        self.ctx.writeOp(232);
         return self;
     }
 
     pub fn perspective(self: Element, distance: f32) Element {
-        self.ctx.writeOp(224);
+        self.ctx.writeOp(233);
         self.ctx.writeF32(distance);
         return self;
     }
 
     pub fn placeholder(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(225);
+        self.ctx.writeOp(234);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn placeholderColor(self: Element, color: Color) Element {
-        self.ctx.writeOp(226);
+        self.ctx.writeOp(235);
         self.ctx.writeU32(color.toU32());
         return self;
     }
 
     pub fn positionInSet(self: Element, pos: i32, arg1: i32) Element {
-        self.ctx.writeOp(227);
+        self.ctx.writeOp(236);
         self.ctx.writeI32(pos);
         self.ctx.writeI32(arg1);
         return self;
     }
 
     pub fn preserveSpaces(self: Element) Element {
-        self.ctx.writeOp(228);
+        self.ctx.writeOp(237);
         return self;
     }
 
     pub fn pretty(self: Element) Element {
-        self.ctx.writeOp(229);
+        self.ctx.writeOp(238);
         return self;
     }
 
     pub fn radius(self: Element, v: f32) Element {
-        self.ctx.writeOp(230);
+        self.ctx.writeOp(239);
         self.ctx.writeU8(1);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn radiusValues(self: Element, vals: []const f32) Element {
-        self.ctx.writeOp(230);
+        self.ctx.writeOp(239);
         const n: usize = @min(vals.len, 4);
         self.ctx.writeU8(@intCast(n));
         for (vals[0..n]) |v| self.ctx.writeF32(v);
@@ -866,103 +920,103 @@ pub const Element = struct {
     }
 
     pub fn readOnly(self: Element, on: bool) Element {
-        self.ctx.writeOp(231);
+        self.ctx.writeOp(240);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn reverse(self: Element) Element {
-        self.ctx.writeOp(232);
+        self.ctx.writeOp(241);
         return self;
     }
 
     pub fn right(self: Element, v: f32) Element {
-        self.ctx.writeOp(233);
+        self.ctx.writeOp(242);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn rightPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(234);
+        self.ctx.writeOp(243);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn roleDescription(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(235);
+        self.ctx.writeOp(244);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn rotate(self: Element, degrees: f32) Element {
-        self.ctx.writeOp(236);
+        self.ctx.writeOp(245);
         self.ctx.writeF32(degrees);
         return self;
     }
 
     pub fn rotateX(self: Element, degrees: f32) Element {
-        self.ctx.writeOp(237);
+        self.ctx.writeOp(246);
         self.ctx.writeF32(degrees);
         return self;
     }
 
     pub fn rotateY(self: Element, degrees: f32) Element {
-        self.ctx.writeOp(238);
+        self.ctx.writeOp(247);
         self.ctx.writeF32(degrees);
         return self;
     }
 
     pub fn row(self: Element) Element {
-        self.ctx.writeOp(239);
+        self.ctx.writeOp(248);
         return self;
     }
 
     pub fn rowCount(self: Element, n: i32) Element {
-        self.ctx.writeOp(240);
+        self.ctx.writeOp(249);
         self.ctx.writeI32(n);
         return self;
     }
 
     pub fn rowIndex(self: Element, i: i32) Element {
-        self.ctx.writeOp(241);
+        self.ctx.writeOp(250);
         self.ctx.writeI32(i);
         return self;
     }
 
     pub fn rowSpan(self: Element, n: i32) Element {
-        self.ctx.writeOp(242);
+        self.ctx.writeOp(251);
         self.ctx.writeI32(n);
         return self;
     }
 
     pub fn rowStart(self: Element, n: i32) Element {
-        self.ctx.writeOp(243);
+        self.ctx.writeOp(252);
         self.ctx.writeI32(n);
         return self;
     }
 
     pub fn rowWidth(self: Element, w: f32) Element {
-        self.ctx.writeOp(244);
+        self.ctx.writeOp(253);
         self.ctx.writeF32(w);
         return self;
     }
 
     pub fn scale(self: Element, x: f32, y: f32) Element {
-        self.ctx.writeOp(245);
+        self.ctx.writeOp(254);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         return self;
     }
 
     pub fn scrollbarInsets(self: Element, v: f32) Element {
-        self.ctx.writeOp(246);
+        self.ctx.writeOp(255);
         self.ctx.writeU8(1);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn scrollbarInsetsValues(self: Element, vals: []const f32) Element {
-        self.ctx.writeOp(246);
+        self.ctx.writeOp(255);
         const n: usize = @min(vals.len, 4);
         self.ctx.writeU8(@intCast(n));
         for (vals[0..n]) |v| self.ctx.writeF32(v);
@@ -970,47 +1024,47 @@ pub const Element = struct {
     }
 
     pub fn scrollbars(self: Element, visible: bool) Element {
-        self.ctx.writeOp(247);
+        self.ctx.writeOp(256);
         self.ctx.writeU8(@intFromBool(visible));
         return self;
     }
 
     pub fn search(self: Element) Element {
-        self.ctx.writeOp(248);
+        self.ctx.writeOp(257);
         return self;
     }
 
     pub fn selectable(self: Element) Element {
-        self.ctx.writeOp(249);
+        self.ctx.writeOp(258);
         return self;
     }
 
     pub fn selected(self: Element, on: bool) Element {
-        self.ctx.writeOp(250);
+        self.ctx.writeOp(259);
         self.ctx.writeU8(@intFromBool(on));
         return self;
     }
 
     pub fn selectionColor(self: Element, p0: Color) Element {
-        self.ctx.writeOp(251);
+        self.ctx.writeOp(260);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn setChanged(self: Element) Element {
-        self.ctx.writeOp(252);
+        self.ctx.writeOp(261);
         return self;
     }
 
     pub fn setTextSelection(self: Element, arg0: i32, arg1: i32) Element {
-        self.ctx.writeOp(253);
+        self.ctx.writeOp(262);
         self.ctx.writeI32(arg0);
         self.ctx.writeI32(arg1);
         return self;
     }
 
     pub fn shadow(self: Element, x: f32, y: f32, arg2: f32, spread: f32, p4: Color) Element {
-        self.ctx.writeOp(254);
+        self.ctx.writeOp(263);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         self.ctx.writeF32(arg2);
@@ -1020,60 +1074,78 @@ pub const Element = struct {
     }
 
     pub fn shrink(self: Element, f: f32) Element {
-        self.ctx.writeOp(255);
+        self.ctx.writeOp(264);
         self.ctx.writeF32(f);
         return self;
     }
 
     pub fn singleLine(self: Element) Element {
-        self.ctx.writeOp(256);
+        self.ctx.writeOp(265);
         return self;
     }
 
     pub fn size(self: Element, w: f32, h: f32) Element {
-        self.ctx.writeOp(257);
+        self.ctx.writeOp(266);
         self.ctx.writeF32(w);
         self.ctx.writeF32(h);
         return self;
     }
 
     pub fn skew(self: Element, x: f32, y: f32) Element {
-        self.ctx.writeOp(258);
+        self.ctx.writeOp(267);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         return self;
     }
 
+    pub fn snapAlign(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(268);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn snapAlignX(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(269);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
+    pub fn snapAlignY(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(270);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
     pub fn splitReset(self: Element, v: f32) Element {
-        self.ctx.writeOp(259);
+        self.ctx.writeOp(271);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn start(self: Element, v: f32) Element {
-        self.ctx.writeOp(260);
+        self.ctx.writeOp(272);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn startPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(261);
+        self.ctx.writeOp(273);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn sticky(self: Element) Element {
-        self.ctx.writeOp(262);
+        self.ctx.writeOp(274);
         return self;
     }
 
     pub fn strikethrough(self: Element) Element {
-        self.ctx.writeOp(263);
+        self.ctx.writeOp(275);
         return self;
     }
 
     pub fn stripes(self: Element, p0: Color, arg1: f32, arg2: f32, angle: f32) Element {
-        self.ctx.writeOp(264);
+        self.ctx.writeOp(276);
         self.ctx.writeU32(p0.toU32());
         self.ctx.writeF32(arg1);
         self.ctx.writeF32(arg2);
@@ -1082,31 +1154,37 @@ pub const Element = struct {
     }
 
     pub fn tabSize(self: Element, n: f32) Element {
-        self.ctx.writeOp(265);
+        self.ctx.writeOp(277);
         self.ctx.writeF32(n);
         return self;
     }
 
     pub fn tabStop(self: Element, stop: bool) Element {
-        self.ctx.writeOp(266);
+        self.ctx.writeOp(278);
         self.ctx.writeU8(@intFromBool(stop));
         return self;
     }
 
+    pub fn textAlign(self: Element, a: ui.Align) Element {
+        self.ctx.writeOp(279);
+        self.ctx.writeU8(@intFromEnum(a));
+        return self;
+    }
+
     pub fn textBackground(self: Element, p0: Color) Element {
-        self.ctx.writeOp(267);
+        self.ctx.writeOp(280);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn textColor(self: Element, p0: Color) Element {
-        self.ctx.writeOp(268);
+        self.ctx.writeOp(281);
         self.ctx.writeU32(p0.toU32());
         return self;
     }
 
     pub fn textShadow(self: Element, x: f32, y: f32, arg2: f32, p3: Color) Element {
-        self.ctx.writeOp(269);
+        self.ctx.writeOp(282);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         self.ctx.writeF32(arg2);
@@ -1115,113 +1193,113 @@ pub const Element = struct {
     }
 
     pub fn textStroke(self: Element, arg0: f32, p1: Color) Element {
-        self.ctx.writeOp(270);
+        self.ctx.writeOp(283);
         self.ctx.writeF32(arg0);
         self.ctx.writeU32(p1.toU32());
         return self;
     }
 
     pub fn tooltip(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(271);
+        self.ctx.writeOp(284);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn top(self: Element, v: f32) Element {
-        self.ctx.writeOp(272);
+        self.ctx.writeOp(285);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn topPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(273);
+        self.ctx.writeOp(286);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn transformOrigin(self: Element, x: f32, y: f32) Element {
-        self.ctx.writeOp(274);
+        self.ctx.writeOp(287);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         return self;
     }
 
     pub fn translate(self: Element, x: f32, y: f32) Element {
-        self.ctx.writeOp(275);
+        self.ctx.writeOp(288);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         return self;
     }
 
     pub fn translatePercent(self: Element, x: f32, y: f32) Element {
-        self.ctx.writeOp(276);
+        self.ctx.writeOp(289);
         self.ctx.writeF32(x);
         self.ctx.writeF32(y);
         return self;
     }
 
     pub fn translateZ(self: Element, z: f32) Element {
-        self.ctx.writeOp(277);
+        self.ctx.writeOp(290);
         self.ctx.writeF32(z);
         return self;
     }
 
     pub fn underline(self: Element) Element {
-        self.ctx.writeOp(278);
+        self.ctx.writeOp(291);
         return self;
     }
 
     pub fn underlineOffset(self: Element, v: f32) Element {
-        self.ctx.writeOp(279);
+        self.ctx.writeOp(292);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn unselectable(self: Element) Element {
-        self.ctx.writeOp(280);
+        self.ctx.writeOp(293);
         return self;
     }
 
     pub fn value(self: Element, s: []const u8) Element {
-        self.ctx.writeOp(281);
+        self.ctx.writeOp(294);
         self.ctx.writeStr(s);
         return self;
     }
 
     pub fn vertical(self: Element) Element {
-        self.ctx.writeOp(282);
+        self.ctx.writeOp(295);
         return self;
     }
 
     pub fn wavyUnderline(self: Element) Element {
-        self.ctx.writeOp(283);
+        self.ctx.writeOp(296);
         return self;
     }
 
     pub fn width(self: Element, v: f32) Element {
-        self.ctx.writeOp(284);
+        self.ctx.writeOp(297);
         self.ctx.writeF32(v);
         return self;
     }
 
     pub fn widthPercent(self: Element, p: f32) Element {
-        self.ctx.writeOp(285);
+        self.ctx.writeOp(298);
         self.ctx.writeF32(p);
         return self;
     }
 
     pub fn wrap(self: Element) Element {
-        self.ctx.writeOp(286);
+        self.ctx.writeOp(299);
         return self;
     }
 
     pub fn wrapReverse(self: Element) Element {
-        self.ctx.writeOp(287);
+        self.ctx.writeOp(300);
         return self;
     }
 
     pub fn zIndex(self: Element, z: i32) Element {
-        self.ctx.writeOp(288);
+        self.ctx.writeOp(301);
         self.ctx.writeI32(z);
         return self;
     }

@@ -5,33 +5,91 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 - **Zero `cgo` (`CGO_ENABLED=0`)** across macOS, Linux, and Windows (`amd64` & `arm64`).
 - **Single `purego.NewCallback` (`hostDispatch`)** and **single Zig symbol (`mygo_zig_entry`)** for the entire framework.
 - **Zero overhead on pure-Go MyGo apps** (`+0 bytes` on `examples/hello` and `examples/counter-native`).
-- **Pay-only-for-what-you-use**: WebView Zig apps (`zig/host` alone) build to a **7.1 MB** signed `.app` without linking `package ui`; Native GPU UI Zig apps (`_ "github.com/egoist/mygo/zig/host/ui"`) build to a **9.9 MB** signed `.app`.
-- **Full `mygo` CLI integration out of the box**:
-  - `mygo generate` synthesizes a typed `src/mygo.ts` (`mygo-runtime`) directly from Zig `comptime` function & struct reflection!
-  - `mygo build` packages and codesigns `.app` + `.dmg` (macOS), `.deb` / `.tar.gz` (Linux), and NSIS installers (Windows).
+- **Pay-only-for-what-you-use**: WebView Zig apps (`zig/host` alone) build without linking `package ui`; Native GPU UI, Markdown and the code editor are separate opt-in imports.
+- **Full `mygo` CLI integration**: `mygo generate` (typed `src/mygo.ts` from Zig `comptime` reflection) and `mygo build` (`.app` / `.dmg` / `.deb` / NSIS).
+
+> Maintained on the [`DaviRain-Su/mygo`](https://github.com/DaviRain-Su/mygo) fork. Upstream keeps apps Go-authored (`egoist/mygo#1451`); `#1430` `package ffi` is the supported Go→native direction.
 
 ## Directory layout
 
-- `cmd/uigen/` — AST code generator parsing `ui/api_gen.go` to emit **189 `ui.Element` style & layout modifiers** for both Go (`host/ui/modifiers_gen.go`) and Zig (`sdk/element_gen.zig`).
-- `host/` — Pure-Go (`CGO_ENABLED=0`) `purego` host: WebView windows, raw JSON IPC (sync & deferred async), zero-copy `@embedFile` `.rodata` frontend serving (`mygo://localhost/`), TypeScript client writer (`MYGO_GENERATE`), clipboard, menus, shell, and window events.
-- `host/ui/` — Opt-in Native GPU UI plugin: 16-bit `CommandBuffer` decoder, **100,000+ row virtualized `ui.List`**, and **custom GPU vector `ui.Painter`** (`Element.Draw`).
-- `sdk/mygo.zig` — Idiomatic Zig SDK (`mygo.exportApp`, `comptime` `mygo.bind` & `mygo.declareEvent`, `mygo.addEmbeddedAsset`, `Window`, `Clipboard`, `Shell`).
-- `sdk/ui.zig` & `sdk/element_gen.zig` — Zero-allocation 16 KiB stack `CommandBuffer` + 8 KiB stack `PaintBuffer` for `package ui`.
-- `examples/hello-zig/` — WebView + `comptime` TypeScript client (`src/mygo.ts`) + zero-copy `@embedFile` frontend (`7.1 MB` `.app`).
-- `examples/counter-native-zig/` — Pure GPU Native UI showcase: rolling numeric transitions, `ui.Painter` animated vector wave, `100,000`-row virtualized `ui.List`, `Slider`, `Checkbox`, and CJK IME `TextInput` (`9.9 MB` `.app`).
+| Path | Role |
+|------|------|
+| `cmd/uigen/` | AST codegen from `ui/api_gen.go` → **202** Element modifiers (`host/ui/modifiers_gen.go` + `sdk/element_gen.zig`), including `Align` / `BorderStyle` / `Cursor` / `Direction` |
+| `host/` | Pure-Go purego host: windows, IPC, embed, clipboard, menus, shell |
+| `host/ui/` | Opt-in Native GPU UI CommandBuffer (widgets below) |
+| `host/markdown/` | Opt-in `ui/markdown` (`View` + `Stream`) |
+| `host/editor/` | Opt-in `ui/editor` (`View` + `DiffView`) |
+| `sdk/mygo.zig` | Idiomatic Zig SDK (`exportApp`, `bind`, `declareEvent`, `Window`, …) |
+| `sdk/ui.zig` | Zero-alloc CommandBuffer client + rich controls |
+| `sdk/element_gen.zig` | Generated style / layout / query modifiers |
+| `examples/hello-zig/` | WebView + generated `src/mygo.ts` |
+| `examples/counter-native-zig/` | GPU UI: numeric transition, Painter wave, 100k-row List |
+| `examples/gallery-zig/` | Full widget tour (Controls / Inputs / Layout / Data / Markdown / Editor) |
+
+## Native UI surface (Zig)
+
+### Layout & chrome
+`column` · `row` · `box` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `overlay` · `tree` / `treeItem`
+
+### Controls
+`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `searchField` / `autocomplete` / `tokenField` · `selectIndex` · `combobox` · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `alertDialog` · `modal` · `popover`
+
+### Dates & color
+`dateInput` · `timeInput` · `calendar` · `colorPicker` · `colorWell`
+
+### Data
+Virtualized `list` (100k+ rows) · multi-column `table` · custom `draw` + `Painter`
+
+### Opt-in rich text
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`)
+
+### 202 Element modifiers (generated)
+padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, …
+
+### Intentionally deferred (need extra host infra)
+Menus (`MenuButton` / `ContextMenu` / `PopoverMenu*`), `Outline` / `OutlineTable` / `Grid` / `GridView`, `Image` / `Icon` / `SVG` / `Video` / `WebView`, `Toast*`, drag/drop, `Themed`, `Router` / `BackButton` / `ForwardButton`, `EditableText` / `RichText`, `FindBar`, `Toolbar` / `Chart`.
 
 ## Quick start
 
 ```sh
-# Regenerate the 189 Element modifiers from ui/api_gen.go:
+# Regenerate Element modifiers from ui/api_gen.go:
 go run ./zig/cmd/uigen
 
-# 1. WebView app: build Zig library, generate src/mygo.ts, and package Hello Zig.app
+# 1. WebView
 (cd zig/examples/hello-zig && zig build -Doptimize=ReleaseSmall)
 go run ./cmd/mygo generate zig/examples/hello-zig
 go run ./cmd/mygo build -skip-dmg zig/examples/hello-zig
 
-# 2. GPU Native UI app: build Zig library and package Counter Zig.app
+# 2. GPU Native UI (counter)
 (cd zig/examples/counter-native-zig && zig build -Doptimize=ReleaseSmall)
 go run ./cmd/mygo build -skip-dmg zig/examples/counter-native-zig
+
+# 3. Widget gallery (markdown + editor linked)
+(cd zig/examples/gallery-zig && zig build -Doptimize=ReleaseSmall)
+go run ./cmd/mygo build -skip-dmg zig/examples/gallery-zig
+open zig/examples/gallery-zig/dist/darwin-arm64/Gallery\ Zig.app
+```
+
+## Linking opt-in features
+
+```go
+package main
+
+import (
+	"github.com/egoist/mygo/zig/host"
+	_ "github.com/egoist/mygo/zig/host/ui"       // Native GPU UI
+	_ "github.com/egoist/mygo/zig/host/markdown" // optional
+	_ "github.com/egoist/mygo/zig/host/editor"   // optional
+)
+
+func main() { host.Main("myapp") }
+```
+
+Apps that omit `host/ui` never link `package ui`. Markdown and the editor register their own host opcodes (`200` / `210` / `211`) the same way.
+
+## Syncing upstream
+
+```sh
+git fetch upstream && git merge upstream/main
+go run ./zig/cmd/uigen   # refresh modifiers after ui/api_gen.go changes
 ```

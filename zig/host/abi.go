@@ -13,9 +13,11 @@ const (
 	ZigEventWindow       uintptr = 4 // a0 = cb_id, a1 = win_id, a2 = payload_ptr, a3 = payload_len
 	ZigEventMenu         uintptr = 5 // a0 = cb_id, a1 = win_id, a2 = id_ptr, a3 = id_len
 	ZigEventBytes        uintptr = 6 // a0 = cb_id, a1 = ptr, a2 = len, a3 = userdata
-	ZigEventUIView       uintptr = 7 // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
-	ZigEventUIListRow    uintptr = 8 // a0 = cb_id, a1 = frame_handle, a2 = *CUIListRowInfo, a3 = userdata
-	ZigEventUIPaint      uintptr = 9 // a0 = cb_id, a1 = painter_handle, a2 = *CUIRect, a3 = userdata
+	ZigEventUIView       uintptr = 7  // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
+	ZigEventUIListRow    uintptr = 8  // a0 = cb_id, a1 = frame_handle, a2 = *CUIListRowInfo, a3 = userdata
+	ZigEventUIPaint      uintptr = 9  // a0 = cb_id, a1 = painter_handle, a2 = *CUIRect, a3 = userdata
+	ZigEventUISubview    uintptr = 10 // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
+	ZigEventUITableCell  uintptr = 11 // a0 = cb_id, a1 = frame_handle, a2 = *CUITableCellInfo, a3 = userdata
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -37,11 +39,15 @@ const (
 	HostOpShell          uintptr = 15
 	HostOpAppSetMenu     uintptr = 16
 
-	// Opcodes >= HostOpUIBase are handled by zig/host/ui when linked.
+	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase         uintptr = 100
 	HostOpWindowNewUI    uintptr = 100
 	HostOpUIFlush        uintptr = 101
 	HostOpUIPaintFlush   uintptr = 102
+
+	HostOpMarkdownView   uintptr = 200
+	HostOpEditorView     uintptr = 210
+	HostOpDiffView       uintptr = 211
 )
 
 // Window control sub-opcodes for HostOpWindowControl.
@@ -118,6 +124,12 @@ type CHtmlSpec struct {
 // UIDispatch is populated by `zig/host/ui` when an application imports it.
 // Apps that only use WebView windows leave UIDispatch nil and link none of `package ui`.
 var UIDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+
+// MarkdownDispatch is populated by `zig/host/markdown` when imported.
+var MarkdownDispatch func(frameHandle, a1, a2, a3 uintptr) uintptr
+
+// EditorDispatch is populated by `zig/host/editor` when imported.
+var EditorDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
 
 // PtrTo reinterprets a non-zero C/Zig address as *T without triggering unsafeptr warnings.
 func PtrTo[T any](addr uintptr) *T {

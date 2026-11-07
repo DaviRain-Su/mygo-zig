@@ -28,53 +28,71 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.AccessSelected(a0 != 0), true
-	case 104: // AspectRatio
+	case 104: // AlignContent
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.AlignContent(mygoui.Align(a0)), true
+	case 105: // AlignItems
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.AlignItems(mygoui.Align(a0)), true
+	case 106: // AlignSelf
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.AlignSelf(mygoui.Align(a0)), true
+	case 107: // AspectRatio
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.AspectRatio(a0), true
-	case 105: // AttachEdgeMargin
+	case 108: // AttachEdgeMargin
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.AttachEdgeMargin(a0), true
-	case 106: // AttachedOrigin
+	case 109: // AttachedOrigin
 		return cur.AttachedOrigin(), true
-	case 107: // AutoFocus
+	case 110: // AutoFocus
 		return cur.AutoFocus(), true
-	case 108: // BackfaceHidden
+	case 111: // BackfaceHidden
 		return cur.BackfaceHidden(), true
-	case 109: // Background
+	case 112: // Background
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Background(unpackColor(a0)), true
-	case 110: // Balance
+	case 113: // Balance
 		return cur.Balance(), true
-	case 111: // Basis
+	case 114: // Basis
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Basis(a0), true
-	case 112: // BasisPercent
+	case 115: // BasisPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.BasisPercent(a0), true
-	case 113: // Blur
+	case 116: // Blur
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Blur(a0), true
-	case 114: // Bold
+	case 117: // Bold
 		return cur.Bold(), true
-	case 115: // Border
+	case 118: // Border
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -84,25 +102,31 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Border(a0, unpackColor(a1)), true
-	case 116: // BorderColor
+	case 119: // BorderColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.BorderColor(unpackColor(a0)), true
-	case 117: // BorderEndWidth
+	case 120: // BorderEndWidth
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.BorderEndWidth(a0), true
-	case 118: // BorderStartWidth
+	case 121: // BorderStartWidth
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.BorderStartWidth(a0), true
-	case 119: // BorderWidth
+	case 122: // BorderStyle
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.BorderStyle(mygoui.BorderStyle(a0)), true
+	case 123: // BorderWidth
 		cnt, ok := r.u8()
 		if !ok {
 			return cur, false
@@ -119,51 +143,51 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			}
 		}
 		return cur.BorderWidth(vals[:n]...), true
-	case 120: // Bottom
+	case 124: // Bottom
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Bottom(a0), true
-	case 121: // BottomPercent
+	case 125: // BottomPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.BottomPercent(a0), true
-	case 122: // Browse
+	case 126: // Browse
 		return cur.Browse(), true
-	case 123: // Busy
+	case 127: // Busy
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Busy(a0 != 0), true
-	case 124: // Cache
+	case 128: // Cache
 		return cur.Cache(), true
-	case 125: // CaretColor
+	case 129: // CaretColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.CaretColor(unpackColor(a0)), true
-	case 126: // CaretWidth
+	case 130: // CaretWidth
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.CaretWidth(a0), true
-	case 127: // Center
+	case 131: // Center
 		return cur.Center(), true
-	case 128: // Checked
+	case 132: // Checked
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Checked(a0 != 0), true
-	case 129: // Clip
+	case 133: // Clip
 		return cur.Clip(), true
-	case 130: // ClipInset
+	case 134: // ClipInset
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -185,7 +209,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.ClipInset(a0, a1, a2, a3, a4), true
-	case 131: // ClipInsetPercent
+	case 135: // ClipInsetPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -207,75 +231,87 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.ClipInsetPercent(a0, a1, a2, a3, a4), true
-	case 132: // ClipX
+	case 136: // ClipX
 		return cur.ClipX(), true
-	case 133: // ClipY
+	case 137: // ClipY
 		return cur.ClipY(), true
-	case 134: // Column
+	case 138: // Column
 		return cur.Column(), true
-	case 135: // ColumnCount
+	case 139: // ColumnCount
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.ColumnCount(int(a0)), true
-	case 136: // ColumnIndex
+	case 140: // ColumnIndex
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.ColumnIndex(int(a0)), true
-	case 137: // ColumnSpan
+	case 141: // ColumnSpan
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.ColumnSpan(int(a0)), true
-	case 138: // ColumnStart
+	case 142: // ColumnStart
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.ColumnStart(int(a0)), true
-	case 139: // Columns
+	case 143: // Columns
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Columns(int(a0)), true
-	case 140: // Debug
+	case 144: // Cursor
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.Cursor(mygoui.Cursor(a0)), true
+	case 145: // Debug
 		return cur.Debug(), true
-	case 141: // DecorationColor
+	case 146: // DecorationColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.DecorationColor(unpackColor(a0)), true
-	case 142: // DecorationThickness
+	case 147: // DecorationThickness
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.DecorationThickness(a0), true
-	case 143: // Description
+	case 148: // Description
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Description(a0), true
-	case 144: // DimDisabled
+	case 149: // DimDisabled
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.DimDisabled(a0 != 0), true
-	case 145: // Disabled
+	case 150: // Direction
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.Direction(mygoui.Direction(a0)), true
+	case 151: // Disabled
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Disabled(a0 != 0), true
-	case 146: // Dividers
+	case 152: // Dividers
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -285,111 +321,111 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Dividers(a0, unpackColor(a1)), true
-	case 147: // DottedUnderline
+	case 153: // DottedUnderline
 		return cur.DottedUnderline(), true
-	case 148: // DragWindow
+	case 154: // DragWindow
 		return cur.DragWindow(), true
-	case 149: // Ellipsis
+	case 155: // Ellipsis
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Ellipsis(a0), true
-	case 150: // End
+	case 156: // End
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.End(a0), true
-	case 151: // EndPercent
+	case 157: // EndPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.EndPercent(a0), true
-	case 152: // Error
+	case 158: // Error
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Error(a0), true
-	case 153: // Expanded
+	case 159: // Expanded
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Expanded(a0 != 0), true
-	case 154: // Fill
+	case 160: // Fill
 		return cur.Fill(), true
-	case 155: // FillHeight
+	case 161: // FillHeight
 		return cur.FillHeight(), true
-	case 156: // FillWidth
+	case 162: // FillWidth
 		return cur.FillWidth(), true
-	case 157: // FixedLineHeight
+	case 163: // FixedLineHeight
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.FixedLineHeight(a0), true
-	case 158: // Focus
+	case 164: // Focus
 		return cur.Focus(), true
-	case 159: // FocusRing
+	case 165: // FocusRing
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.FocusRing(a0 != 0), true
-	case 160: // FocusRingColor
+	case 166: // FocusRingColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.FocusRingColor(unpackColor(a0)), true
-	case 161: // FocusRingOffset
+	case 167: // FocusRingOffset
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.FocusRingOffset(a0), true
-	case 162: // Focusable
+	case 168: // Focusable
 		return cur.Focusable(), true
-	case 163: // Font
+	case 169: // Font
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Font(a0), true
-	case 164: // FontSize
+	case 170: // FontSize
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.FontSize(a0), true
-	case 165: // FontWeight
+	case 171: // FontWeight
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.FontWeight(int(a0)), true
-	case 166: // Gap
+	case 172: // Gap
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Gap(a0), true
-	case 167: // GapX
+	case 173: // GapX
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.GapX(a0), true
-	case 168: // GapY
+	case 174: // GapY
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.GapY(a0), true
-	case 169: // Gradient
+	case 175: // Gradient
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
@@ -403,53 +439,53 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Gradient(unpackColor(a0), unpackColor(a1), a2), true
-	case 170: // Grayscale
+	case 176: // Grayscale
 		return cur.Grayscale(), true
-	case 171: // Grid
+	case 177: // Grid
 		return cur.Grid(), true
-	case 172: // GridRows
+	case 178: // GridRows
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.GridRows(int(a0)), true
-	case 173: // Grow
+	case 179: // Grow
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Grow(a0), true
-	case 174: // Height
+	case 180: // Height
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Height(a0), true
-	case 175: // HeightPercent
+	case 181: // HeightPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.HeightPercent(a0), true
-	case 176: // Hidden
+	case 182: // Hidden
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Hidden(a0 != 0), true
-	case 177: // IgnoreInput
+	case 183: // IgnoreInput
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.IgnoreInput(a0 != 0), true
-	case 178: // InputMethod
+	case 184: // InputMethod
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.InputMethod(a0 != 0), true
-	case 179: // InsetShadow
+	case 185: // InsetShadow
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -471,69 +507,87 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.InsetShadow(a0, a1, a2, a3, unpackColor(a4)), true
-	case 180: // Invalid
+	case 186: // Invalid
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Invalid(a0 != 0), true
-	case 181: // Invisible
+	case 187: // Invisible
 		return cur.Invisible(), true
-	case 182: // Italic
+	case 188: // Italic
 		return cur.Italic(), true
-	case 183: // KeepFocus
+	case 189: // Justify
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.Justify(mygoui.Align(a0)), true
+	case 190: // JustifyItems
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.JustifyItems(mygoui.Align(a0)), true
+	case 191: // JustifySelf
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.JustifySelf(mygoui.Align(a0)), true
+	case 192: // KeepFocus
 		return cur.KeepFocus(), true
-	case 184: // KeepOpen
+	case 193: // KeepOpen
 		return cur.KeepOpen(), true
-	case 185: // KeepScrollbars
+	case 194: // KeepScrollbars
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.KeepScrollbars(a0 != 0), true
-	case 186: // Label
+	case 195: // Label
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Label(a0), true
-	case 187: // Lang
+	case 196: // Lang
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Lang(a0), true
-	case 188: // Left
+	case 197: // Left
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Left(a0), true
-	case 189: // LeftPercent
+	case 198: // LeftPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.LeftPercent(a0), true
-	case 190: // LetterSpacing
+	case 199: // LetterSpacing
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.LetterSpacing(a0), true
-	case 191: // Level
+	case 200: // Level
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Level(int(a0)), true
-	case 192: // LineHeight
+	case 201: // LineHeight
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.LineHeight(a0), true
-	case 193: // Lines
+	case 202: // Lines
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
@@ -543,7 +597,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Lines(int(a0), int(a1)), true
-	case 194: // Margin
+	case 203: // Margin
 		cnt, ok := r.u8()
 		if !ok {
 			return cur, false
@@ -560,107 +614,107 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			}
 		}
 		return cur.Margin(vals[:n]...), true
-	case 195: // MarginEnd
+	case 204: // MarginEnd
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MarginEnd(a0), true
-	case 196: // MarginStart
+	case 205: // MarginStart
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MarginStart(a0), true
-	case 197: // MarginX
+	case 206: // MarginX
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MarginX(a0), true
-	case 198: // MarginY
+	case 207: // MarginY
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MarginY(a0), true
-	case 199: // MaxHeight
+	case 208: // MaxHeight
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MaxHeight(a0), true
-	case 200: // MaxHeightPercent
+	case 209: // MaxHeightPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MaxHeightPercent(a0), true
-	case 201: // MaxLength
+	case 210: // MaxLength
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MaxLength(int(a0)), true
-	case 202: // MaxLines
+	case 211: // MaxLines
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MaxLines(int(a0)), true
-	case 203: // MaxWidth
+	case 212: // MaxWidth
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MaxWidth(a0), true
-	case 204: // MaxWidthPercent
+	case 213: // MaxWidthPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MaxWidthPercent(a0), true
-	case 205: // MaximizeButton
+	case 214: // MaximizeButton
 		return cur.MaximizeButton(), true
-	case 206: // MinHeight
+	case 215: // MinHeight
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MinHeight(a0), true
-	case 207: // MinHeightPercent
+	case 216: // MinHeightPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MinHeightPercent(a0), true
-	case 208: // MinWidth
+	case 217: // MinWidth
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MinWidth(a0), true
-	case 209: // MinWidthPercent
+	case 218: // MinWidthPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.MinWidthPercent(a0), true
-	case 210: // Mixed
+	case 219: // Mixed
 		return cur.Mixed(), true
-	case 211: // Modal
+	case 220: // Modal
 		return cur.Modal(), true
-	case 212: // Multiselectable
+	case 221: // Multiselectable
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Multiselectable(a0 != 0), true
-	case 213: // NoShadow
+	case 222: // NoShadow
 		return cur.NoShadow(), true
-	case 214: // NoWrap
+	case 223: // NoWrap
 		return cur.NoWrap(), true
-	case 215: // ObjectPosition
+	case 224: // ObjectPosition
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -670,13 +724,13 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.ObjectPosition(a0, a1), true
-	case 216: // Opacity
+	case 225: // Opacity
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Opacity(a0), true
-	case 217: // Padding
+	case 226: // Padding
 		cnt, ok := r.u8()
 		if !ok {
 			return cur, false
@@ -693,53 +747,53 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			}
 		}
 		return cur.Padding(vals[:n]...), true
-	case 218: // PaddingEnd
+	case 227: // PaddingEnd
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.PaddingEnd(a0), true
-	case 219: // PaddingStart
+	case 228: // PaddingStart
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.PaddingStart(a0), true
-	case 220: // PaddingX
+	case 229: // PaddingX
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.PaddingX(a0), true
-	case 221: // PaddingY
+	case 230: // PaddingY
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.PaddingY(a0), true
-	case 222: // PassThrough
+	case 231: // PassThrough
 		return cur.PassThrough(), true
-	case 223: // Password
+	case 232: // Password
 		return cur.Password(), true
-	case 224: // Perspective
+	case 233: // Perspective
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Perspective(a0), true
-	case 225: // Placeholder
+	case 234: // Placeholder
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Placeholder(a0), true
-	case 226: // PlaceholderColor
+	case 235: // PlaceholderColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.PlaceholderColor(unpackColor(a0)), true
-	case 227: // PositionInSet
+	case 236: // PositionInSet
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
@@ -749,11 +803,11 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.PositionInSet(int(a0), int(a1)), true
-	case 228: // PreserveSpaces
+	case 237: // PreserveSpaces
 		return cur.PreserveSpaces(), true
-	case 229: // Pretty
+	case 238: // Pretty
 		return cur.Pretty(), true
-	case 230: // Radius
+	case 239: // Radius
 		cnt, ok := r.u8()
 		if !ok {
 			return cur, false
@@ -770,83 +824,83 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			}
 		}
 		return cur.Radius(vals[:n]...), true
-	case 231: // ReadOnly
+	case 240: // ReadOnly
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.ReadOnly(a0 != 0), true
-	case 232: // Reverse
+	case 241: // Reverse
 		return cur.Reverse(), true
-	case 233: // Right
+	case 242: // Right
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Right(a0), true
-	case 234: // RightPercent
+	case 243: // RightPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RightPercent(a0), true
-	case 235: // RoleDescription
+	case 244: // RoleDescription
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.RoleDescription(a0), true
-	case 236: // Rotate
+	case 245: // Rotate
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Rotate(a0), true
-	case 237: // RotateX
+	case 246: // RotateX
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RotateX(a0), true
-	case 238: // RotateY
+	case 247: // RotateY
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RotateY(a0), true
-	case 239: // Row
+	case 248: // Row
 		return cur.Row(), true
-	case 240: // RowCount
+	case 249: // RowCount
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RowCount(int(a0)), true
-	case 241: // RowIndex
+	case 250: // RowIndex
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RowIndex(int(a0)), true
-	case 242: // RowSpan
+	case 251: // RowSpan
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RowSpan(int(a0)), true
-	case 243: // RowStart
+	case 252: // RowStart
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RowStart(int(a0)), true
-	case 244: // RowWidth
+	case 253: // RowWidth
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.RowWidth(a0), true
-	case 245: // Scale
+	case 254: // Scale
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -856,7 +910,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Scale(a0, a1), true
-	case 246: // ScrollbarInsets
+	case 255: // ScrollbarInsets
 		cnt, ok := r.u8()
 		if !ok {
 			return cur, false
@@ -873,31 +927,31 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			}
 		}
 		return cur.ScrollbarInsets(vals[:n]...), true
-	case 247: // Scrollbars
+	case 256: // Scrollbars
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Scrollbars(a0 != 0), true
-	case 248: // Search
+	case 257: // Search
 		return cur.Search(), true
-	case 249: // Selectable
+	case 258: // Selectable
 		return cur.Selectable(), true
-	case 250: // Selected
+	case 259: // Selected
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.Selected(a0 != 0), true
-	case 251: // SelectionColor
+	case 260: // SelectionColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.SelectionColor(unpackColor(a0)), true
-	case 252: // SetChanged
+	case 261: // SetChanged
 		return cur.SetChanged(), true
-	case 253: // SetTextSelection
+	case 262: // SetTextSelection
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false
@@ -907,7 +961,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.SetTextSelection(int(a0), int(a1)), true
-	case 254: // Shadow
+	case 263: // Shadow
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -929,15 +983,15 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Shadow(a0, a1, a2, a3, unpackColor(a4)), true
-	case 255: // Shrink
+	case 264: // Shrink
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Shrink(a0), true
-	case 256: // SingleLine
+	case 265: // SingleLine
 		return cur.SingleLine(), true
-	case 257: // Size
+	case 266: // Size
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -947,7 +1001,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Size(a0, a1), true
-	case 258: // Skew
+	case 267: // Skew
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -957,29 +1011,47 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Skew(a0, a1), true
-	case 259: // SplitReset
+	case 268: // SnapAlign
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.SnapAlign(mygoui.Align(a0)), true
+	case 269: // SnapAlignX
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.SnapAlignX(mygoui.Align(a0)), true
+	case 270: // SnapAlignY
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.SnapAlignY(mygoui.Align(a0)), true
+	case 271: // SplitReset
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.SplitReset(a0), true
-	case 260: // Start
+	case 272: // Start
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Start(a0), true
-	case 261: // StartPercent
+	case 273: // StartPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.StartPercent(a0), true
-	case 262: // Sticky
+	case 274: // Sticky
 		return cur.Sticky(), true
-	case 263: // Strikethrough
+	case 275: // Strikethrough
 		return cur.Strikethrough(), true
-	case 264: // Stripes
+	case 276: // Stripes
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
@@ -997,31 +1069,37 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Stripes(unpackColor(a0), a1, a2, a3), true
-	case 265: // TabSize
+	case 277: // TabSize
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.TabSize(a0), true
-	case 266: // TabStop
+	case 278: // TabStop
 		a0, ok := r.u8()
 		if !ok {
 			return cur, false
 		}
 		return cur.TabStop(a0 != 0), true
-	case 267: // TextBackground
+	case 279: // TextAlign
+		a0, ok := r.u8()
+		if !ok {
+			return cur, false
+		}
+		return cur.TextAlign(mygoui.Align(a0)), true
+	case 280: // TextBackground
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.TextBackground(unpackColor(a0)), true
-	case 268: // TextColor
+	case 281: // TextColor
 		a0, ok := r.u32()
 		if !ok {
 			return cur, false
 		}
 		return cur.TextColor(unpackColor(a0)), true
-	case 269: // TextShadow
+	case 282: // TextShadow
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -1039,7 +1117,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.TextShadow(a0, a1, a2, unpackColor(a3)), true
-	case 270: // TextStroke
+	case 283: // TextStroke
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -1049,25 +1127,25 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.TextStroke(a0, unpackColor(a1)), true
-	case 271: // Tooltip
+	case 284: // Tooltip
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Tooltip(a0), true
-	case 272: // Top
+	case 285: // Top
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Top(a0), true
-	case 273: // TopPercent
+	case 286: // TopPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.TopPercent(a0), true
-	case 274: // TransformOrigin
+	case 287: // TransformOrigin
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -1077,7 +1155,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.TransformOrigin(a0, a1), true
-	case 275: // Translate
+	case 288: // Translate
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -1087,7 +1165,7 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.Translate(a0, a1), true
-	case 276: // TranslatePercent
+	case 289: // TranslatePercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
@@ -1097,49 +1175,49 @@ func execGeneratedModifier(op uint16, cur mygoui.Element, r *tapeReader) (mygoui
 			return cur, false
 		}
 		return cur.TranslatePercent(a0, a1), true
-	case 277: // TranslateZ
+	case 290: // TranslateZ
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.TranslateZ(a0), true
-	case 278: // Underline
+	case 291: // Underline
 		return cur.Underline(), true
-	case 279: // UnderlineOffset
+	case 292: // UnderlineOffset
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.UnderlineOffset(a0), true
-	case 280: // Unselectable
+	case 293: // Unselectable
 		return cur.Unselectable(), true
-	case 281: // Value
+	case 294: // Value
 		a0, ok := r.str()
 		if !ok {
 			return cur, false
 		}
 		return cur.Value(a0), true
-	case 282: // Vertical
+	case 295: // Vertical
 		return cur.Vertical(), true
-	case 283: // WavyUnderline
+	case 296: // WavyUnderline
 		return cur.WavyUnderline(), true
-	case 284: // Width
+	case 297: // Width
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.Width(a0), true
-	case 285: // WidthPercent
+	case 298: // WidthPercent
 		a0, ok := r.f32()
 		if !ok {
 			return cur, false
 		}
 		return cur.WidthPercent(a0), true
-	case 286: // Wrap
+	case 299: // Wrap
 		return cur.Wrap(), true
-	case 287: // WrapReverse
+	case 300: // WrapReverse
 		return cur.WrapReverse(), true
-	case 288: // ZIndex
+	case 301: // ZIndex
 		a0, ok := r.i32()
 		if !ok {
 			return cur, false

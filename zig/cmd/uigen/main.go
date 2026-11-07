@@ -29,6 +29,10 @@ const (
 	pkColor
 	pkString
 	pkVarF32 // ...float32
+	pkAlign
+	pkBorderStyle
+	pkCursor
+	pkDirection
 )
 
 type paramSpec struct {
@@ -120,6 +124,14 @@ func parseParamKind(expr ast.Expr) (paramKind, bool) {
 			return pkColor, true
 		case "string":
 			return pkString, true
+		case "Align":
+			return pkAlign, true
+		case "BorderStyle":
+			return pkBorderStyle, true
+		case "Cursor":
+			return pkCursor, true
+		case "Direction":
+			return pkDirection, true
 		}
 	case *ast.Ellipsis:
 		if id, ok := e.Elt.(*ast.Ident); ok && id.Name == "float32" {
@@ -262,6 +274,18 @@ func writeGoDecoder(methods []methodSpec) {
 			case pkString:
 				fmt.Fprintf(&b, "\t\t%s, ok := r.str()\n\t\tif !ok { return cur, false }\n", v)
 				args = append(args, v)
+			case pkAlign:
+				fmt.Fprintf(&b, "\t\t%s, ok := r.u8()\n\t\tif !ok { return cur, false }\n", v)
+				args = append(args, fmt.Sprintf("mygoui.Align(%s)", v))
+			case pkBorderStyle:
+				fmt.Fprintf(&b, "\t\t%s, ok := r.u8()\n\t\tif !ok { return cur, false }\n", v)
+				args = append(args, fmt.Sprintf("mygoui.BorderStyle(%s)", v))
+			case pkCursor:
+				fmt.Fprintf(&b, "\t\t%s, ok := r.u8()\n\t\tif !ok { return cur, false }\n", v)
+				args = append(args, fmt.Sprintf("mygoui.Cursor(%s)", v))
+			case pkDirection:
+				fmt.Fprintf(&b, "\t\t%s, ok := r.u8()\n\t\tif !ok { return cur, false }\n", v)
+				args = append(args, fmt.Sprintf("mygoui.Direction(%s)", v))
 			}
 		}
 		fmt.Fprintf(&b, "\t\treturn cur.%s(%s), true\n", m.goName, strings.Join(args, ", "))
@@ -295,6 +319,14 @@ func zigParamType(k paramKind) string {
 		return "[]const u8"
 	case pkVarF32:
 		return "[]const f32"
+	case pkAlign:
+		return "ui.Align"
+	case pkBorderStyle:
+		return "ui.BorderStyle"
+	case pkCursor:
+		return "ui.Cursor"
+	case pkDirection:
+		return "ui.Direction"
 	}
 	return "void"
 }
@@ -399,6 +431,8 @@ func writeZigElement(methods []methodSpec) {
 				fmt.Fprintf(&b, "        self.ctx.writeU32(%s.toU32());\n", p.name)
 			case pkString:
 				fmt.Fprintf(&b, "        self.ctx.writeStr(%s);\n", p.name)
+			case pkAlign, pkBorderStyle, pkCursor, pkDirection:
+				fmt.Fprintf(&b, "        self.ctx.writeU8(@intFromEnum(%s));\n", p.name)
 			}
 		}
 		b.WriteString("        return self;\n    }\n")
