@@ -5,8 +5,19 @@ const std = @import("std");
 const mygo = @import("mygo");
 const ui = mygo.ui;
 
-const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Markdown", "Editor" };
+const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Markdown", "Editor" };
 const menu_items = [_][]const u8{ "New", "Open…", "-", "Save", "-", "Quit" };
+const ctx_items = [_][]const u8{ "Copy", "Paste", "-", "Delete" };
+const outline_roots = [_][]const u8{ "src", "zig", "docs" };
+const outline_src_kids = [_][]const u8{ "app.zig", "main.go" };
+const outline_zig_kids = [_][]const u8{ "sdk", "host" };
+const outline_sdk_kids = [_][]const u8{ "ui.zig", "mygo.zig" };
+const outline_nodes = [_]ui.OutlineNode{
+    .{ .id = "src", .children = &outline_src_kids },
+    .{ .id = "zig", .children = &outline_zig_kids },
+    .{ .id = "sdk", .children = &outline_sdk_kids },
+    .{ .id = "docs", .children = &.{} }, // empty branch
+};
 const star_svg =
     \\<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
     \\<path fill="currentColor" d="M8 1.5l1.8 3.7 4.1.6-3 2.9.7 4.1L8 11.2l-3.6 1.9.7-4.1-3-2.9 4.1-.6z"/>
@@ -121,6 +132,11 @@ const Gallery = struct {
     grid_sel: i32 = 0,
     last_menu: i32 = -1,
     toast_undos: u32 = 0,
+    last_ctx: i32 = -1,
+    outline_sel: i32 = 0,
+    outline_open: [256]u8 = undefined,
+    outline_open_len: usize = 0,
+    router: ui.RouterState = ui.RouterState.init("gallery"),
 
     fn initBuf64(comptime seed: []const u8) [64]u8 {
         var b: [64]u8 = @splat(0);
@@ -454,6 +470,111 @@ const Gallery = struct {
         self.toast_undos += 1;
     }
 
+    fn renderOutlineRow(self: *Gallery, row: ui.OutlineRow) void {
+        _ = self;
+        const c = row.ctx;
+        const t = c.theme();
+        const r = c.row().fillWidth().gap(6).center().begin();
+        defer r.end();
+        if (row.branch) {
+            _ = c.badge(if (row.open) "−" else "+").fontSize(10);
+        } else {
+            _ = c.badge("·").fontSize(10).textColor(t.text_muted);
+        }
+        _ = c.text(row.id).fontSize(13).grow(1.0);
+        if (row.selected) {
+            _ = c.badge("sel").fontSize(10).textColor(t.accent);
+        }
+    }
+
+    fn renderRoute(self: *Gallery, route: ui.Route) void {
+        const c = route.ctx;
+        const t = c.theme();
+        const col = c.column().fill().padding(12).gap(8).begin();
+        defer col.end();
+        _ = c.textf("path: {s}", .{route.path}).fontSize(16).bold();
+        _ = c.text("Use Back/Forward or the links below.").fontSize(12).textColor(t.text_muted);
+
+        const spans = [_]ui.Span{
+            ui.Span.plain("RichText: "),
+            ui.Span.bold("bold"),
+            ui.Span.plain(" · "),
+            .{ .text = "italic", .italic = true },
+            ui.Span.plain(" · "),
+            .{ .text = "accent", .color = t.accent, .weight = 600 },
+        };
+        _ = c.richText(&spans);
+
+        {
+            const row = c.row().gap(8).begin();
+            defer row.end();
+            if (c.button("to-home", "/home").clicked()) c.routerPush(&self.router, "/home");
+            if (c.button("to-settings", "/settings").clicked()) c.routerPush(&self.router, "/settings");
+            if (c.button("to-about", "/about").clicked()) c.routerPush(&self.router, "/about");
+        }
+
+        if (std.mem.eql(u8, route.path, "/settings")) {
+            _ = c.text("Settings page").fontSize(14);
+        } else if (std.mem.eql(u8, route.path, "/about")) {
+            _ = c.text("About MyGo × Zig").fontSize(14);
+        } else {
+            _ = c.text("Home page").fontSize(14);
+        }
+    }
+
+    fn viewNav(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        _ = c.text("Outline · Router · RichText · ContextMenu").fontSize(16).bold();
+
+        {
+            const row = c.row().fillWidth().gap(8).center().begin();
+            defer row.end();
+            _ = c.backButton(&self.router);
+            _ = c.forwardButton(&self.router);
+            _ = c.textf("{s}", .{self.router.path()}).fontSize(12).textColor(t.text_muted).grow(1.0);
+            if (self.router.can_go_back) {
+                _ = c.badge("can←").fontSize(10);
+            }
+            if (self.router.can_go_forward) {
+                _ = c.badge("can→").fontSize(10);
+            }
+        }
+
+        _ = c.router(&self.router, "/home", *Gallery, self, Gallery.renderRoute)
+            .fillWidth()
+            .height(160)
+            .border(1, t.border)
+            .radius(8);
+
+        {
+            const label = c.text("Right-click me").padding(8).border(1, t.border).radius(6);
+            const chosen = label.contextMenu(&ctx_items);
+            if (chosen >= 0) self.last_ctx = chosen;
+            const chosen2 = c.popoverMenuButton("pmb", "Popover Menu", &menu_items);
+            if (chosen2 >= 0) self.last_menu = chosen2;
+        }
+        if (self.last_ctx >= 0) {
+            _ = c.textf("context menu chose {d}", .{self.last_ctx}).fontSize(12).textColor(t.text_muted);
+        }
+
+        _ = c.text("Outline").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.outline(
+            "files",
+            &self.outline_sel,
+            self.outline_open[0..],
+            &self.outline_open_len,
+            &outline_roots,
+            &outline_nodes,
+            *Gallery,
+            self,
+            Gallery.renderOutlineRow,
+        )
+            .fillWidth()
+            .grow(1.0)
+            .border(1, t.border)
+            .radius(8);
+    }
+
     fn viewMore(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
         _ = c.text("Toolbar · Grid · Icon · Themed · Find · Toast · Menu").fontSize(16).bold();
@@ -642,7 +763,8 @@ const Gallery = struct {
             3 => self.viewData(c),
             4 => self.viewTree(c),
             5 => self.viewMore(c),
-            6 => self.viewMarkdown(c),
+            6 => self.viewNav(c),
+            7 => self.viewMarkdown(c),
             else => self.viewEditor(c),
         }
     }

@@ -60,6 +60,17 @@ pub const Element = struct {
         return self.ctx.flushQuery().bool_val != 0;
     }
 
+    /// Flat context menu. Items equal to "-" become separators.
+    /// Returns the chosen item index, or -1.
+    pub fn contextMenu(self: Element, items: []const []const u8) i32 {
+        return self.ctx.attachFlatMenu(.context_menu, items);
+    }
+
+    /// Like contextMenu, drawn by MyGo rather than the system menu.
+    pub fn popoverMenu(self: Element, items: []const []const u8) i32 {
+        return self.ctx.attachFlatMenu(.popover_menu, items);
+    }
+
     pub fn absolute(self: Element) Element {
         self.ctx.writeOp(100);
         return self;

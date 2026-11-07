@@ -112,6 +112,18 @@ const (
 	opToastAction      uint16 = 75
 	opMenuButton       uint16 = 76
 	opGridView         uint16 = 77
+	opContextMenu      uint16 = 78
+	opPopoverMenu      uint16 = 79
+	opPopoverMenuBtn   uint16 = 86
+	opOutline          uint16 = 87
+	opRichText         uint16 = 88
+	opRouter           uint16 = 89
+	opRouterPush       uint16 = 90
+	opRouterReplace    uint16 = 91
+	opRouterBack       uint16 = 92
+	opRouterForward    uint16 = 93
+	opBackButton       uint16 = 94
+	opForwardButton    uint16 = 95
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -187,6 +199,27 @@ type cUIGridItemInfo struct {
 	Theme    cUITheme
 }
 
+type cUIOutlineRowInfo struct {
+	WindowID int32
+	Index    int32
+	Depth    int32
+	Selected uint8
+	Branch   uint8
+	Open     uint8
+	_        uint8
+	Theme    cUITheme
+	IDPtr    uintptr
+	IDLen    uintptr
+}
+
+type cUIRouteInfo struct {
+	WindowID int32
+	_        [4]byte
+	Theme    cUITheme
+	PathPtr  uintptr
+	PathLen  uintptr
+}
+
 type cUIRect struct {
 	X, Y, W, H float32
 	NowMillis  int64
@@ -213,6 +246,11 @@ type zigGrid struct {
 	selected int
 }
 
+type zigOutline struct {
+	state    mygoui.OutlineState[string]
+	selected int
+}
+
 type uiWindowHost struct {
 	winID    int32
 	callZig  host.CallZigFn
@@ -220,6 +258,8 @@ type uiWindowHost struct {
 	userdata uintptr
 	lists    map[string]*zigList
 	grids    map[string]*zigGrid
+	outlines map[string]*zigOutline
+	routers  map[string]*mygoui.Router
 }
 
 var assetCache sync.Map // hash key → *SVG | ImageSource
@@ -319,6 +359,8 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 		userdata: userdata,
 		lists:    map[string]*zigList{},
 		grids:    map[string]*zigGrid{},
+		outlines: map[string]*zigOutline{},
+		routers:  map[string]*mygoui.Router{},
 	}
 
 	opts := host.ParseWindowOptions(rawOpts)
@@ -351,6 +393,8 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 	w.OnClosed(func() {
 		clear(wh.lists)
 		clear(wh.grids)
+		clear(wh.outlines)
+		clear(wh.routers)
 	})
 	host.SetError(nil)
 	return uintptr(wh.winID)
@@ -1567,6 +1611,256 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			if out != nil {
 				out.IntVal = int64(chosen)
 				out.BoolVal = u8Bool(chosen >= 0)
+			}
+
+		case opContextMenu, opPopoverMenu:
+			items, ok := r.strList()
+			if !ok {
+				return
+			}
+			chosen := -1
+			build := func(m *mygoui.Menu) {
+				for i, it := range items {
+					if it == "-" {
+						m.Separator()
+						continue
+					}
+					if m.Item(it).Chosen() {
+						chosen = i
+					}
+				}
+			}
+			if op == opPopoverMenu {
+				f.cur = f.cur.PopoverMenu(build)
+			} else {
+				f.cur = f.cur.ContextMenu(build)
+			}
+			if out != nil {
+				out.IntVal = int64(chosen)
+				out.BoolVal = u8Bool(chosen >= 0)
+			}
+
+		case opPopoverMenuBtn:
+			key, ok1 := r.str()
+			label, ok2 := r.str()
+			items, ok3 := r.strList()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			chosen := -1
+			f.cur = mygoui.PopoverMenuButton(keyedCtx(c, key), label, func(m *mygoui.Menu) {
+				for i, it := range items {
+					if it == "-" {
+						m.Separator()
+						continue
+					}
+					if m.Item(it).Chosen() {
+						chosen = i
+					}
+				}
+			})
+			if out != nil {
+				out.IntVal = int64(chosen)
+				out.BoolVal = u8Bool(chosen >= 0)
+			}
+
+		case opOutline:
+			key, ok1 := r.str()
+			selectedIn, ok2 := r.i32()
+			openIDs, ok3 := r.strList()
+			roots, ok4 := r.strList()
+			branches, ok5 := r.u16()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			// Only branches are listed. Absent id → leaf (children returns nil).
+			// Present with empty kids → empty branch.
+			childrenOf := map[string][]string{}
+			for range int(branches) {
+				id, okID := r.str()
+				kids, okKids := r.strList()
+				if !okID || !okKids {
+					return
+				}
+				childrenOf[id] = kids
+			}
+			rowCbID, ok6 := r.u64()
+			rowUD, ok7 := r.u64()
+			if !ok6 || !ok7 {
+				return
+			}
+			zo := f.host.outlines[key]
+			if zo == nil {
+				zo = &zigOutline{selected: int(selectedIn)}
+				f.host.outlines[key] = zo
+			} else {
+				zo.selected = int(selectedIn)
+			}
+			zo.state.List.Selected = &zo.selected
+			zo.state.Open = mygoui.Selection[string]{}
+			for _, id := range openIDs {
+				zo.state.Open.Add(id)
+			}
+			wh, th := f.host, f.theme
+			f.cur = mygoui.Outline(keyedCtx(c, key), &zo.state, roots, func(id string) []string {
+				kids, ok := childrenOf[id]
+				if !ok {
+					return nil
+				}
+				return kids
+			}, func(item string) {
+				row := -1
+				for i := 0; i < zo.state.Rows(); i++ {
+					if zo.state.Item(i) == item {
+						row = i
+						break
+					}
+				}
+				depth := 0
+				if row >= 0 {
+					depth = zo.state.Depth(row)
+				}
+				_, isBranch := childrenOf[item]
+				info := cUIOutlineRowInfo{
+					WindowID: wh.winID,
+					Index:    int32(row),
+					Depth:    int32(depth),
+					Selected: u8Bool(zo.selected == row),
+					Branch:   u8Bool(isBranch),
+					Open:     u8Bool(zo.state.Open.Has(item)),
+					Theme:    th,
+					IDPtr:    uintptr(unsafe.Pointer(unsafe.StringData(item))),
+					IDLen:    uintptr(len(item)),
+				}
+				runFrame(c, wh, th, func(rowHandle uintptr) {
+					wh.callZig(host.ZigEventUIOutlineRow, uintptr(rowCbID), rowHandle, uintptr(unsafe.Pointer(&info)), uintptr(rowUD))
+				})
+			})
+			if out != nil {
+				out.IntVal = int64(zo.selected)
+				out.BoolVal = u8Bool(f.cur.Changed())
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					opened := make([]string, 0, zo.state.Open.Len())
+					for id := range zo.state.Open.All() {
+						opened = append(opened, id)
+					}
+					n := writeStrList(host.BytesView(savedBufPtr, savedBufCap), opened)
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opRichText:
+			nSpans, ok := r.u16()
+			if !ok {
+				return
+			}
+			spans := make([]mygoui.Span, 0, int(nSpans))
+			for range int(nSpans) {
+				text, ok1 := r.str()
+				flags, ok2 := r.u8()
+				weight, ok3 := r.u16()
+				size, ok4 := r.f32()
+				rgba, ok5 := r.u32()
+				if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+					return
+				}
+				sp := mygoui.Span{
+					Text:      text,
+					Weight:    int(weight),
+					Size:      size,
+					Italic:    flags&1 != 0,
+					Underline: flags&2 != 0,
+				}
+				if flags&4 != 0 {
+					sp.Color = unpackColor(rgba)
+				}
+				spans = append(spans, sp)
+			}
+			f.cur = mygoui.RichText(c, spans...)
+
+		case opRouter:
+			key, ok1 := r.str()
+			initial, ok2 := r.str()
+			pageCbID, ok3 := r.u64()
+			pageUD, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			rt := f.host.routers[key]
+			if rt == nil {
+				rt = mygoui.NewRouter(initial)
+				f.host.routers[key] = rt
+			}
+			wh, th := f.host, f.theme
+			f.cur = rt.View(keyedCtx(c, key), func(route *mygoui.Route) {
+				path := route.Path()
+				info := cUIRouteInfo{
+					WindowID: wh.winID,
+					Theme:    th,
+					PathPtr:  uintptr(unsafe.Pointer(unsafe.StringData(path))),
+					PathLen:  uintptr(len(path)),
+				}
+				runFrame(c, wh, th, func(pageHandle uintptr) {
+					wh.callZig(host.ZigEventUIRoute, uintptr(pageCbID), pageHandle, uintptr(unsafe.Pointer(&info)), uintptr(pageUD))
+				})
+			})
+			if out != nil {
+				p := rt.Path()
+				out.BoolVal = u8Bool(rt.CanGoBack())
+				out.NumVal2 = 0
+				if rt.CanGoForward() {
+					out.NumVal2 = 1
+				}
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					n := min(len(p), int(savedBufCap))
+					if n > 0 {
+						copy(host.BytesView(savedBufPtr, uintptr(n)), p[:n])
+					}
+					out.TextLen = uintptr(n)
+				}
+			}
+
+		case opRouterPush, opRouterReplace:
+			key, ok1 := r.str()
+			path, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return
+			}
+			if rt := f.host.routers[key]; rt != nil {
+				if op == opRouterReplace {
+					rt.Replace(path)
+				} else {
+					rt.Push(path)
+				}
+			}
+
+		case opRouterBack, opRouterForward:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			if rt := f.host.routers[key]; rt != nil {
+				if op == opRouterBack {
+					rt.Back()
+				} else {
+					rt.Forward()
+				}
+			}
+
+		case opBackButton, opForwardButton:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			rt := f.host.routers[key]
+			if rt == nil {
+				rt = mygoui.NewRouter("/")
+				f.host.routers[key] = rt
+			}
+			if op == opBackButton {
+				f.cur = mygoui.BackButton(c, rt)
+			} else {
+				f.cur = mygoui.ForwardButton(c, rt)
 			}
 
 		case opGridView:

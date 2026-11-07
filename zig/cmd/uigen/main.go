@@ -72,6 +72,8 @@ var handWrittenZigNames = map[string]bool{
 	"pressed":           true,
 	"changed":           true,
 	"submitted":         true,
+	"contextMenu":       true,
+	"popoverMenu":       true,
 }
 
 func toCamel(s string) string {
@@ -391,6 +393,17 @@ func writeZigElement(methods []methodSpec) {
     pub fn submitted(self: Element) bool {
         self.ctx.writeOp(@intFromEnum(CoreOp.query_submitted));
         return self.ctx.flushQuery().bool_val != 0;
+    }
+
+    /// Flat context menu. Items equal to "-" become separators.
+    /// Returns the chosen item index, or -1.
+    pub fn contextMenu(self: Element, items: []const []const u8) i32 {
+        return self.ctx.attachFlatMenu(.context_menu, items);
+    }
+
+    /// Like contextMenu, drawn by MyGo rather than the system menu.
+    pub fn popoverMenu(self: Element, items: []const []const u8) i32 {
+        return self.ctx.attachFlatMenu(.popover_menu, items);
     }
 `)
 

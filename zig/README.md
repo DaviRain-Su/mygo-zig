@@ -29,16 +29,16 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 ## Native UI surface (Zig)
 
 ### Layout & chrome
-`column` · `row` · `box` · `grid` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `toolbar` · `overlay` · `tree` / `treeItem` · `themed`
+`column` · `row` · `box` · `grid` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `toolbar` · `overlay` · `tree` / `treeItem` · `themed` · `router` / `backButton` / `forwardButton`
 
 ### Controls
-`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction`
+`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` / `popoverMenuButton` · `contextMenu` / `popoverMenu` · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction` · `richText`
 
 ### Dates & color
 `dateInput` · `timeInput` · `calendar` · `colorPicker` · `colorWell`
 
 ### Data
-Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · custom `draw` + `Painter`
+Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` · custom `draw` + `Painter`
 
 ### Opt-in rich text
 `markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`)
@@ -47,7 +47,7 @@ Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, …
 
 ### Intentionally deferred (need extra host infra)
-`ContextMenu` / `PopoverMenu*` / nested `Menu.Submenu`, `Outline` / `OutlineTable`, charts, `Video` / `WebView`, drag/drop, `Router` / `BackButton` / `ForwardButton`, `RichText` / `EditableText` spans, `ToastViewportBase` custom look.
+nested `Menu.Submenu`, `OutlineTable`, charts, `Video` / `WebView`, drag/drop, nested `Route.View` layouts, `ToastViewportBase` custom look, `RichText` object spans.
 
 ## Quick start
 

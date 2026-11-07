@@ -20,6 +20,8 @@ pub const RawTableCellHandler = *const fn (frame_handle: usize, info: *const CTa
 pub const RawPaintHandler = *const fn (painter_handle: usize, rect: *const CRect, userdata: usize) void;
 pub const RawActionHandler = *const fn (userdata: usize) void;
 pub const RawGridItemHandler = *const fn (frame_handle: usize, info: *const CGridItemInfo, userdata: usize) void;
+pub const RawOutlineRowHandler = *const fn (frame_handle: usize, info: *const COutlineRowInfo, userdata: usize) void;
+pub const RawRouteHandler = *const fn (frame_handle: usize, info: *const CRouteInfo, userdata: usize) void;
 
 pub const Align = enum(u8) {
     start = 0,
@@ -206,6 +208,8 @@ pub const CoreOp = enum(u16) {
     toast_action = 75,
     menu_button = 76,
     grid_view = 77,
+    context_menu = 78,
+    popover_menu = 79,
 
     query_clicked = 80,
     query_hovered = 81,
@@ -213,6 +217,17 @@ pub const CoreOp = enum(u16) {
     query_changed = 83,
     query_submitted = 84,
     query_shortcut = 85,
+
+    popover_menu_button = 86,
+    outline = 87,
+    rich_text = 88,
+    router = 89,
+    router_push = 90,
+    router_replace = 91,
+    router_back = 92,
+    router_forward = 93,
+    back_button = 94,
+    forward_button = 95,
 };
 
 const PaintOp = enum(u8) {
@@ -278,6 +293,39 @@ pub const CGridItemInfo = extern struct {
     selected: u8,
     _pad: [3]u8 = .{ 0, 0, 0 },
     theme: CTheme,
+};
+
+pub const COutlineRowInfo = extern struct {
+    window_id: i32,
+    index: i32,
+    depth: i32,
+    selected: u8,
+    branch: u8,
+    open: u8,
+    _pad: u8 = 0,
+    theme: CTheme,
+    id_ptr: usize,
+    id_len: usize,
+
+    pub fn id(self: *const COutlineRowInfo) []const u8 {
+        if (self.id_ptr == 0 or self.id_len == 0) return "";
+        const p: [*]const u8 = @ptrFromInt(self.id_ptr);
+        return p[0..self.id_len];
+    }
+};
+
+pub const CRouteInfo = extern struct {
+    window_id: i32,
+    _pad: [4]u8 = .{ 0, 0, 0, 0 },
+    theme: CTheme,
+    path_ptr: usize,
+    path_len: usize,
+
+    pub fn path(self: *const CRouteInfo) []const u8 {
+        if (self.path_ptr == 0 or self.path_len == 0) return "/";
+        const p: [*]const u8 = @ptrFromInt(self.path_ptr);
+        return p[0..self.path_len];
+    }
 };
 
 pub const CRect = extern struct {
@@ -370,6 +418,66 @@ pub const GridItem = struct {
     ctx: *Context,
     index: usize,
     selected: bool,
+};
+
+pub const OutlineRow = struct {
+    ctx: *Context,
+    id: []const u8,
+    index: i32,
+    depth: i32,
+    selected: bool,
+    branch: bool,
+    open: bool,
+};
+
+pub const Route = struct {
+    ctx: *Context,
+    path: []const u8,
+};
+
+pub const Span = struct {
+    text: []const u8,
+    weight: u16 = 400,
+    size: f32 = 0,
+    italic: bool = false,
+    underline: bool = false,
+    color: ?Color = null,
+
+    pub fn plain(text: []const u8) Span {
+        return .{ .text = text };
+    }
+
+    pub fn bold(text: []const u8) Span {
+        return .{ .text = text, .weight = 700 };
+    }
+
+    pub fn colored(text: []const u8, color: Color) Span {
+        return .{ .text = text, .color = color };
+    }
+};
+
+pub const OutlineNode = struct {
+    id: []const u8,
+    /// `null` = leaf; empty slice = branch with no children yet.
+    children: ?[]const []const u8 = null,
+};
+
+pub const RouterState = struct {
+    key: []const u8,
+    path_buf: [256]u8 = undefined,
+    path_len: usize = 1,
+    can_go_back: bool = false,
+    can_go_forward: bool = false,
+
+    pub fn init(key: []const u8) RouterState {
+        var s: RouterState = .{ .key = key, .path_len = 1 };
+        s.path_buf[0] = '/';
+        return s;
+    }
+
+    pub fn path(self: *const RouterState) []const u8 {
+        return self.path_buf[0..self.path_len];
+    }
 };
 
 pub const FindBarState = struct {
@@ -1797,6 +1905,208 @@ pub const Context = struct {
         self.writeU64(@intCast(S.cb_id));
         self.writeU64(@intCast(@intFromPtr(state)));
         selected.* = @intCast(self.flushQuery().int_val);
+        return .{ .ctx = self };
+    }
+
+    pub fn attachFlatMenu(self: *Context, op: CoreOp, items: []const []const u8) i32 {
+        self.writeOp(@intFromEnum(op));
+        self.writeStrSlice(items);
+        const q = self.flushQuery();
+        if (q.bool_val == 0) return -1;
+        return @intCast(q.int_val);
+    }
+
+    pub fn popoverMenuButton(self: *Context, key: []const u8, lbl: []const u8, items: []const []const u8) i32 {
+        self.writeOp(@intFromEnum(CoreOp.popover_menu_button));
+        self.writeStr(key);
+        self.writeStr(lbl);
+        self.writeStrSlice(items);
+        const q = self.flushQuery();
+        if (q.bool_val == 0) return -1;
+        return @intCast(q.int_val);
+    }
+
+    /// Hierarchical outline. Only branches go in `nodes` (`children != null`);
+    /// ids not listed are leaves. `open_pack`/`open_len` uses the same packed
+    /// string-list format as `tokenField` (`u16` count + `u32` len + bytes).
+    pub fn outline(
+        self: *Context,
+        key: []const u8,
+        selected: *i32,
+        open_pack: []u8,
+        open_len: *usize,
+        roots: []const []const u8,
+        nodes: []const OutlineNode,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime rowFn: fn (StatePtr, OutlineRow) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onRow(row_handle: usize, info: *const COutlineRowInfo, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var row_ctx = Context{
+                    .frame_handle = row_handle,
+                    .window = .{ .id = info.window_id },
+                    .width_dip = 0,
+                    .height_dip = 0,
+                    .window_active = true,
+                    .ui_theme = Theme.fromC(info.theme),
+                };
+                rowFn(s, .{
+                    .ctx = &row_ctx,
+                    .id = info.id(),
+                    .index = info.index,
+                    .depth = info.depth,
+                    .selected = info.selected != 0,
+                    .branch = info.branch != 0,
+                    .open = info.open != 0,
+                });
+                row_ctx.flush();
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_outline_row_handlers[mygo.ui_outline_row_count] = &S.onRow;
+            mygo.ui_outline_row_count += 1;
+            S.cb_id = mygo.ui_outline_row_count;
+        }
+
+        var open_ids_buf: [64][]const u8 = undefined;
+        const open_count = readStrList(open_pack[0..open_len.*], &open_ids_buf);
+
+        var branch_count: u16 = 0;
+        for (nodes) |node| {
+            if (node.children != null) branch_count += 1;
+        }
+
+        self.writeOp(@intFromEnum(CoreOp.outline));
+        self.writeStr(key);
+        self.writeI32(selected.*);
+        self.writeStrSlice(open_ids_buf[0..open_count]);
+        self.writeStrSlice(roots);
+        self.writeU16(branch_count);
+        for (nodes) |node| {
+            if (node.children) |kids| {
+                self.writeStr(node.id);
+                self.writeStrSlice(kids);
+            }
+        }
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+
+        var q = CQuery{
+            .text_buf_ptr = if (open_pack.len > 0) @intFromPtr(open_pack.ptr) else 0,
+            .text_buf_cap = open_pack.len,
+        };
+        self.flushQueryInto(&q);
+        selected.* = @intCast(q.int_val);
+        open_len.* = @min(q.text_len, open_pack.len);
+        return .{ .ctx = self };
+    }
+
+    pub fn richText(self: *Context, spans: []const Span) Element {
+        self.ensureSpace(4 + spans.len * 16);
+        self.writeOp(@intFromEnum(CoreOp.rich_text));
+        self.writeU16(@intCast(spans.len));
+        for (spans) |sp| {
+            var flags: u8 = 0;
+            if (sp.italic) flags |= 1;
+            if (sp.underline) flags |= 2;
+            if (sp.color != null) flags |= 4;
+            self.writeStr(sp.text);
+            self.writeU8(flags);
+            self.writeU16(sp.weight);
+            self.writeF32(sp.size);
+            self.writeU32(if (sp.color) |c| c.toU32() else 0);
+        }
+        return .{ .ctx = self };
+    }
+
+    /// Host-owned router. `pageFn` paints the page for the current path.
+    pub fn router(
+        self: *Context,
+        rt: *RouterState,
+        initial: []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime pageFn: fn (StatePtr, Route) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onPage(page_handle: usize, info: *const CRouteInfo, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                var page_ctx = Context{
+                    .frame_handle = page_handle,
+                    .window = .{ .id = info.window_id },
+                    .width_dip = 0,
+                    .height_dip = 0,
+                    .window_active = true,
+                    .ui_theme = Theme.fromC(info.theme),
+                };
+                pageFn(s, .{ .ctx = &page_ctx, .path = info.path() });
+                page_ctx.flush();
+            }
+        };
+        if (S.cb_id == 0) {
+            mygo.ui_route_handlers[mygo.ui_route_count] = &S.onPage;
+            mygo.ui_route_count += 1;
+            S.cb_id = mygo.ui_route_count;
+        }
+        self.writeOp(@intFromEnum(CoreOp.router));
+        self.writeStr(rt.key);
+        self.writeStr(initial);
+        self.writeU64(@intCast(S.cb_id));
+        self.writeU64(@intCast(@intFromPtr(state)));
+        var q = CQuery{
+            .text_buf_ptr = @intFromPtr(&rt.path_buf),
+            .text_buf_cap = rt.path_buf.len,
+        };
+        self.flushQueryInto(&q);
+        rt.path_len = @min(q.text_len, rt.path_buf.len);
+        if (rt.path_len == 0) {
+            rt.path_buf[0] = '/';
+            rt.path_len = 1;
+        }
+        rt.can_go_back = q.bool_val != 0;
+        rt.can_go_forward = q.num_val2 != 0;
+        return .{ .ctx = self };
+    }
+
+    pub fn routerPush(self: *Context, rt: *RouterState, path: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.router_push));
+        self.writeStr(rt.key);
+        self.writeStr(path);
+        self.flush();
+    }
+
+    pub fn routerReplace(self: *Context, rt: *RouterState, path: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.router_replace));
+        self.writeStr(rt.key);
+        self.writeStr(path);
+        self.flush();
+    }
+
+    pub fn routerBack(self: *Context, rt: *RouterState) void {
+        self.writeOp(@intFromEnum(CoreOp.router_back));
+        self.writeStr(rt.key);
+        self.flush();
+    }
+
+    pub fn routerForward(self: *Context, rt: *RouterState) void {
+        self.writeOp(@intFromEnum(CoreOp.router_forward));
+        self.writeStr(rt.key);
+        self.flush();
+    }
+
+    pub fn backButton(self: *Context, rt: *RouterState) Element {
+        self.writeOp(@intFromEnum(CoreOp.back_button));
+        self.writeStr(rt.key);
+        return .{ .ctx = self };
+    }
+
+    pub fn forwardButton(self: *Context, rt: *RouterState) Element {
+        self.writeOp(@intFromEnum(CoreOp.forward_button));
+        self.writeStr(rt.key);
         return .{ .ctx = self };
     }
 
