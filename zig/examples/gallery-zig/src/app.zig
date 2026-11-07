@@ -866,7 +866,7 @@ const Gallery = struct {
 
     fn paintPaths(self: *Gallery, p: *ui.Painter, r: ui.Rect) void {
         _ = self;
-        p.fillRect(r.x, r.y, r.w, r.h, ui.Color.rgba(15, 23, 42, 20), 8);
+        p.fillLinearGradient(r.x, r.y, r.w, r.h, 8, 135, ui.Color.rgb(30, 41, 59), ui.Color.rgb(15, 23, 42));
         // Chevron via imperative path commands.
         const x0 = r.x + 24;
         const y0 = r.y + r.h * 0.5;
@@ -883,7 +883,7 @@ const Gallery = struct {
         p.pathCubicTo(hx - 36, hy - 10, hx - 10, hy - 36, hx, hy - 8);
         p.pathCubicTo(hx + 10, hy - 36, hx + 36, hy - 10, hx, hy + 20);
         p.pathClose();
-        p.pathFill(ui.Color.rgb(244, 63, 94));
+        p.pathFillLinearGradient(200, ui.Color.rgb(244, 63, 94), ui.Color.rgb(251, 146, 60));
         // Star via SVG path `d` (translated into the element).
         var dbuf: [192]u8 = undefined;
         const d = std.fmt.bufPrint(&dbuf, "M {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} L {d:.1} {d:.1} Z",
@@ -1046,6 +1046,8 @@ const Gallery = struct {
         const t = c.theme();
         _ = c.text("Toolbar · Custom toasts · RichText objects · MIME drag").fontSize(16).bold();
 
+                _ = c.box().fillWidth().height(36).radius(8).linearGradient(90, t.accent, t.success, false);
+
         _ = c.toolbar("tb", *Gallery, self, Gallery.toolbarBody).fillWidth();
 
         _ = c.findBar("find", &self.find_open, self.find_buf[0..], &self.find_len, 12, &self.find_current)
@@ -1080,6 +1082,17 @@ const Gallery = struct {
             _ = c.menuButton("file", "Menu", &menu_entries, self.menu_id_buf[0..], &self.menu_id_len);
         }
 
+
+
+        // ARIA status — screen readers announce when the text changes.
+        {
+            const st = c.box().fillWidth().padding(10).radius(8).border(1, t.border).role(.status);
+            {
+                const b = st.begin();
+                defer b.end();
+                _ = c.textf("Status: undos={d} stream_tick={d}", .{ self.toast_undos, self.stream_tick }).fontSize(12);
+            }
+        }
 
         // Motion: AnimateTo + AnimatePose
         {

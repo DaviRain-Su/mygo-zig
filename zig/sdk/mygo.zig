@@ -51,6 +51,8 @@ pub const HostOp = enum(usize) {
     video_stream = 232,
     video_push = 233,
     video_end = 234,
+    register_font = 240,
+    register_bitmap = 241,
 };
 
 pub const WinCtl = enum(usize) {
@@ -68,6 +70,7 @@ pub const WinCtl = enum(usize) {
     set_bounds = 12,
     load_url = 13,
     load_html = 14,
+    set_input_region = 15,
 };
 
 const ZigEvent = enum(usize) {
@@ -455,6 +458,22 @@ pub const Window = struct {
     pub fn setBounds(self: Window, r: Rectangle) void {
         var b = CBounds{ .x = r.x, .y = r.y, .width = r.width, .height = r.height };
         _ = self.ctl(.set_bounds, @intFromPtr(&b), 0);
+    }
+
+    /// Limit mouse hit-testing to `rects` (DIPs). Pass `null` to restore the
+    /// full window; pass an empty slice to take no mouse events.
+    pub fn setInputRegion(self: Window, rects: ?[]const Rectangle) void {
+        if (rects == null) {
+            _ = self.ctl(.set_input_region, 0, std.math.maxInt(usize));
+            return;
+        }
+        const rs = rects.?;
+        var buf: [32]CBounds = undefined;
+        const n = @min(rs.len, buf.len);
+        for (rs[0..n], 0..) |r, i| {
+            buf[i] = .{ .x = r.x, .y = r.y, .width = r.width, .height = r.height };
+        }
+        _ = self.ctl(.set_input_region, if (n > 0) @intFromPtr(&buf) else 0, n);
     }
 
     pub fn invalidate(self: Window) void {

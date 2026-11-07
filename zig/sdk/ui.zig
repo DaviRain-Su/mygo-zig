@@ -267,6 +267,9 @@ pub const CoreOp = enum(u16) {
     animate_color = 330,
     animate_pose = 331,
     spring = 332,
+    role = 333,
+    linear_gradient = 334,
+    bitmap = 335,
 };
 
 const PaintOp = enum(u8) {
@@ -285,6 +288,8 @@ const PaintOp = enum(u8) {
     path_fill = 13,
     path_stroke = 14,
     path_svg = 15,
+    fill_gradient = 16,
+    path_fill_grad = 17,
 };
 
 pub const FillRule = enum(u8) {
@@ -600,6 +605,61 @@ pub const DragAxis = enum(u8) {
 };
 
 
+
+pub const Role = enum(u8) {
+    auto = 0,
+    none = 1,
+    group = 2,
+    text = 3,
+    button = 4,
+    link = 5,
+    check_box = 6,
+    radio = 7,
+    @"switch" = 8,
+    slider = 9,
+    progress = 10,
+    text_field = 11,
+    image = 12,
+    list = 13,
+    scroll = 14,
+    dialog = 15,
+    popup = 16,
+    tooltip = 17,
+    pop_up_button = 18,
+    tab_list = 19,
+    tab = 20,
+    splitter = 21,
+    status = 22,
+    table = 23,
+    row = 24,
+    cell = 25,
+    column_header = 26,
+    tree = 27,
+    tree_item = 28,
+    list_item = 29,
+    menu_button = 30,
+    toolbar = 31,
+    radio_group = 32,
+    toggle_button = 33,
+    combo_box = 34,
+    disclosure = 35,
+    meter = 36,
+    stepper = 37,
+    color_well = 38,
+    alert_dialog = 39,
+    menu = 40,
+    menu_bar = 41,
+    menu_item = 42,
+    menu_item_check_box = 43,
+    menu_item_radio = 44,
+    heading = 45,
+    region = 46,
+    log = 47,
+    timer = 48,
+    alert = 49,
+    separator = 50,
+    row_header = 51,
+};
 pub const AnimPreset = enum(u8) {
     /// Duration-based EaseOut curve (or Smooth spring when duration_ms == 0).
     custom = 0,
@@ -951,7 +1011,28 @@ pub const Painter = struct {
         self.writeU32(stroke.toU32());
     }
 
+    pub fn fillLinearGradient(self: *Painter, x: f32, y: f32, w: f32, h: f32, radius: f32, angle: f32, from: Color, to: Color) void {
+        self.ensure(37);
+        self.writeU8(@intFromEnum(PaintOp.fill_gradient));
+        self.writeF32(x);
+        self.writeF32(y);
+        self.writeF32(w);
+        self.writeF32(h);
+        self.writeF32(radius);
+        self.writeF32(angle);
+        self.writeU32(from.toU32());
+        self.writeU32(to.toU32());
+    }
+
+    pub fn pathFillLinearGradient(self: *Painter, angle: f32, from: Color, to: Color) void {
+        self.ensure(13);
+        self.writeU8(@intFromEnum(PaintOp.path_fill_grad));
+        self.writeF32(angle);
+        self.writeU32(from.toU32());
+        self.writeU32(to.toU32());
+    }
 };
+
 
 fn registerSubview(comptime StatePtr: type, comptime fnPtr: fn (StatePtr, *Context) void) usize {
     const S = struct {
@@ -981,7 +1062,6 @@ pub const Context = struct {
     buf: [16384]u8 = undefined,
     len: usize = 0,
     fmt_buf: [512]u8 = undefined,
-
     pub fn init(handle: usize, info: *const CFrameInfo) Context {
         return .{
             .frame_handle = handle,
@@ -2687,6 +2767,45 @@ pub const Context = struct {
     }
 
     /// Registers GIF bytes once (by key) for later `video` embeds.
+
+    pub fn registerFont(_: *Context, family: []const u8, data: []const u8) void {
+        const CFontSpec = extern struct {
+            family_ptr: usize = 0,
+            family_len: usize = 0,
+            data_ptr: usize = 0,
+            data_len: usize = 0,
+        };
+        var spec = CFontSpec{
+            .family_ptr = mygo.sliceAddr(family),
+            .family_len = family.len,
+            .data_ptr = mygo.sliceAddr(data),
+            .data_len = data.len,
+        };
+        _ = mygo.dispatch(.register_font, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    pub fn registerBitmap(_: *Context, key: []const u8, data: []const u8) void {
+        const CBitmapSpec = extern struct {
+            key_ptr: usize = 0,
+            key_len: usize = 0,
+            data_ptr: usize = 0,
+            data_len: usize = 0,
+        };
+        var spec = CBitmapSpec{
+            .key_ptr = mygo.sliceAddr(key),
+            .key_len = key.len,
+            .data_ptr = mygo.sliceAddr(data),
+            .data_len = data.len,
+        };
+        _ = mygo.dispatch(.register_bitmap, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    pub fn bitmap(self: *Context, key: []const u8) Element {
+        self.writeOp(@intFromEnum(CoreOp.bitmap));
+        self.writeStr(key);
+        return .{ .ctx = self };
+    }
+
     pub fn registerVideoGIF(_: *Context, key: []const u8, gif: []const u8, loop: bool) void {
         var spec = CVideoGIFSpec{
             .key_ptr = mygo.sliceAddr(key),

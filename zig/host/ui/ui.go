@@ -50,10 +50,10 @@ const (
 	opTextInput     uint16 = 14
 	opList          uint16 = 15
 
-	opBadge     uint16 = 16
-	opLink      uint16 = 17
-	opProgress  uint16 = 18
-	opMeter     uint16 = 19
+	opBadge    uint16 = 16
+	opLink     uint16 = 17
+	opProgress uint16 = 18
+	opMeter    uint16 = 19
 
 	opPushParent        uint16 = 20
 	opPopParent         uint16 = 21
@@ -132,37 +132,40 @@ const (
 	opDrop             uint16 = 98
 	opDragOver         uint16 = 99
 	// 100..301 are Element modifiers (uigen). New widget ops continue after.
-	opDraggable        uint16 = 302
-	opWebView          uint16 = 303
-	opWebViewDestroy   uint16 = 304
-	opDragData         uint16 = 305
-	opDropData         uint16 = 306
-	opDataDragOver     uint16 = 307
-	opVideo            uint16 = 308
-	opVideoControl     uint16 = 309
-	opRouteView        uint16 = 310
-	opRouteMatch       uint16 = 311
-	opRouteParam       uint16 = 312
-	opDrawObjects      uint16 = 313
-	opToastViewport    uint16 = 314
-	opToastItem        uint16 = 315
-	opToastCloseBtn    uint16 = 316
-	opToastActionBtn   uint16 = 317
-	opDragMIME         uint16 = 318
-	opDropMIME         uint16 = 319
-	opDragMIMELazy     uint16 = 320
-	opAddToast         uint16 = 321
-	opAfter            uint16 = 322
-	opAnimationFrame   uint16 = 323
-	opDisableAnims     uint16 = 324
-	opInvalidate       uint16 = 325
-	opCloseToast       uint16 = 326
-	opAnimate          uint16 = 327
-	opAnimateTo        uint16 = 328
-	opArrived          uint16 = 329
-	opAnimateColor     uint16 = 330
-	opAnimatePose      uint16 = 331
-	opSpring           uint16 = 332
+	opDraggable      uint16 = 302
+	opWebView        uint16 = 303
+	opWebViewDestroy uint16 = 304
+	opDragData       uint16 = 305
+	opDropData       uint16 = 306
+	opDataDragOver   uint16 = 307
+	opVideo          uint16 = 308
+	opVideoControl   uint16 = 309
+	opRouteView      uint16 = 310
+	opRouteMatch     uint16 = 311
+	opRouteParam     uint16 = 312
+	opDrawObjects    uint16 = 313
+	opToastViewport  uint16 = 314
+	opToastItem      uint16 = 315
+	opToastCloseBtn  uint16 = 316
+	opToastActionBtn uint16 = 317
+	opDragMIME       uint16 = 318
+	opDropMIME       uint16 = 319
+	opDragMIMELazy   uint16 = 320
+	opAddToast       uint16 = 321
+	opAfter          uint16 = 322
+	opAnimationFrame uint16 = 323
+	opDisableAnims   uint16 = 324
+	opInvalidate     uint16 = 325
+	opCloseToast     uint16 = 326
+	opAnimate        uint16 = 327
+	opAnimateTo      uint16 = 328
+	opArrived        uint16 = 329
+	opAnimateColor   uint16 = 330
+	opAnimatePose    uint16 = 331
+	opSpring         uint16 = 332
+	opRole           uint16 = 333
+	opLinearGradient uint16 = 334 // angle, from, to (element fill)
+	opBitmap         uint16 = 335 // key → registered bitmap
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -189,6 +192,8 @@ const (
 	paintPathFill       uint8 = 13 // rgba u32
 	paintPathStroke     uint8 = 14 // width f32, rgba u32
 	paintPathSVG        uint8 = 15 // svg str, then fill rgba + stroke width/rgba (0 width = no stroke)
+	paintFillGradient   uint8 = 16 // rect + radius + angle + from + to
+	paintPathFillGrad   uint8 = 17 // angle + from + to
 )
 
 type cUITheme struct {
@@ -356,7 +361,7 @@ type ZigToastData struct {
 
 type framesAsset struct {
 	w, h   int
-	loop  bool
+	loop   bool
 	frames []frameRGBA
 }
 
@@ -369,11 +374,12 @@ var (
 	gifRegistry    sync.Map // key → gifAsset
 	framesRegistry sync.Map // key → framesAsset
 	streamRegistry sync.Map // key → *streamAsset
+	bitmapRegistry sync.Map // key → *mygoui.Bitmap
 )
 
 // rgbaFramesDecoder plays a registered RGBA sequence.
 type rgbaFramesDecoder struct {
-	w, h    int
+	w, h   int
 	frames []frameRGBA
 	i      int
 }
@@ -449,7 +455,6 @@ var (
 // BindFrameElement builds an element inside the active frame for opt-in sibling
 // packages (`zig/host/markdown`, `zig/host/editor`) and sets it as `f.cur` so
 // subsequent Element modifier opcodes apply to it.
-
 
 func colorToU32(c mygoui.Color) uint32 {
 	return uint32(c.R)<<24 | uint32(c.G)<<16 | uint32(c.B)<<8 | uint32(c.A)
@@ -674,6 +679,33 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 		if raw, ok := streamRegistry.Load(key); ok {
 			_ = (&streamDecoder{a: raw.(*streamAsset)}).Close()
 		}
+	case host.HostOpRegisterFont:
+		spec := host.PtrTo[host.CFontSpec](a0)
+		if spec == nil || spec.DataLen == 0 {
+			host.SetError(errors.New("zighost: registerFont needs font bytes"))
+			return ^uintptr(0)
+		}
+		family := host.CopyString(spec.FamilyPtr, spec.FamilyLen)
+		data := host.CopyBytes(spec.DataPtr, spec.DataLen)
+		if err := mygoui.RegisterFont(data, family); err != nil {
+			host.SetError(err)
+			return ^uintptr(0)
+		}
+		return 0
+	case host.HostOpRegisterBitmap:
+		spec := host.PtrTo[host.CBitmapSpec](a0)
+		if spec == nil || spec.KeyLen == 0 || spec.DataLen == 0 {
+			host.SetError(errors.New("zighost: registerBitmap needs key and bytes"))
+			return ^uintptr(0)
+		}
+		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
+		data := host.CopyBytes(spec.DataPtr, spec.DataLen)
+		bm, err := mygoui.DecodeBitmap(data)
+		if err != nil {
+			host.SetError(err)
+			return ^uintptr(0)
+		}
+		bitmapRegistry.Store(key, bm)
 		return 0
 	}
 	return ^uintptr(0)
@@ -957,9 +989,9 @@ func writeStrList(dst []byte, items []string) int {
 // zigMenuNode is a menu entry parsed from the Zig tape. build runs again
 // after a choice, so the tree must be owned by Go, not the command buffer.
 type zigMenuNode struct {
-	kind        uint8 // 0=item, 1=separator, 2=submenu
-	id, label   string
-	children    []zigMenuNode
+	kind      uint8 // 0=item, 1=separator, 2=submenu
+	id, label string
+	children  []zigMenuNode
 }
 
 // readMenuTree reads:
@@ -3137,6 +3169,40 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				out.NumVal = float64(v)
 			}
 
+		case opRole:
+			role, ok := r.u8()
+			if !ok {
+				return
+			}
+			f.cur = f.cur.Role(mygoui.Role(role))
+
+		case opLinearGradient:
+			angle, ok1 := r.f32()
+			from, ok2 := r.u32()
+			to, ok3 := r.u32()
+			oklab, ok4 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			f.cur = f.cur.LinearGradient(mygoui.LinearGradient{
+				Angle: angle,
+				From:  unpackColor(from),
+				To:    unpackColor(to),
+				Oklab: oklab != 0,
+			})
+
+		case opBitmap:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			if raw, ok := bitmapRegistry.Load(key); ok {
+				f.cur = mygoui.Image(c, raw.(*mygoui.Bitmap))
+			} else {
+				host.SetError(fmt.Errorf("zighost: bitmap %q not registered", key))
+				f.cur = mygoui.Box(c)
+			}
+
 		default:
 			return
 		}
@@ -3308,6 +3374,31 @@ func flushPaint(painterHandle, cmdPtr, cmdLen uintptr) {
 			if strokeW > 0 {
 				p.StrokePath(path, strokeW, unpackColor(strokeRGBA))
 			}
+		case paintFillGradient:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			w, ok3 := r.f32()
+			h, ok4 := r.f32()
+			rad, ok5 := r.f32()
+			angle, ok6 := r.f32()
+			from, ok7 := r.u32()
+			to, ok8 := r.u32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 {
+				return
+			}
+			p.FillGradient(mygoui.Rect{X: x, Y: y, W: w, H: h}, mygoui.LinearGradient{
+				Angle: angle, From: unpackColor(from), To: unpackColor(to),
+			}, rad)
+		case paintPathFillGrad:
+			angle, ok1 := r.f32()
+			from, ok2 := r.u32()
+			to, ok3 := r.u32()
+			if !ok1 || !ok2 || !ok3 || path == nil {
+				return
+			}
+			p.FillPathGradient(path, mygoui.LinearGradient{
+				Angle: angle, From: unpackColor(from), To: unpackColor(to),
+			})
 		default:
 			return
 		}

@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/egoist/mygo"
 )
@@ -334,7 +335,7 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return ChartDispatch(op, a0, a1, a2, a3)
 	}
-	if op == HostOpVideoGIF || op == HostOpVideoFrames || op == HostOpVideoStream || op == HostOpVideoPush || op == HostOpVideoEnd {
+	if op == HostOpVideoGIF || op == HostOpVideoFrames || op == HostOpVideoStream || op == HostOpVideoPush || op == HostOpVideoEnd || op == HostOpRegisterFont || op == HostOpRegisterBitmap {
 		if UIDispatch == nil {
 			SetError(errors.New("zighost: UI support not linked (import _ \"github.com/egoist/mygo/zig/host/ui\")"))
 			return ^uintptr(0)
@@ -620,6 +621,24 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		if spec := PtrTo[CHtmlSpec](a2); spec != nil {
 			w.Page().LoadHTML(StrField(spec.HTML), StrField(spec.BaseURL))
 		}
+	case WinCtlSetInputRegion:
+		if a3 == ^uintptr(0) {
+			w.SetInputRegion(nil) // full window again
+			break
+		}
+		n := int(a3)
+		if n < 0 {
+			n = 0
+		}
+		rects := make([]mygo.Rectangle, 0, n)
+		for i := 0; i < n; i++ {
+			b := PtrTo[CBounds](a2 + uintptr(i)*unsafe.Sizeof(CBounds{}))
+			if b == nil {
+				break
+			}
+			rects = append(rects, mygo.Rectangle{X: int(b.X), Y: int(b.Y), Width: int(b.Width), Height: int(b.Height)})
+		}
+		w.SetInputRegion(rects)
 	}
 	return 0
 }

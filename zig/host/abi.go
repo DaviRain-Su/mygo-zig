@@ -7,19 +7,19 @@ type CallZigFn func(kind, a0, a1, a2, a3 uintptr) uintptr
 
 // Zig entry event kinds (`mygo_zig_entry(kind, a0, a1, a2, a3)`).
 const (
-	ZigEventInit         uintptr = 1 // a0 = host_dispatch_fn_ptr
-	ZigEventReady        uintptr = 2 // app WhenReady on main thread
-	ZigEventIPC          uintptr = 3 // a0 = cb_id, a1 = win_id, a2 = *CIpcArgs, a3 = reply_handle
-	ZigEventWindow       uintptr = 4 // a0 = cb_id, a1 = win_id, a2 = payload_ptr, a3 = payload_len
-	ZigEventMenu         uintptr = 5 // a0 = cb_id, a1 = win_id, a2 = id_ptr, a3 = id_len
-	ZigEventBytes        uintptr = 6 // a0 = cb_id, a1 = ptr, a2 = len, a3 = userdata
-	ZigEventUIView       uintptr = 7  // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
-	ZigEventUIListRow    uintptr = 8  // a0 = cb_id, a1 = frame_handle, a2 = *CUIListRowInfo, a3 = userdata
-	ZigEventUIPaint      uintptr = 9  // a0 = cb_id, a1 = painter_handle, a2 = *CUIRect, a3 = userdata
-	ZigEventUISubview    uintptr = 10 // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
-	ZigEventUITableCell  uintptr = 11 // a0 = cb_id, a1 = frame_handle, a2 = *CUITableCellInfo, a3 = userdata
-	ZigEventUIAction     uintptr = 12 // a0 = cb_id, a1 = 0, a2 = 0, a3 = userdata (toast action, …)
-	ZigEventUIGridItem   uintptr = 13 // a0 = cb_id, a1 = frame_handle, a2 = *CUIGridItemInfo, a3 = userdata
+	ZigEventInit          uintptr = 1  // a0 = host_dispatch_fn_ptr
+	ZigEventReady         uintptr = 2  // app WhenReady on main thread
+	ZigEventIPC           uintptr = 3  // a0 = cb_id, a1 = win_id, a2 = *CIpcArgs, a3 = reply_handle
+	ZigEventWindow        uintptr = 4  // a0 = cb_id, a1 = win_id, a2 = payload_ptr, a3 = payload_len
+	ZigEventMenu          uintptr = 5  // a0 = cb_id, a1 = win_id, a2 = id_ptr, a3 = id_len
+	ZigEventBytes         uintptr = 6  // a0 = cb_id, a1 = ptr, a2 = len, a3 = userdata
+	ZigEventUIView        uintptr = 7  // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
+	ZigEventUIListRow     uintptr = 8  // a0 = cb_id, a1 = frame_handle, a2 = *CUIListRowInfo, a3 = userdata
+	ZigEventUIPaint       uintptr = 9  // a0 = cb_id, a1 = painter_handle, a2 = *CUIRect, a3 = userdata
+	ZigEventUISubview     uintptr = 10 // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
+	ZigEventUITableCell   uintptr = 11 // a0 = cb_id, a1 = frame_handle, a2 = *CUITableCellInfo, a3 = userdata
+	ZigEventUIAction      uintptr = 12 // a0 = cb_id, a1 = 0, a2 = 0, a3 = userdata (toast action, …)
+	ZigEventUIGridItem    uintptr = 13 // a0 = cb_id, a1 = frame_handle, a2 = *CUIGridItemInfo, a3 = userdata
 	ZigEventUIOutlineRow  uintptr = 14 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineRowInfo, a3 = userdata
 	ZigEventUIRoute       uintptr = 15 // a0 = cb_id, a1 = frame_handle, a2 = *CUIRouteInfo, a3 = userdata
 	ZigEventUIOutlineCell uintptr = 16 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineCellInfo, a3 = userdata
@@ -28,28 +28,28 @@ const (
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
 const (
-	HostOpSetName        uintptr = 1
-	HostOpQuit           uintptr = 2
-	HostOpLastError      uintptr = 3
-	HostOpRegisterTS     uintptr = 4
-	HostOpFrontendAsset  uintptr = 5
-	HostOpBindRaw        uintptr = 6
-	HostOpEmitRaw        uintptr = 7
-	HostOpIPCDefer       uintptr = 8
-	HostOpIPCResolve     uintptr = 9
-	HostOpIPCReject      uintptr = 10
-	HostOpWindowNew      uintptr = 11
-	HostOpWindowControl  uintptr = 12
-	HostOpWindowOnEvent  uintptr = 13
-	HostOpClipboard      uintptr = 14
-	HostOpShell          uintptr = 15
-	HostOpAppSetMenu     uintptr = 16
+	HostOpSetName       uintptr = 1
+	HostOpQuit          uintptr = 2
+	HostOpLastError     uintptr = 3
+	HostOpRegisterTS    uintptr = 4
+	HostOpFrontendAsset uintptr = 5
+	HostOpBindRaw       uintptr = 6
+	HostOpEmitRaw       uintptr = 7
+	HostOpIPCDefer      uintptr = 8
+	HostOpIPCResolve    uintptr = 9
+	HostOpIPCReject     uintptr = 10
+	HostOpWindowNew     uintptr = 11
+	HostOpWindowControl uintptr = 12
+	HostOpWindowOnEvent uintptr = 13
+	HostOpClipboard     uintptr = 14
+	HostOpShell         uintptr = 15
+	HostOpAppSetMenu    uintptr = 16
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
-	HostOpUIBase         uintptr = 100
-	HostOpWindowNewUI    uintptr = 100
-	HostOpUIFlush        uintptr = 101
-	HostOpUIPaintFlush   uintptr = 102
+	HostOpUIBase       uintptr = 100
+	HostOpWindowNewUI  uintptr = 100
+	HostOpUIFlush      uintptr = 101
+	HostOpUIPaintFlush uintptr = 102
 
 	HostOpMarkdownView   uintptr = 200
 	HostOpEditorView     uintptr = 210
@@ -63,6 +63,8 @@ const (
 	HostOpVideoStream    uintptr = 232 // a0 = *CVideoStreamSpec (open)
 	HostOpVideoPush      uintptr = 233 // a0 = *CVideoPushSpec
 	HostOpVideoEnd       uintptr = 234 // a0 = key ptr, a1 = key len
+	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
+	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 )
 
 // CVideoGIFSpec registers a looping GIF player by key for later Video() ops.
@@ -101,22 +103,35 @@ type CVideoPushSpec struct {
 	PixelsPtr, PixelsLen uintptr
 }
 
+// CFontSpec registers a TTF/OTF with ui.RegisterFont.
+type CFontSpec struct {
+	FamilyPtr, FamilyLen uintptr
+	DataPtr, DataLen     uintptr
+}
+
+// CBitmapSpec registers decoded image bytes under a key for `bitmap`.
+type CBitmapSpec struct {
+	KeyPtr, KeyLen   uintptr
+	DataPtr, DataLen uintptr
+}
+
 // Window control sub-opcodes for HostOpWindowControl.
 const (
-	WinCtlShow          uintptr = 1
-	WinCtlHide          uintptr = 2
-	WinCtlClose         uintptr = 3
-	WinCtlCenter        uintptr = 4
-	WinCtlMinimize      uintptr = 5
-	WinCtlMaximize      uintptr = 6
-	WinCtlUnmaximize    uintptr = 7
-	WinCtlSetFullscreen uintptr = 8
-	WinCtlInvalidate    uintptr = 9
-	WinCtlSetTitle      uintptr = 10
-	WinCtlGetBounds     uintptr = 11
-	WinCtlSetBounds     uintptr = 12
-	WinCtlLoadURL       uintptr = 13
-	WinCtlLoadHTML      uintptr = 14
+	WinCtlShow           uintptr = 1
+	WinCtlHide           uintptr = 2
+	WinCtlClose          uintptr = 3
+	WinCtlCenter         uintptr = 4
+	WinCtlMinimize       uintptr = 5
+	WinCtlMaximize       uintptr = 6
+	WinCtlUnmaximize     uintptr = 7
+	WinCtlSetFullscreen  uintptr = 8
+	WinCtlInvalidate     uintptr = 9
+	WinCtlSetTitle       uintptr = 10
+	WinCtlGetBounds      uintptr = 11
+	WinCtlSetBounds      uintptr = 12
+	WinCtlLoadURL        uintptr = 13
+	WinCtlLoadHTML       uintptr = 14
+	WinCtlSetInputRegion uintptr = 15 // a2=*CBounds, a3=count; a3=^0 → nil (full)
 )
 
 // CStr matches `extern struct { data: ?[*]const u8, len: usize }` in Zig.

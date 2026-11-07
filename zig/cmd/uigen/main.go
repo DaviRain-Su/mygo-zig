@@ -92,6 +92,8 @@ var handWrittenZigNames = map[string]bool{
 	"animateColor":      true,
 	"animatePose":       true,
 	"spring":            true,
+	"role":              true,
+	"linearGradient":    true,
 }
 
 func toCamel(s string) string {
@@ -570,6 +572,21 @@ func writeZigElement(methods []methodSpec) {
         self.ctx.writeI32(duration_ms);
         self.ctx.writeF32(velocity);
         return @floatCast(self.ctx.flushQuery().num_val);
+    }
+
+    pub fn role(self: Element, r: ui.Role) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.role));
+        self.ctx.writeU8(@intFromEnum(r));
+        return self;
+    }
+
+    pub fn linearGradient(self: Element, angle: f32, from: Color, to: Color, oklab: bool) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.linear_gradient));
+        self.ctx.writeF32(angle);
+        self.ctx.writeU32(from.toU32());
+        self.ctx.writeU32(to.toU32());
+        self.ctx.writeU8(@intFromBool(oklab));
+        return self;
     }
 `)
 
