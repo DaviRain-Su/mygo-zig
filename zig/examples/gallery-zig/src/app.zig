@@ -183,6 +183,8 @@ const Gallery = struct {
     motion_entered: bool = false,
     toast_id_buf: [64]u8 = undefined,
     last_toast_id_len: usize = 0,
+    dialog_buf: [512]u8 = undefined,
+    dialog_len: usize = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
     mime_drop: [256]u8 = undefined,
@@ -1078,7 +1080,7 @@ const Gallery = struct {
 
     fn viewMore(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
-        _ = c.text("Toolbar · Custom toasts · RichText objects · MIME drag").fontSize(16).bold();
+        _ = c.text("Toolbar · Toasts · Dialogs · RichText · MIME drag").fontSize(16).bold();
 
                 _ = c.box().fillWidth().height(36).radius(8).linearGradient(90, t.accent, t.success, false);
 
@@ -1108,6 +1110,33 @@ const Gallery = struct {
                     self.last_toast_id_len = 0;
                 }
             }
+            if (c.button("dlg-msg", "Message…").clicked()) {
+                const res = mygo.Dialog.message(c.window, .question, "Gallery", "Run the open dialog next?", "Dialog bindings", &.{ "Open", "Cancel" }) catch mygo.MessageResult{};
+                if (res.button == 0) {
+                    if (mygo.Dialog.open(std.heap.page_allocator, c.window, "Open a file", "", "Images", "png,jpg,gif", 0)) |paths| {
+                        defer std.heap.page_allocator.free(paths);
+                        const n = @min(paths.len, self.dialog_buf.len);
+                        @memcpy(self.dialog_buf[0..n], paths[0..n]);
+                        self.dialog_len = n;
+                    } else |_| {
+                        self.dialog_len = 0;
+                    }
+                }
+            }
+            if (c.button("dlg-save", "Save…").clicked()) {
+                if (mygo.Dialog.save(std.heap.page_allocator, c.window, "Save as", "out.txt", "Text", "txt", mygo.DialogFlag.create_dirs)) |path| {
+                    defer std.heap.page_allocator.free(path);
+                    const n = @min(path.len, self.dialog_buf.len);
+                    @memcpy(self.dialog_buf[0..n], path[0..n]);
+                    self.dialog_len = n;
+                } else |_| {
+                    self.dialog_len = 0;
+                }
+            }
+            if (self.dialog_len > 0) {
+                _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
+            }
+
             if (c.button("motion", if (self.motion_on) "Reset motion" else "Animate").clicked()) {
                 self.motion_on = !self.motion_on;
                 self.motion_entered = false;

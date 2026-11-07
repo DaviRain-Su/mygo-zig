@@ -534,6 +534,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpWindowOnEvent:
 		return windowOnEvent(int(int32(a0)), int32(a1), a2)
 
+	case HostOpDialog:
+		return hostDialog(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -875,4 +878,170 @@ func addFrontendAsset(spec *CAssetSpec) uintptr {
 
 func uintptrSlicePtr[T any](p *T) uintptr {
 	return uintptr(unsafePointer(p))
+}
+
+func hostDialog(kind, specPtr, outPtr, outCap uintptr) uintptr {
+	switch kind {
+	case 1: // Open
+		spec := PtrTo[CDialogOpenSpec](specPtr)
+		if spec == nil {
+			SetError(errors.New("zighost: dialog open needs spec"))
+			return ^uintptr(0)
+		}
+		opts := mygo.OpenDialogOptions{
+			Title:                      CopyString(spec.TitlePtr, spec.TitleLen),
+			DefaultPath:                CopyString(spec.DefaultPathPtr, spec.DefaultPathLen),
+			ButtonLabel:                CopyString(spec.ButtonLabelPtr, spec.ButtonLabelLen),
+			Message:                    CopyString(spec.MessagePtr, spec.MessageLen),
+			Directory:                  spec.Flags&1 != 0,
+			Multiple:                   spec.Flags&2 != 0,
+			ShowHiddenFiles:            spec.Flags&4 != 0,
+			CreateDirectories:          spec.Flags&8 != 0,
+			TreatPackagesAsDirectories: spec.Flags&16 != 0,
+		}
+		if spec.ParentWinID != 0 {
+			opts.Parent = mygo.WindowByID(int(spec.ParentWinID))
+		}
+		if name := CopyString(spec.FilterNamePtr, spec.FilterNameLen); name != "" || spec.FilterExtLen > 0 {
+			exts := splitCSV(CopyString(spec.FilterExtPtr, spec.FilterExtLen))
+			opts.Filters = []mygo.FileFilter{{Name: name, Extensions: exts}}
+		}
+		paths, err := mygo.Dialog.Open(opts)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeNULPaths(paths, outPtr, outCap)
+
+	case 2: // Save
+		spec := PtrTo[CDialogSaveSpec](specPtr)
+		if spec == nil {
+			SetError(errors.New("zighost: dialog save needs spec"))
+			return ^uintptr(0)
+		}
+		opts := mygo.SaveDialogOptions{
+			Title:                      CopyString(spec.TitlePtr, spec.TitleLen),
+			DefaultPath:                CopyString(spec.DefaultPathPtr, spec.DefaultPathLen),
+			ButtonLabel:                CopyString(spec.ButtonLabelPtr, spec.ButtonLabelLen),
+			Message:                    CopyString(spec.MessagePtr, spec.MessageLen),
+			NameFieldLabel:             CopyString(spec.NameFieldLabelPtr, spec.NameFieldLen),
+			ShowHiddenFiles:            spec.Flags&4 != 0,
+			CreateDirectories:          spec.Flags&8 != 0,
+			TreatPackagesAsDirectories: spec.Flags&16 != 0,
+		}
+		if spec.ParentWinID != 0 {
+			opts.Parent = mygo.WindowByID(int(spec.ParentWinID))
+		}
+		if name := CopyString(spec.FilterNamePtr, spec.FilterNameLen); name != "" || spec.FilterExtLen > 0 {
+			exts := splitCSV(CopyString(spec.FilterExtPtr, spec.FilterExtLen))
+			opts.Filters = []mygo.FileFilter{{Name: name, Extensions: exts}}
+		}
+		path, err := mygo.Dialog.Save(opts)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut([]byte(path), outPtr, outCap)
+
+	case 3: // Message
+		spec := PtrTo[CDialogMessageSpec](specPtr)
+		if spec == nil {
+			SetError(errors.New("zighost: dialog message needs spec"))
+			return ^uintptr(0)
+		}
+		msgType := mygo.MessageNone
+		switch spec.Type {
+		case 1:
+			msgType = mygo.MessageInfo
+		case 2:
+			msgType = mygo.MessageWarning
+		case 3:
+			msgType = mygo.MessageError
+		case 4:
+			msgType = mygo.MessageQuestion
+		}
+		opts := mygo.MessageOptions{
+			Type:            msgType,
+			Title:           CopyString(spec.TitlePtr, spec.TitleLen),
+			Message:         CopyString(spec.MessagePtr, spec.MessageLen),
+			Detail:          CopyString(spec.DetailPtr, spec.DetailLen),
+			CheckboxLabel:   CopyString(spec.CheckboxLabelPtr, spec.CheckboxLen),
+			CheckboxChecked: spec.CheckboxChecked != 0,
+			DefaultButton:   int(spec.DefaultButton),
+			CancelButton:    int(spec.CancelButton),
+			Buttons:         splitNUL(CopyString(spec.ButtonsPtr, spec.ButtonsLen)),
+		}
+		if spec.ParentWinID != 0 {
+			opts.Parent = mygo.WindowByID(int(spec.ParentWinID))
+		}
+		res, err := mygo.Dialog.Message(opts)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		if out := PtrTo[CDialogMessageResult](outPtr); out != nil && outCap >= unsafe.Sizeof(CDialogMessageResult{}) {
+			out.Button = int32(res.Button)
+			if res.CheckboxChecked {
+				out.CheckboxChecked = 1
+			}
+		}
+		return uintptr(unsafe.Sizeof(CDialogMessageResult{}))
+	default:
+		SetError(errors.New("zighost: unknown dialog kind"))
+		return ^uintptr(0)
+	}
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func splitNUL(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, "\x00")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func writeBytesToOut(b []byte, outPtr, outCap uintptr) uintptr {
+	if outPtr != 0 && outCap > 0 && len(b) > 0 {
+		n := min(len(b), int(outCap))
+		copy(BytesView(outPtr, uintptr(n)), b[:n])
+	}
+	return uintptr(len(b))
+}
+
+func writeNULPaths(paths []string, outPtr, outCap uintptr) uintptr {
+	if len(paths) == 0 {
+		return 0
+	}
+	var buf []byte
+	for i, p := range paths {
+		if i > 0 {
+			buf = append(buf, 0)
+		}
+		buf = append(buf, p...)
+	}
+	return writeBytesToOut(buf, outPtr, outCap)
 }

@@ -34,6 +34,7 @@ pub const HostOp = enum(usize) {
     clipboard = 14,
     shell = 15,
     app_set_menu = 16,
+    dialog = 20,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -514,6 +515,175 @@ pub const Window = struct {
 pub const CallContext = struct {
     allocator: std.mem.Allocator,
     window: Window,
+};
+
+
+pub const DialogFlag = struct {
+    pub const directory: u32 = 1;
+    pub const multiple: u32 = 2;
+    pub const show_hidden: u32 = 4;
+    pub const create_dirs: u32 = 8;
+    pub const packages: u32 = 16;
+};
+
+pub const MessageType = enum(u8) {
+    none = 0,
+    info = 1,
+    warning = 2,
+    @"error" = 3,
+    question = 4,
+};
+
+pub const MessageResult = struct {
+    button: i32 = 0,
+    checkbox_checked: bool = false,
+};
+
+pub const Dialog = struct {
+    const COpenSpec = extern struct {
+        parent_win_id: usize = 0,
+        title_ptr: usize = 0,
+        title_len: usize = 0,
+        default_path_ptr: usize = 0,
+        default_path_len: usize = 0,
+        button_label_ptr: usize = 0,
+        button_label_len: usize = 0,
+        message_ptr: usize = 0,
+        message_len: usize = 0,
+        filter_name_ptr: usize = 0,
+        filter_name_len: usize = 0,
+        filter_ext_ptr: usize = 0,
+        filter_ext_len: usize = 0,
+        flags: u32 = 0,
+        _pad: [4]u8 = @splat(0),
+    };
+
+    const CSaveSpec = extern struct {
+        parent_win_id: usize = 0,
+        title_ptr: usize = 0,
+        title_len: usize = 0,
+        default_path_ptr: usize = 0,
+        default_path_len: usize = 0,
+        button_label_ptr: usize = 0,
+        button_label_len: usize = 0,
+        message_ptr: usize = 0,
+        message_len: usize = 0,
+        name_field_label_ptr: usize = 0,
+        name_field_len: usize = 0,
+        filter_name_ptr: usize = 0,
+        filter_name_len: usize = 0,
+        filter_ext_ptr: usize = 0,
+        filter_ext_len: usize = 0,
+        flags: u32 = 0,
+        _pad: [4]u8 = @splat(0),
+    };
+
+    const CMessageSpec = extern struct {
+        parent_win_id: usize = 0,
+        type: u8 = 0,
+        checkbox_checked: u8 = 0,
+        _pad: [2]u8 = @splat(0),
+        default_button: i32 = 0,
+        cancel_button: i32 = 0,
+        title_ptr: usize = 0,
+        title_len: usize = 0,
+        message_ptr: usize = 0,
+        message_len: usize = 0,
+        detail_ptr: usize = 0,
+        detail_len: usize = 0,
+        checkbox_label_ptr: usize = 0,
+        checkbox_len: usize = 0,
+        buttons_ptr: usize = 0,
+        buttons_len: usize = 0,
+        button_count: u32 = 0,
+        _pad2: [4]u8 = @splat(0),
+    };
+
+    const CMessageResult = extern struct {
+        button: i32 = 0,
+        checkbox_checked: u8 = 0,
+        _pad: [3]u8 = @splat(0),
+    };
+
+    /// Open a file/directory picker. Returns NUL-separated paths (empty on cancel).
+    /// Caller owns the returned slice. Shows the dialog once.
+    pub fn open(allocator: std.mem.Allocator, parent: ?Window, title: []const u8, default_path: []const u8, filter_name: []const u8, filter_ext: []const u8, flags: u32) Error![]u8 {
+        var spec = COpenSpec{
+            .parent_win_id = if (parent) |w| @intCast(w.id) else 0,
+            .title_ptr = sliceAddr(title),
+            .title_len = title.len,
+            .default_path_ptr = sliceAddr(default_path),
+            .default_path_len = default_path.len,
+            .filter_name_ptr = sliceAddr(filter_name),
+            .filter_name_len = filter_name.len,
+            .filter_ext_ptr = sliceAddr(filter_ext),
+            .filter_ext_len = filter_ext.len,
+            .flags = flags,
+        };
+        // One call — host returns needed size; if our buffer is short we grow once
+        // from a cached host-side result is not available, so use a large scratch.
+        var scratch: [65536]u8 = undefined;
+        const got = dispatch(.dialog, 1, @intFromPtr(&spec), @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        if (got == 0) return try allocator.dupe(u8, "");
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn save(allocator: std.mem.Allocator, parent: ?Window, title: []const u8, default_path: []const u8, filter_name: []const u8, filter_ext: []const u8, flags: u32) Error![]u8 {
+        var spec = CSaveSpec{
+            .parent_win_id = if (parent) |w| @intCast(w.id) else 0,
+            .title_ptr = sliceAddr(title),
+            .title_len = title.len,
+            .default_path_ptr = sliceAddr(default_path),
+            .default_path_len = default_path.len,
+            .filter_name_ptr = sliceAddr(filter_name),
+            .filter_name_len = filter_name.len,
+            .filter_ext_ptr = sliceAddr(filter_ext),
+            .filter_ext_len = filter_ext.len,
+            .flags = flags,
+        };
+        var scratch: [65536]u8 = undefined;
+        const got = dispatch(.dialog, 2, @intFromPtr(&spec), @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        if (got == 0) return try allocator.dupe(u8, "");
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn message(parent: ?Window, msg_type: MessageType, title: []const u8, body: []const u8, detail: []const u8, buttons: []const []const u8) Error!MessageResult {
+        // Pack buttons as NUL-separated into a stack buffer.
+        var btn_buf: [1024]u8 = undefined;
+        var len: usize = 0;
+        var count: u32 = 0;
+        for (buttons) |b| {
+            if (len + b.len + 1 > btn_buf.len) break;
+            @memcpy(btn_buf[len .. len + b.len], b);
+            len += b.len;
+            btn_buf[len] = 0;
+            len += 1;
+            count += 1;
+        }
+        var spec = CMessageSpec{
+            .parent_win_id = if (parent) |w| @intCast(w.id) else 0,
+            .type = @intFromEnum(msg_type),
+            .title_ptr = sliceAddr(title),
+            .title_len = title.len,
+            .message_ptr = sliceAddr(body),
+            .message_len = body.len,
+            .detail_ptr = sliceAddr(detail),
+            .detail_len = detail.len,
+            .buttons_ptr = if (len > 0) @intFromPtr(&btn_buf) else 0,
+            .buttons_len = len,
+            .button_count = count,
+            .default_button = 0,
+            .cancel_button = if (count > 1) @as(i32, @intCast(count - 1)) else 0,
+        };
+        var out: CMessageResult = .{};
+        const got = dispatch(.dialog, 3, @intFromPtr(&spec), @intFromPtr(&out), @sizeOf(CMessageResult));
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .button = out.button, .checkbox_checked = out.checkbox_checked != 0 };
+    }
 };
 
 pub const Clipboard = struct {

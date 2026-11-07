@@ -44,6 +44,7 @@ const (
 	HostOpClipboard     uintptr = 14
 	HostOpShell         uintptr = 15
 	HostOpAppSetMenu    uintptr = 16
+	HostOpDialog        uintptr = 20 // a0=kind, a1=*spec, a2=out_ptr, a3=out_cap
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -298,4 +299,55 @@ func SliceAddr(b []byte) (uintptr, uintptr) {
 		return 0, 0
 	}
 	return uintptr(unsafe.Pointer(unsafe.SliceData(b))), uintptr(len(b))
+}
+
+// CDialogOpenSpec configures Dialog.Open (HostOpDialog kind=1).
+type CDialogOpenSpec struct {
+	ParentWinID                    uintptr
+	TitlePtr, TitleLen             uintptr
+	DefaultPathPtr, DefaultPathLen uintptr
+	ButtonLabelPtr, ButtonLabelLen uintptr
+	MessagePtr, MessageLen         uintptr
+	FilterNamePtr, FilterNameLen   uintptr
+	FilterExtPtr, FilterExtLen     uintptr // comma-separated extensions, e.g. "png,jpg"
+	Flags                          uint32  // 1=dir 2=multi 4=hidden 8=createDirs 16=packages
+	_                              [4]byte
+}
+
+// CDialogSaveSpec configures Dialog.Save (HostOpDialog kind=2).
+type CDialogSaveSpec struct {
+	ParentWinID                     uintptr
+	TitlePtr, TitleLen              uintptr
+	DefaultPathPtr, DefaultPathLen  uintptr
+	ButtonLabelPtr, ButtonLabelLen  uintptr
+	MessagePtr, MessageLen          uintptr
+	NameFieldLabelPtr, NameFieldLen uintptr
+	FilterNamePtr, FilterNameLen    uintptr
+	FilterExtPtr, FilterExtLen      uintptr
+	Flags                           uint32 // 4=hidden 8=createDirs 16=packages
+	_                               [4]byte
+}
+
+// CDialogMessageSpec configures Dialog.Message (HostOpDialog kind=3).
+type CDialogMessageSpec struct {
+	ParentWinID                   uintptr
+	Type                          uint8 // 0 none 1 info 2 warning 3 error 4 question
+	CheckboxChecked               uint8
+	_pad                          [2]byte
+	DefaultButton                 int32
+	CancelButton                  int32
+	TitlePtr, TitleLen            uintptr
+	MessagePtr, MessageLen        uintptr
+	DetailPtr, DetailLen          uintptr
+	CheckboxLabelPtr, CheckboxLen uintptr
+	ButtonsPtr, ButtonsLen        uintptr // NUL-separated button labels
+	ButtonCount                   uint32
+	_                             [4]byte
+}
+
+// CDialogMessageResult is written for HostOpDialog kind=3 when out_cap >= size.
+type CDialogMessageResult struct {
+	Button          int32
+	CheckboxChecked uint8
+	_               [3]byte
 }

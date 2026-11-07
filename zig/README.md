@@ -64,6 +64,9 @@ go run ./zig/cmd/scaffold -dir ./apps/x demo
 
 File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 
+### Dialogs
+`Dialog.open` / `save` / `message` (blocking, NUL-separated paths)
+
 ### Window / a11y (upstream sync)
 `Window.setInputRegion` · Element `role(.status/.log/.alert/…)` (ARIA live status from #1462)
 
@@ -78,6 +81,8 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Drag / toast / video / routes | Done | Incl. stream push + toast userdata |
 | Motion / timing | Done | Ops 322–332 |
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
+| File dialogs | Done | `Dialog.open`/`save`/`message` |
+| Tray | Open | `NewTray` / flyout |
 | Bitmap / Canvas / Fonts | Done | `registerBitmap`/`bitmap`, `registerFont`, `registerCanvas` + Painter `canvasBegin`/`End`/`image` |
 | File dialogs / tray | Open | only if/when host `mygo` exposes them to Zig |
 | DX: CI + one-shot build | Done | `.github/workflows/zig.yml`; `go run ./zig/cmd/build <app>`; `scaffold -build` |
