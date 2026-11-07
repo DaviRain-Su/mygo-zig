@@ -537,6 +537,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpDialog:
 		return hostDialog(a0, a1, a2, a3)
 
+	case HostOpTray:
+		return hostTray(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1044,4 +1047,235 @@ func writeNULPaths(paths []string, outPtr, outCap uintptr) uintptr {
 		buf = append(buf, p...)
 	}
 	return writeBytesToOut(buf, outPtr, outCap)
+}
+
+var (
+	trayMu   sync.Mutex
+	trays            = map[uintptr]*traySlot{}
+	nextTray uintptr = 1
+)
+
+type traySlot struct {
+	tray     *mygo.Tray
+	menuCB   uintptr
+	clickCB  uintptr
+	rightCB  uintptr
+	appearCB uintptr
+}
+
+func hostTray(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case TrayNew:
+		spec := PtrTo[CTrayNewSpec](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: tray new needs spec"))
+			return 0
+		}
+		opts := mygo.TrayOptions{
+			ID:             CopyString(spec.IDPtr, spec.IDLen),
+			Icon:           CopyBytes(spec.IconPtr, spec.IconLen),
+			IconIsTemplate: spec.Template != 0,
+			Title:          CopyString(spec.TitlePtr, spec.TitleLen),
+			ToolTip:        CopyString(spec.TipPtr, spec.TipLen),
+		}
+		menuCB := spec.MenuCbID
+		tr, err := mygo.NewTray(opts)
+		if err != nil {
+			SetError(err)
+			return 0
+		}
+		SetError(nil)
+		trayMu.Lock()
+		id := nextTray
+		nextTray++
+		slot := &traySlot{tray: tr, menuCB: menuCB}
+		trays[id] = slot
+		trayMu.Unlock()
+		if spec.MenuLen > 0 {
+			m, err := menuFromJSON(CopyBytes(spec.MenuJSONPtr, spec.MenuLen), menuCB, id)
+			if err != nil {
+				SetError(err)
+				tr.Destroy()
+				trayMu.Lock()
+				delete(trays, id)
+				trayMu.Unlock()
+				return 0
+			}
+			tr.SetMenu(m)
+		}
+		return id
+
+	case TrayDestroy:
+		trayMu.Lock()
+		slot := trays[a1]
+		delete(trays, a1)
+		trayMu.Unlock()
+		if slot != nil && slot.tray != nil {
+			slot.tray.Destroy()
+		}
+		return 0
+
+	case TraySetIcon:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		spec := PtrTo[CTrayIconSpec](a2)
+		if spec == nil {
+			SetError(errors.New("zighost: tray setIcon needs spec"))
+			return ^uintptr(0)
+		}
+		if err := slot.tray.SetIcon(CopyBytes(spec.PNGPtr, spec.PNGLen), spec.Template != 0); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+
+	case TraySetTitle:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		slot.tray.SetTitle(CopyString(a2, a3))
+		return 0
+
+	case TraySetToolTip:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		slot.tray.SetToolTip(CopyString(a2, a3))
+		return 0
+
+	case TraySetMenu:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		if a2 == 0 || a3 == 0 {
+			slot.tray.SetMenu(nil)
+			return 0
+		}
+		// Optional: a0 packing can't carry menu cb; keep slot.menuCB from New, or accept menuCB in unused high — pass menuCB as... we use tray's stored menuCB.
+		m, err := menuFromJSON(CopyBytes(a2, a3), slot.menuCB, a1)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		slot.tray.SetMenu(m)
+		SetError(nil)
+		return 0
+
+	case TrayPopUpMenu:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		slot.tray.PopUpMenu()
+		return 0
+
+	case TrayBounds:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		if out := PtrTo[CBounds](a2); out != nil {
+			b := slot.tray.Bounds()
+			*out = CBounds{X: int32(b.X), Y: int32(b.Y), Width: int32(b.Width), Height: int32(b.Height)}
+		}
+		return 0
+
+	case TrayDark:
+		slot := getTray(a1)
+		if slot == nil {
+			return 0
+		}
+		if slot.tray.Dark() {
+			return 1
+		}
+		return 0
+
+	case TrayOnEvent:
+		slot := getTray(a1)
+		if slot == nil {
+			return ^uintptr(0)
+		}
+		cbID := a3
+		switch a2 {
+		case 1: // click
+			slot.clickCB = cbID
+			slot.tray.OnClick(func() {
+				activeCall(ZigEventTray, cbID, a1, 1, 0)
+			})
+		case 2: // right
+			slot.rightCB = cbID
+			slot.tray.OnRightClick(func() {
+				activeCall(ZigEventTray, cbID, a1, 2, 0)
+			})
+		case 3: // appearance
+			slot.appearCB = cbID
+			slot.tray.OnAppearanceChange(func() {
+				activeCall(ZigEventTray, cbID, a1, 3, 0)
+			})
+		default:
+			return ^uintptr(0)
+		}
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown tray subop"))
+		return ^uintptr(0)
+	}
+}
+
+func getTray(id uintptr) *traySlot {
+	trayMu.Lock()
+	defer trayMu.Unlock()
+	slot := trays[id]
+	if slot == nil || slot.tray == nil {
+		SetError(errors.New("zighost: tray not found"))
+		return nil
+	}
+	return slot
+}
+
+func menuFromJSON(raw []byte, cbID, trayID uintptr) (*mygo.Menu, error) {
+	var spec []menuSpecItem
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		return nil, err
+	}
+	var convert func(items []menuSpecItem) []*mygo.MenuItem
+	convert = func(items []menuSpecItem) []*mygo.MenuItem {
+		out := make([]*mygo.MenuItem, len(items))
+		for i, it := range items {
+			mi := &mygo.MenuItem{
+				ID:          it.ID,
+				Label:       it.Label,
+				Type:        mygo.MenuItemType(it.Type),
+				Role:        mygo.MenuRole(it.Role),
+				Accelerator: it.Accelerator,
+				Disabled:    it.Disabled,
+				Hidden:      it.Hidden,
+				Checked:     it.Checked,
+				Submenu:     convert(it.Submenu),
+			}
+			if cbID != 0 && mi.Role == "" && len(mi.Submenu) == 0 && mi.Type != mygo.MenuItemSeparator {
+				idCopy := mi.ID
+				if idCopy == "" {
+					idCopy = mi.Label
+				}
+				mi.Click = func(_ *mygo.MenuItem, win *mygo.Window) {
+					_ = win
+					idBytes := []byte(idCopy)
+					cs := CStr{Data: 0, Len: 0}
+					ptr, n := SliceAddr(idBytes)
+					cs.Data, cs.Len = ptr, n
+					activeCall(ZigEventTray, cbID, trayID, 4, uintptrSlicePtr(&cs))
+				}
+			}
+			out[i] = mi
+		}
+		return out
+	}
+	return mygo.NewMenu(convert(spec)), nil
 }

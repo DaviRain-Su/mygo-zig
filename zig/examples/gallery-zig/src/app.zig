@@ -6,6 +6,8 @@ const mygo = @import("mygo");
 const ui = mygo.ui;
 
 const waves_gif = @embedFile("waves.gif");
+const tray_png = @embedFile("tray.png");
+const tray_menu_json = "[{\"id\":\"show\",\"label\":\"Show Gallery\"},{\"type\":\"separator\"},{\"id\":\"quit\",\"label\":\"Quit\"}]";
 
 const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor" };
 const edit_submenu = [_]ui.MenuEntry{
@@ -185,6 +187,10 @@ const Gallery = struct {
     last_toast_id_len: usize = 0,
     dialog_buf: [512]u8 = undefined,
     dialog_len: usize = 0,
+    tray_id: usize = 0,
+    tray_clicks: u32 = 0,
+    tray_menu_buf: [32]u8 = undefined,
+    tray_menu_len: usize = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
     mime_drop: [256]u8 = undefined,
@@ -520,6 +526,48 @@ const Gallery = struct {
         if (item.selected) {
             _ = c.badge("sel").fontSize(10).textColor(t.accent);
         }
+    }
+
+
+    fn onTrayMenu(self: *Gallery, id: []const u8) void {
+        const n = @min(id.len, self.tray_menu_buf.len);
+        @memcpy(self.tray_menu_buf[0..n], id[0..n]);
+        self.tray_menu_len = n;
+        if (std.mem.eql(u8, id, "quit")) {
+            mygo.quit();
+        }
+    }
+
+    fn onTrayClick(self: *Gallery) void {
+        self.tray_clicks +%= 1;
+        if (self.tray_id != 0) {
+            const tr: mygo.Tray = .{ .id = self.tray_id };
+            var buf: [16]u8 = undefined;
+            const title = std.fmt.bufPrint(&buf, "{d}", .{self.tray_clicks}) catch "*";
+            tr.setTitle(title);
+        }
+    }
+
+    fn ensureTray(self: *Gallery) void {
+        if (self.tray_id != 0) return;
+        const menu_cb = mygo.Tray.registerMenuHandler(*Gallery, self, Gallery.onTrayMenu);
+        const tr = mygo.Tray.new(.{
+            .id = "gallery-zig",
+            .icon_png = tray_png,
+            .title = "Zig",
+            .tooltip = "MyGo Zig Gallery",
+            .menu_json = tray_menu_json,
+            .menu_cb = menu_cb,
+        }) catch return;
+        self.tray_id = tr.id;
+        tr.onClick(*Gallery, self, Gallery.onTrayClick);
+    }
+
+    fn destroyTray(self: *Gallery) void {
+        if (self.tray_id == 0) return;
+        const tr: mygo.Tray = .{ .id = self.tray_id };
+        tr.destroy();
+        self.tray_id = 0;
     }
 
     fn onToastUndo(self: *Gallery) void {
@@ -1137,6 +1185,16 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("tray-toggle", if (self.tray_id != 0) "Remove tray" else "Add tray").clicked()) {
+                if (self.tray_id != 0) self.destroyTray() else self.ensureTray();
+            }
+            if (self.tray_id != 0) {
+                _ = c.textf("tray id={d} clicks={d}", .{ self.tray_id, self.tray_clicks }).fontSize(11).textColor(t.text_muted);
+                if (self.tray_menu_len > 0) {
+                    _ = c.textf("tray menu: {s}", .{self.tray_menu_buf[0..self.tray_menu_len]}).fontSize(11).textColor(t.text_muted);
+                }
+            }
+
             if (c.button("motion", if (self.motion_on) "Reset motion" else "Animate").clicked()) {
                 self.motion_on = !self.motion_on;
                 self.motion_entered = false;
@@ -1402,6 +1460,7 @@ fn init() !void {
 }
 
 fn onReady() void {
+    app_state.ensureTray();
     _ = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,

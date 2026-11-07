@@ -24,6 +24,7 @@ const (
 	ZigEventUIRoute       uintptr = 15 // a0 = cb_id, a1 = frame_handle, a2 = *CUIRouteInfo, a3 = userdata
 	ZigEventUIOutlineCell uintptr = 16 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineCellInfo, a3 = userdata
 	ZigEventUIProvide     uintptr = 17 // a0 = cb_id, a1 = out_buf_ptr, a2 = out_buf_cap, a3 = userdata → bytes written
+	ZigEventTray          uintptr = 18 // a0=cb_id a1=tray_id a2=kind(1 click/2 right/3 appearance/4 menu) a3=*CStr menu id when kind=4
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -45,6 +46,7 @@ const (
 	HostOpShell         uintptr = 15
 	HostOpAppSetMenu    uintptr = 16
 	HostOpDialog        uintptr = 20 // a0=kind, a1=*spec, a2=out_ptr, a3=out_cap
+	HostOpTray          uintptr = 21 // a0=subop, a1=tray_id|spec, a2, a3
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -350,4 +352,37 @@ type CDialogMessageResult struct {
 	Button          int32
 	CheckboxChecked uint8
 	_               [3]byte
+}
+
+// Tray sub-ops for HostOpTray.
+const (
+	TrayNew        uintptr = 1  // a1=*CTrayNewSpec → tray id
+	TrayDestroy    uintptr = 2  // a1=tray_id
+	TraySetIcon    uintptr = 3  // a1=tray_id, a2=png_ptr, a3=png_len; template in high bit of unused — use CTrayIconSpec at a2
+	TraySetTitle   uintptr = 4  // a1=tray_id, a2=ptr, a3=len
+	TraySetToolTip uintptr = 5  // a1=tray_id, a2=ptr, a3=len
+	TraySetMenu    uintptr = 6  // a1=tray_id, a2=json_ptr, a3=json_len; menu cb via CTrayNewSpec.MenuCb reused — pass menu_cb in high? use a0 packing: store cb on tray
+	TrayPopUpMenu  uintptr = 7  // a1=tray_id
+	TrayBounds     uintptr = 8  // a1=tray_id, a2=*CBounds
+	TrayDark       uintptr = 9  // a1=tray_id → 1/0
+	TrayOnEvent    uintptr = 10 // a1=tray_id, a2=kind(1/2/3), a3=cb_id
+)
+
+// CTrayNewSpec creates a tray icon.
+type CTrayNewSpec struct {
+	IDPtr, IDLen         uintptr
+	IconPtr, IconLen     uintptr
+	TitlePtr, TitleLen   uintptr
+	TipPtr, TipLen       uintptr
+	MenuJSONPtr, MenuLen uintptr
+	MenuCbID             uintptr
+	Template             uint8
+	_                    [7]byte
+}
+
+// CTrayIconSpec replaces a tray icon.
+type CTrayIconSpec struct {
+	PNGPtr, PNGLen uintptr
+	Template       uint8
+	_              [7]byte
 }

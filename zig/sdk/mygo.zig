@@ -35,6 +35,7 @@ pub const HostOp = enum(usize) {
     shell = 15,
     app_set_menu = 16,
     dialog = 20,
+    tray = 21,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -93,6 +94,7 @@ const ZigEvent = enum(usize) {
     ui_route = 15,
     ui_outline_cell = 16,
     ui_provide = 17,
+    tray = 18,
 };
 
 pub const CStr = extern struct {
@@ -220,6 +222,18 @@ pub var ui_outline_cell_count: usize = 0;
 var bytes_handlers: [32]RawBytesHandler = undefined;
 var bytes_count: usize = 0;
 
+const RawTrayHandler = *const fn (tray_id: usize, kind: u8, menu_id: []const u8, userdata: usize) void;
+var tray_handlers: [32]RawTrayHandler = undefined;
+var tray_count: usize = 0;
+var tray_handler_userdata: [32]usize = undefined;
+
+fn registerTrayHandler(h: RawTrayHandler, userdata: usize) usize {
+    tray_handlers[tray_count] = h;
+    tray_handler_userdata[tray_count] = userdata;
+    tray_count += 1;
+    return tray_count;
+}
+
 fn registerBytesHandler(h: RawBytesHandler) usize {
     bytes_handlers[bytes_count] = h;
     bytes_count += 1;
@@ -333,6 +347,19 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_outline_cell_count) return 0;
                     const info: *const ui.COutlineCellInfo = @ptrFromInt(a2);
                     ui_outline_cell_handlers[a0 - 1](a1, info, a3);
+                    return 0;
+                },
+                .tray => {
+                    if (a0 == 0 or a0 > tray_count) return 0;
+                    const tray_kind: u8 = @intCast(a2);
+                    const menu_id: []const u8 = blk: {
+                        if (tray_kind == 4 and a3 != 0) {
+                            const cs: *const CStr = @ptrFromInt(a3);
+                            break :blk cs.toSlice();
+                        }
+                        break :blk "";
+                    };
+                    tray_handlers[a0 - 1](a1, tray_kind, menu_id, tray_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -685,6 +712,172 @@ pub const Dialog = struct {
         return .{ .button = out.button, .checkbox_checked = out.checkbox_checked != 0 };
     }
 };
+
+
+pub const TrayEvent = enum(u8) {
+    click = 1,
+    right_click = 2,
+    appearance = 3,
+    menu = 4,
+};
+
+pub const Tray = struct {
+    id: usize = 0,
+
+    const CNewSpec = extern struct {
+        id_ptr: usize = 0,
+        id_len: usize = 0,
+        icon_ptr: usize = 0,
+        icon_len: usize = 0,
+        title_ptr: usize = 0,
+        title_len: usize = 0,
+        tip_ptr: usize = 0,
+        tip_len: usize = 0,
+        menu_json_ptr: usize = 0,
+        menu_len: usize = 0,
+        menu_cb_id: usize = 0,
+        template: u8 = 0,
+        _pad: [7]u8 = @splat(0),
+    };
+
+    const CIconSpec = extern struct {
+        png_ptr: usize = 0,
+        png_len: usize = 0,
+        template: u8 = 0,
+        _pad: [7]u8 = @splat(0),
+    };
+
+    const Sub = enum(usize) {
+        new = 1,
+        destroy = 2,
+        set_icon = 3,
+        set_title = 4,
+        set_tooltip = 5,
+        set_menu = 6,
+        popup = 7,
+        bounds = 8,
+        dark = 9,
+        on_event = 10,
+    };
+
+    /// Create a tray icon. `menu_json` is optional App-menu-style JSON
+    /// (`[{"id":"x","label":"X"},…]`). Menu clicks arrive on the handler
+    /// registered with `onMenu` (or the same cb as `menu_cb` via `new`).
+    pub fn new(opts: struct {
+        id: []const u8 = "",
+        icon_png: []const u8 = "",
+        title: []const u8 = "",
+        tooltip: []const u8 = "",
+        menu_json: []const u8 = "",
+        template: bool = false,
+        menu_cb: usize = 0,
+    }) Error!Tray {
+        var spec = CNewSpec{
+            .id_ptr = sliceAddr(opts.id),
+            .id_len = opts.id.len,
+            .icon_ptr = sliceAddr(opts.icon_png),
+            .icon_len = opts.icon_png.len,
+            .title_ptr = sliceAddr(opts.title),
+            .title_len = opts.title.len,
+            .tip_ptr = sliceAddr(opts.tooltip),
+            .tip_len = opts.tooltip.len,
+            .menu_json_ptr = sliceAddr(opts.menu_json),
+            .menu_len = opts.menu_json.len,
+            .menu_cb_id = opts.menu_cb,
+            .template = if (opts.template) 1 else 0,
+        };
+        const id = dispatch(.tray, @intFromEnum(Sub.new), @intFromPtr(&spec), 0, 0);
+        if (id == 0) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    pub fn destroy(self: Tray) void {
+        _ = dispatch(.tray, @intFromEnum(Sub.destroy), self.id, 0, 0);
+    }
+
+    pub fn setIcon(self: Tray, png: []const u8, template: bool) Error!void {
+        var spec = CIconSpec{
+            .png_ptr = sliceAddr(png),
+            .png_len = png.len,
+            .template = if (template) 1 else 0,
+        };
+        if (dispatch(.tray, @intFromEnum(Sub.set_icon), self.id, @intFromPtr(&spec), 0) == std.math.maxInt(usize))
+            return Error.MyGoError;
+    }
+
+    pub fn setTitle(self: Tray, title: []const u8) void {
+        _ = dispatch(.tray, @intFromEnum(Sub.set_title), self.id, sliceAddr(title), title.len);
+    }
+
+    pub fn setToolTip(self: Tray, tip: []const u8) void {
+        _ = dispatch(.tray, @intFromEnum(Sub.set_tooltip), self.id, sliceAddr(tip), tip.len);
+    }
+
+    pub fn setMenuJSON(self: Tray, json: []const u8) Error!void {
+        if (dispatch(.tray, @intFromEnum(Sub.set_menu), self.id, sliceAddr(json), json.len) == std.math.maxInt(usize))
+            return Error.MyGoError;
+    }
+
+    pub fn clearMenu(self: Tray) void {
+        _ = dispatch(.tray, @intFromEnum(Sub.set_menu), self.id, 0, 0);
+    }
+
+    pub fn popUpMenu(self: Tray) void {
+        _ = dispatch(.tray, @intFromEnum(Sub.popup), self.id, 0, 0);
+    }
+
+    pub fn bounds(self: Tray) Rectangle {
+        var b: CBounds = .{};
+        _ = dispatch(.tray, @intFromEnum(Sub.bounds), self.id, @intFromPtr(&b), 0);
+        return .{ .x = b.x, .y = b.y, .width = b.width, .height = b.height };
+    }
+
+    pub fn dark(self: Tray) bool {
+        return dispatch(.tray, @intFromEnum(Sub.dark), self.id, 0, 0) != 0;
+    }
+
+    pub fn onClick(self: Tray, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onTray(tray_id: usize, kind: u8, menu_id: []const u8, ud: usize) void {
+                _ = tray_id;
+                _ = menu_id;
+                if (kind != @intFromEnum(TrayEvent.click)) return;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+            }
+        };
+        const cb = registerTrayHandler(&S.onTray, @intFromPtr(state));
+        _ = dispatch(.tray, @intFromEnum(Sub.on_event), self.id, 1, cb);
+    }
+
+    pub fn onRightClick(self: Tray, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onTray(tray_id: usize, kind: u8, menu_id: []const u8, ud: usize) void {
+                _ = tray_id;
+                _ = menu_id;
+                if (kind != @intFromEnum(TrayEvent.right_click)) return;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+            }
+        };
+        const cb = registerTrayHandler(&S.onTray, @intFromPtr(state));
+        _ = dispatch(.tray, @intFromEnum(Sub.on_event), self.id, 2, cb);
+    }
+
+    /// Register a menu-click handler; pass the returned id as `menu_cb` to `new`.
+    pub fn registerMenuHandler(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) usize {
+        const S = struct {
+            fn onTray(tray_id: usize, kind: u8, menu_id: []const u8, ud: usize) void {
+                _ = tray_id;
+                if (kind != @intFromEnum(TrayEvent.menu)) return;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, menu_id);
+            }
+        };
+        return registerTrayHandler(&S.onTray, @intFromPtr(state));
+    }
+};
+
 
 pub const Clipboard = struct {
     pub fn writeText(text: []const u8) void {
