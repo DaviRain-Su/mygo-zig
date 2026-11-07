@@ -92,6 +92,22 @@ pub const Element = struct {
         return self;
     }
 
+    /// Native text drag source for other apps.
+    pub fn dragData(self: Element, payload: []const u8) Element {
+        self.ctx.dragData(payload);
+        return self;
+    }
+
+    /// Native drop target for text / URL / file paths.
+    pub fn dropData(self: Element, buf: []u8, len: *usize) bool {
+        return self.ctx.dropData(buf, len);
+    }
+
+    /// True while a native drag matching text/URL/files is over this element.
+    pub fn dataDragOver(self: Element) bool {
+        return self.ctx.dataDragOver();
+    }
+
     pub fn absolute(self: Element) Element {
         self.ctx.writeOp(100);
         return self;

@@ -236,6 +236,11 @@ pub const CoreOp = enum(u16) {
 
     // 100..301 = Element modifiers (uigen). Widget ops continue after.
     draggable = 302,
+    web_view = 303,
+    web_view_destroy = 304,
+    drag_data = 305,
+    drop_data = 306,
+    data_drag_over = 307,
 };
 
 const PaintOp = enum(u8) {
@@ -2345,6 +2350,39 @@ pub const Context = struct {
         self.writeOp(@intFromEnum(CoreOp.forward_button));
         self.writeStr(rt.key);
         return .{ .ctx = self };
+    }
+
+    /// Embeds a system webview (`mygo.Window.NewWebView`). Created once per
+    /// `key`; changing `url` navigates. Destroy with `destroyWebView`.
+    pub fn webView(self: *Context, key: []const u8, url: []const u8) Element {
+        self.writeOp(@intFromEnum(CoreOp.web_view));
+        self.writeStr(key);
+        self.writeStr(url);
+        return .{ .ctx = self };
+    }
+
+    pub fn destroyWebView(self: *Context, key: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.web_view_destroy));
+        self.writeStr(key);
+        self.flush();
+    }
+
+    /// Native text drag source (Finder / other apps can receive it).
+    pub fn dragData(self: *Context, payload: []const u8) void {
+        self.writeOp(@intFromEnum(CoreOp.drag_data));
+        self.writeStr(payload);
+    }
+
+    /// Native drop target for text / URL / file paths.
+    pub fn dropData(self: *Context, buf: []u8, len: *usize) bool {
+        self.writeOp(@intFromEnum(CoreOp.drop_data));
+        return self.flushChosenID(buf, len);
+    }
+
+    /// True while a native drag matching text/URL/files is over the element.
+    pub fn dataDragOver(self: *Context) bool {
+        self.writeOp(@intFromEnum(CoreOp.data_drag_over));
+        return self.flushQuery().bool_val != 0;
     }
 
     /// Lets the pointer move the current element by *x/*y.

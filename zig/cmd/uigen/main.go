@@ -78,6 +78,9 @@ var handWrittenZigNames = map[string]bool{
 	"drop":              true,
 	"dragOver":          true,
 	"draggable":         true,
+	"dragData":          true,
+	"dropData":          true,
+	"dataDragOver":      true,
 }
 
 func toCamel(s string) string {
@@ -429,6 +432,22 @@ func writeZigElement(methods []methodSpec) {
     pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds: ?ui.DragBounds) Element {
         self.ctx.draggable(x, y, axis, bounds);
         return self;
+    }
+
+    /// Native text drag source for other apps.
+    pub fn dragData(self: Element, payload: []const u8) Element {
+        self.ctx.dragData(payload);
+        return self;
+    }
+
+    /// Native drop target for text / URL / file paths.
+    pub fn dropData(self: Element, buf: []u8, len: *usize) bool {
+        return self.ctx.dropData(buf, len);
+    }
+
+    /// True while a native drag matching text/URL/files is over this element.
+    pub fn dataDragOver(self: Element) bool {
+        return self.ctx.dataDragOver();
     }
 `)
 

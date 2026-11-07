@@ -168,6 +168,10 @@ const Gallery = struct {
     drag_y: f32 = 20,
     line_ys: [12]f32 = .{ 4, 8, 6, 12, 9, 15, 11, 18, 14, 20, 16, 22 },
     bar_ys: [6]f32 = .{ 12, 18, 9, 22, 15, 11 },
+    native_drop: [128]u8 = undefined,
+    native_drop_len: usize = 0,
+    native_over: bool = false,
+    show_web: bool = false,
     outline_sel: i32 = 0,
     outline_open: [256]u8 = undefined,
     outline_open_len: usize = 0,
@@ -584,7 +588,7 @@ const Gallery = struct {
 
     fn viewNav(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
-        _ = c.text("Outline · Router · RichText · Nested menus · Drag").fontSize(16).bold();
+        _ = c.text("Outline · Router · WebView · Native drag").fontSize(16).bold();
 
         {
             const row = c.row().fillWidth().gap(8).center().begin();
@@ -672,9 +676,39 @@ const Gallery = struct {
             Gallery.renderOutlineCell,
         )
             .fillWidth()
-            .grow(1.0)
+            .height(120)
             .border(1, t.border)
             .radius(8);
+
+        {
+            const row = c.row().fillWidth().gap(10).center().begin();
+            defer row.end();
+            _ = c.badge("Native drag text").padding(8).radius(6).dragData("hello from Zig gallery");
+            const zone = c.box().padding(8).radius(6).border(1, if (self.native_over) t.accent else t.border).grow(1.0);
+            self.native_over = zone.dataDragOver();
+            if (zone.dropData(self.native_drop[0..], &self.native_drop_len)) {
+                self.native_over = false;
+            }
+            {
+                const body = zone.begin();
+                defer body.end();
+                if (self.native_drop_len > 0) {
+                    _ = c.textf("got {s}", .{self.native_drop[0..self.native_drop_len]}).fontSize(12);
+                } else if (self.native_over) {
+                    _ = c.text("drop text/url/file").fontSize(12).textColor(t.accent);
+                } else {
+                    _ = c.text("Native drop target").fontSize(12).textColor(t.text_muted);
+                }
+            }
+            if (c.button("toggle-web", if (self.show_web) "Hide Web" else "Show Web").clicked()) {
+                self.show_web = !self.show_web;
+                if (!self.show_web) c.destroyWebView("docs");
+            }
+        }
+
+        if (self.show_web) {
+            _ = c.webView("docs", "https://mygo.egoist.dev").fillWidth().grow(1.0).border(1, t.border).radius(8);
+        }
     }
 
     fn viewCharts(self: *Gallery, c: *ui.Context) void {

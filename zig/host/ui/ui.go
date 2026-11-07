@@ -21,6 +21,7 @@ import (
 	"unsafe"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	mygoui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/zig/host"
 )
@@ -130,6 +131,11 @@ const (
 	opDragOver         uint16 = 99
 	// 100..301 are Element modifiers (uigen). New widget ops continue after.
 	opDraggable        uint16 = 302
+	opWebView          uint16 = 303
+	opWebViewDestroy   uint16 = 304
+	opDragData         uint16 = 305
+	opDropData         uint16 = 306
+	opDataDragOver     uint16 = 307
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -273,6 +279,7 @@ type zigOutline struct {
 
 type uiWindowHost struct {
 	winID    int32
+	win      *mygo.Window
 	callZig  host.CallZigFn
 	viewCbID uintptr
 	userdata uintptr
@@ -280,6 +287,8 @@ type uiWindowHost struct {
 	grids    map[string]*zigGrid
 	outlines map[string]*zigOutline
 	routers  map[string]*mygoui.Router
+	webviews map[string]*mygo.WebView
+	wvURLs   map[string]string
 }
 
 var assetCache sync.Map // hash key → *SVG | ImageSource
@@ -381,6 +390,8 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 		grids:    map[string]*zigGrid{},
 		outlines: map[string]*zigOutline{},
 		routers:  map[string]*mygoui.Router{},
+		webviews: map[string]*mygo.WebView{},
+		wvURLs:   map[string]string{},
 	}
 
 	opts := host.ParseWindowOptions(rawOpts)
@@ -410,11 +421,17 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 		return 0
 	}
 	wh.winID = int32(w.ID())
+	wh.win = w
 	w.OnClosed(func() {
+		for _, wv := range wh.webviews {
+			wv.Destroy()
+		}
 		clear(wh.lists)
 		clear(wh.grids)
 		clear(wh.outlines)
 		clear(wh.routers)
+		clear(wh.webviews)
+		clear(wh.wvURLs)
 	})
 	host.SetError(nil)
 	return uintptr(wh.winID)
@@ -2091,6 +2108,82 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			if out != nil {
 				out.NumVal = float64(off.X)
 				out.NumVal2 = float64(off.Y)
+			}
+
+		case opWebView:
+			key, ok1 := r.str()
+			url, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return
+			}
+			wv := f.host.webviews[key]
+			if wv == nil || wv.IsDestroyed() {
+				if f.host.win == nil {
+					host.SetError(errors.New("zighost: webview needs a native UI window"))
+					return
+				}
+				var err error
+				wv, err = f.host.win.NewWebView(mygo.WebViewOptions{URL: url})
+				if err != nil {
+					host.SetError(err)
+					return
+				}
+				f.host.webviews[key] = wv
+				f.host.wvURLs[key] = url
+			} else if url != "" && url != f.host.wvURLs[key] {
+				if err := wv.Page().LoadURL(url); err != nil {
+					host.SetError(err)
+				} else {
+					f.host.wvURLs[key] = url
+				}
+			}
+			f.cur = mygoui.WebView(c, wv)
+
+		case opWebViewDestroy:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			if wv := f.host.webviews[key]; wv != nil {
+				wv.Destroy()
+				delete(f.host.webviews, key)
+				delete(f.host.wvURLs, key)
+			}
+
+		case opDragData:
+			text, ok := r.str()
+			if !ok {
+				return
+			}
+			f.cur = f.cur.DragData(transfer.TextData(text))
+
+		case opDropData:
+			opts := transfer.DropOptions{
+				Formats:    []transfer.Format{transfer.Text, transfer.URIList, transfer.FileList},
+				Operations: transfer.Copy | transfer.Move,
+			}
+			if drop, ok := mygoui.DropData(f.cur, opts); ok {
+				payload := ""
+				if b, err := drop.Data.Read(transfer.Text); err == nil {
+					payload = string(b)
+				} else if urls, err := drop.Data.URLs(); err == nil && len(urls) > 0 {
+					payload = urls[0]
+				} else if files, err := drop.Data.Files(); err == nil && len(files) > 0 {
+					payload = files[0]
+				}
+				writeChosenID(out, savedBufPtr, savedBufCap, payload)
+			}
+
+		case opDataDragOver:
+			opts := transfer.DropOptions{
+				Formats:    []transfer.Format{transfer.Text, transfer.URIList, transfer.FileList},
+				Operations: transfer.Copy | transfer.Move,
+			}
+			if offer, over := mygoui.DataDragOver(f.cur, opts); over {
+				_ = offer
+				if out != nil {
+					out.BoolVal = 1
+				}
 			}
 
 		case opGridView:
