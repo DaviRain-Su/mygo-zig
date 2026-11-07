@@ -34,7 +34,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 `column` · `row` · `box` · `grid` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `toolbar` · `overlay` · `tree` / `treeItem` · `themed` · `router` / `routeView` / `routeMatch` / `routeParam` / `backButton` / `forwardButton`
 
 ### Controls
-`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` / `popoverMenuButton` · `contextMenu` / `popoverMenu` (nested `MenuEntry` + submenus) · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction` · `richText` (+ object spans / `drawObjects`) · `webView` · `video` / `registerVideoGIF` / `registerVideoFrames` / `openVideoStream`+`pushVideoFrame` · `toastViewport` / `toastItem` · `drag` / `drop` / `dragOver` · `dragData` / `dropData` / `dataDragOver` · `dragMIME` / `dragMIMELazy` / `dropMIME` · `addToast`/`closeToast` (string Data + userdata + toast id) · motion (`after`/`animateTo`/`animatePose`/…) · `role` · `linearGradient` · `registerBitmap`/`bitmap` · `registerFont`
+`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` / `popoverMenuButton` · `contextMenu` / `popoverMenu` (nested `MenuEntry` + submenus) · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction` · `richText` (+ object spans / `drawObjects`) · `webView` · `video` / `registerVideoGIF` / `registerVideoFrames` / `openVideoStream`+`pushVideoFrame` · `toastViewport` / `toastItem` · `drag` / `drop` / `dragOver` · `dragData` / `dropData` / `dataDragOver` · `dragMIME` / `dragMIMELazy` / `dropMIME` · `addToast`/`closeToast` (string Data + userdata + toast id) · motion (`after`/`animateTo`/`animatePose`/…) · `role` · `linearGradient` · `registerBitmap`/`bitmap` · `registerFont` · `registerCanvas` · `conicGradient`/`radialGradient`/`linearGradStops`
 
 ### Dates & color
 `dateInput` · `timeInput` · `calendar` · `colorPicker` · `colorWell`
@@ -77,8 +77,8 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Widgets / chrome / data | Done | Gallery covers Controls→Editor |
 | Drag / toast / video / routes | Done | Incl. stream push + toast userdata |
 | Motion / timing | Done | Ops 322–332 |
-| Painter paths / gradients | Done | paths + `fillLinearGradient` / `pathFillLinearGradient` / element `linearGradient` |
-| Bitmap / Canvas / Fonts | Bitmap+Font done | `registerBitmap`/`bitmap`, `registerFont`; Canvas still open |
+| Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
+| Bitmap / Canvas / Fonts | Done | `registerBitmap`/`bitmap`, `registerFont`, `registerCanvas` + Painter `canvasBegin`/`End`/`image` |
 | File dialogs / tray | Open | only if/when host `mygo` exposes them to Zig |
 | DX: CI + one-shot build | Done | `.github/workflows/zig.yml`; `go run ./zig/cmd/build <app>`; `scaffold -build` |
 | Standalone module path | Open | `mygo-zig` go.mod branding / docs site |

@@ -270,6 +270,10 @@ pub const CoreOp = enum(u16) {
     role = 333,
     linear_gradient = 334,
     bitmap = 335,
+    canvas = 336,
+    linear_grad_stops = 337,
+    conic_gradient = 338,
+    radial_gradient = 339,
 };
 
 const PaintOp = enum(u8) {
@@ -290,6 +294,12 @@ const PaintOp = enum(u8) {
     path_svg = 15,
     fill_gradient = 16,
     path_fill_grad = 17,
+    fill_grad_stops = 18,
+    fill_conic = 19,
+    fill_radial = 20,
+    canvas_begin = 21,
+    canvas_end = 22,
+    image = 23,
 };
 
 pub const FillRule = enum(u8) {
@@ -606,6 +616,25 @@ pub const DragAxis = enum(u8) {
 
 
 
+
+pub const GradientStop = struct {
+    color: Color,
+    at: f32,
+};
+
+pub const Point = struct {
+    x: f32 = 0,
+    y: f32 = 0,
+};
+
+pub const Fit = enum(u8) {
+    contain = 0,
+    cover = 1,
+    fill_box = 2,
+    scale_down = 3,
+    natural_size = 4,
+};
+
 pub const Role = enum(u8) {
     auto = 0,
     none = 1,
@@ -677,14 +706,6 @@ pub const Pose = struct {
     x_percent: f32 = 0,
     y_percent: f32 = 0,
 };
-pub const Fit = enum(u8) {
-    contain = 0,
-    cover = 1,
-    fill_box = 2,
-    scale_down = 3,
-};
-
-
 pub const DragBounds = struct {
     x: f32 = 0,
     y: f32 = 0,
@@ -1031,6 +1052,82 @@ pub const Painter = struct {
         self.writeU32(from.toU32());
         self.writeU32(to.toU32());
     }
+
+    fn writeStops(self: *Painter, stops: []const GradientStop) void {
+        const n: u8 = @intCast(@min(stops.len, 16));
+        self.writeU8(n);
+        for (stops[0..n]) |s| {
+            self.writeU32(s.color.toU32());
+            self.writeF32(s.at);
+        }
+    }
+
+    pub fn fillLinearGradientStops(self: *Painter, x: f32, y: f32, w: f32, h: f32, radius: f32, angle: f32, oklab: bool, stops: []const GradientStop) void {
+        self.ensure(22 + stops.len * 8);
+        self.writeU8(@intFromEnum(PaintOp.fill_grad_stops));
+        self.writeF32(x);
+        self.writeF32(y);
+        self.writeF32(w);
+        self.writeF32(h);
+        self.writeF32(radius);
+        self.writeF32(angle);
+        self.writeU8(@intFromBool(oklab));
+        self.writeStops(stops);
+    }
+
+    pub fn fillConicGradient(self: *Painter, x: f32, y: f32, w: f32, h: f32, radius: f32, angle: f32, center: Point, oklab: bool, stops: []const GradientStop) void {
+        self.ensure(30 + stops.len * 8);
+        self.writeU8(@intFromEnum(PaintOp.fill_conic));
+        self.writeF32(x);
+        self.writeF32(y);
+        self.writeF32(w);
+        self.writeF32(h);
+        self.writeF32(radius);
+        self.writeF32(angle);
+        self.writeF32(center.x);
+        self.writeF32(center.y);
+        self.writeU8(@intFromBool(oklab));
+        self.writeStops(stops);
+    }
+
+    pub fn fillRadialGradient(self: *Painter, x: f32, y: f32, w: f32, h: f32, radius: f32, grad_radius: f32, center: Point, oklab: bool, stops: []const GradientStop) void {
+        self.ensure(30 + stops.len * 8);
+        self.writeU8(@intFromEnum(PaintOp.fill_radial));
+        self.writeF32(x);
+        self.writeF32(y);
+        self.writeF32(w);
+        self.writeF32(h);
+        self.writeF32(radius);
+        self.writeF32(grad_radius);
+        self.writeF32(center.x);
+        self.writeF32(center.y);
+        self.writeU8(@intFromBool(oklab));
+        self.writeStops(stops);
+    }
+
+    /// Begin drawing into a registered canvas. Nested paint ops until `canvasEnd`.
+    pub fn canvasBegin(self: *Painter, key: []const u8) void {
+        self.ensure(5 + key.len);
+        self.writeU8(@intFromEnum(PaintOp.canvas_begin));
+        self.writeStr(key);
+    }
+
+    pub fn canvasEnd(self: *Painter) void {
+        self.ensure(1);
+        self.writeU8(@intFromEnum(PaintOp.canvas_end));
+    }
+
+    pub fn image(self: *Painter, key: []const u8, x: f32, y: f32, w: f32, h: f32, fit: Fit) void {
+        self.ensure(22 + key.len);
+        self.writeU8(@intFromEnum(PaintOp.image));
+        self.writeStr(key);
+        self.writeF32(x);
+        self.writeF32(y);
+        self.writeF32(w);
+        self.writeF32(h);
+        self.writeU8(@intFromEnum(fit));
+    }
+
 };
 
 
@@ -2782,6 +2879,29 @@ pub const Context = struct {
             .data_len = data.len,
         };
         _ = mygo.dispatch(.register_font, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+
+    pub fn registerCanvas(_: *Context, key: []const u8, width: u32, height: u32) void {
+        const CCanvasSpec = extern struct {
+            key_ptr: usize = 0,
+            key_len: usize = 0,
+            width: u32 = 0,
+            height: u32 = 0,
+        };
+        var spec = CCanvasSpec{
+            .key_ptr = mygo.sliceAddr(key),
+            .key_len = key.len,
+            .width = width,
+            .height = height,
+        };
+        _ = mygo.dispatch(.register_canvas, @intFromPtr(&spec), 0, 0, 0);
+    }
+
+    pub fn canvas(self: *Context, key: []const u8) Element {
+        self.writeOp(@intFromEnum(CoreOp.canvas));
+        self.writeStr(key);
+        return .{ .ctx = self };
     }
 
     pub fn registerBitmap(_: *Context, key: []const u8, data: []const u8) void {

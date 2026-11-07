@@ -234,6 +234,49 @@ pub const Element = struct {
         return self;
     }
 
+    pub fn linearGradStops(self: Element, angle: f32, oklab: bool, stops: []const ui.GradientStop) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.linear_grad_stops));
+        self.ctx.writeF32(angle);
+        self.ctx.writeU8(@intFromBool(oklab));
+        const n: u8 = @intCast(@min(stops.len, 16));
+        self.ctx.writeU8(n);
+        for (stops[0..n]) |s| {
+            self.ctx.writeU32(s.color.toU32());
+            self.ctx.writeF32(s.at);
+        }
+        return self;
+    }
+
+    pub fn conicGradient(self: Element, angle: f32, center_pt: ui.Point, oklab: bool, stops: []const ui.GradientStop) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.conic_gradient));
+        self.ctx.writeF32(angle);
+        self.ctx.writeF32(center_pt.x);
+        self.ctx.writeF32(center_pt.y);
+        self.ctx.writeU8(@intFromBool(oklab));
+        const n: u8 = @intCast(@min(stops.len, 16));
+        self.ctx.writeU8(n);
+        for (stops[0..n]) |s| {
+            self.ctx.writeU32(s.color.toU32());
+            self.ctx.writeF32(s.at);
+        }
+        return self;
+    }
+
+    pub fn radialGradient(self: Element, radius_dip: f32, center_pt: ui.Point, oklab: bool, stops: []const ui.GradientStop) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.radial_gradient));
+        self.ctx.writeF32(radius_dip);
+        self.ctx.writeF32(center_pt.x);
+        self.ctx.writeF32(center_pt.y);
+        self.ctx.writeU8(@intFromBool(oklab));
+        const n: u8 = @intCast(@min(stops.len, 16));
+        self.ctx.writeU8(n);
+        for (stops[0..n]) |s| {
+            self.ctx.writeU32(s.color.toU32());
+            self.ctx.writeF32(s.at);
+        }
+        return self;
+    }
+
     pub fn absolute(self: Element) Element {
         self.ctx.writeOp(100);
         return self;

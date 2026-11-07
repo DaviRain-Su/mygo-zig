@@ -53,6 +53,7 @@ pub const HostOp = enum(usize) {
     video_end = 234,
     register_font = 240,
     register_bitmap = 241,
+    register_canvas = 242,
 };
 
 pub const WinCtl = enum(usize) {

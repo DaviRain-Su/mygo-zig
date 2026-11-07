@@ -132,40 +132,44 @@ const (
 	opDrop             uint16 = 98
 	opDragOver         uint16 = 99
 	// 100..301 are Element modifiers (uigen). New widget ops continue after.
-	opDraggable      uint16 = 302
-	opWebView        uint16 = 303
-	opWebViewDestroy uint16 = 304
-	opDragData       uint16 = 305
-	opDropData       uint16 = 306
-	opDataDragOver   uint16 = 307
-	opVideo          uint16 = 308
-	opVideoControl   uint16 = 309
-	opRouteView      uint16 = 310
-	opRouteMatch     uint16 = 311
-	opRouteParam     uint16 = 312
-	opDrawObjects    uint16 = 313
-	opToastViewport  uint16 = 314
-	opToastItem      uint16 = 315
-	opToastCloseBtn  uint16 = 316
-	opToastActionBtn uint16 = 317
-	opDragMIME       uint16 = 318
-	opDropMIME       uint16 = 319
-	opDragMIMELazy   uint16 = 320
-	opAddToast       uint16 = 321
-	opAfter          uint16 = 322
-	opAnimationFrame uint16 = 323
-	opDisableAnims   uint16 = 324
-	opInvalidate     uint16 = 325
-	opCloseToast     uint16 = 326
-	opAnimate        uint16 = 327
-	opAnimateTo      uint16 = 328
-	opArrived        uint16 = 329
-	opAnimateColor   uint16 = 330
-	opAnimatePose    uint16 = 331
-	opSpring         uint16 = 332
-	opRole           uint16 = 333
-	opLinearGradient uint16 = 334 // angle, from, to (element fill)
-	opBitmap         uint16 = 335 // key → registered bitmap
+	opDraggable       uint16 = 302
+	opWebView         uint16 = 303
+	opWebViewDestroy  uint16 = 304
+	opDragData        uint16 = 305
+	opDropData        uint16 = 306
+	opDataDragOver    uint16 = 307
+	opVideo           uint16 = 308
+	opVideoControl    uint16 = 309
+	opRouteView       uint16 = 310
+	opRouteMatch      uint16 = 311
+	opRouteParam      uint16 = 312
+	opDrawObjects     uint16 = 313
+	opToastViewport   uint16 = 314
+	opToastItem       uint16 = 315
+	opToastCloseBtn   uint16 = 316
+	opToastActionBtn  uint16 = 317
+	opDragMIME        uint16 = 318
+	opDropMIME        uint16 = 319
+	opDragMIMELazy    uint16 = 320
+	opAddToast        uint16 = 321
+	opAfter           uint16 = 322
+	opAnimationFrame  uint16 = 323
+	opDisableAnims    uint16 = 324
+	opInvalidate      uint16 = 325
+	opCloseToast      uint16 = 326
+	opAnimate         uint16 = 327
+	opAnimateTo       uint16 = 328
+	opArrived         uint16 = 329
+	opAnimateColor    uint16 = 330
+	opAnimatePose     uint16 = 331
+	opSpring          uint16 = 332
+	opRole            uint16 = 333
+	opLinearGradient  uint16 = 334 // angle, from, to (element fill)
+	opBitmap          uint16 = 335 // key → registered bitmap
+	opCanvas          uint16 = 336 // key → registered canvas Image
+	opLinearGradStops uint16 = 337 // angle, oklab, n, (rgba,at)*
+	opConicGradient   uint16 = 338 // angle, cx, cy, oklab, n, stops
+	opRadialGradient  uint16 = 339 // radius, cx, cy, oklab, n, stops
 
 	opQueryClicked   uint16 = 80
 	opQueryHovered   uint16 = 81
@@ -194,6 +198,12 @@ const (
 	paintPathSVG        uint8 = 15 // svg str, then fill rgba + stroke width/rgba (0 width = no stroke)
 	paintFillGradient   uint8 = 16 // rect + radius + angle + from + to
 	paintPathFillGrad   uint8 = 17 // angle + from + to
+	paintFillGradStops  uint8 = 18 // rect + radius + angle + oklab + n + stops
+	paintFillConic      uint8 = 19
+	paintFillRadial     uint8 = 20
+	paintCanvasBegin    uint8 = 21 // key
+	paintCanvasEnd      uint8 = 22
+	paintImage          uint8 = 23 // key, x,y,w,h, fit
 )
 
 type cUITheme struct {
@@ -375,6 +385,7 @@ var (
 	framesRegistry sync.Map // key → framesAsset
 	streamRegistry sync.Map // key → *streamAsset
 	bitmapRegistry sync.Map // key → *mygoui.Bitmap
+	canvasRegistry sync.Map // key → *mygoui.Canvas
 )
 
 // rgbaFramesDecoder plays a registered RGBA sequence.
@@ -706,6 +717,24 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 			return ^uintptr(0)
 		}
 		bitmapRegistry.Store(key, bm)
+		return 0
+	case host.HostOpRegisterCanvas:
+		spec := host.PtrTo[host.CCanvasSpec](a0)
+		if spec == nil || spec.KeyLen == 0 || spec.Width == 0 || spec.Height == 0 {
+			host.SetError(errors.New("zighost: registerCanvas needs key and size"))
+			return ^uintptr(0)
+		}
+		key := host.CopyString(spec.KeyPtr, spec.KeyLen)
+		w, h := int(spec.Width), int(spec.Height)
+		if raw, ok := canvasRegistry.Load(key); ok {
+			cv := raw.(*mygoui.Canvas)
+			if cw, ch := cv.Size(); cw != w || ch != h {
+				canvasRegistry.Store(key, mygoui.NewCanvas(w, h))
+			}
+			_ = cv
+		} else {
+			canvasRegistry.Store(key, mygoui.NewCanvas(w, h))
+		}
 		return 0
 	}
 	return ^uintptr(0)
@@ -3203,10 +3232,86 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				f.cur = mygoui.Box(c)
 			}
 
+		case opCanvas:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			if raw, ok := canvasRegistry.Load(key); ok {
+				f.cur = mygoui.Image(c, raw.(*mygoui.Canvas).Bitmap())
+			} else {
+				host.SetError(fmt.Errorf("zighost: canvas %q not registered", key))
+				f.cur = mygoui.Box(c)
+			}
+
+		case opLinearGradStops:
+			angle, ok1 := r.f32()
+			oklab, ok2 := r.u8()
+			if !ok1 || !ok2 {
+				return
+			}
+			stops, ok := readGradientStops(&r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			f.cur = f.cur.LinearGradient(mygoui.LinearGradient{Angle: angle, Oklab: oklab != 0, Stops: stops})
+
+		case opConicGradient:
+			angle, ok1 := r.f32()
+			cx, ok2 := r.f32()
+			cy, ok3 := r.f32()
+			oklab, ok4 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			stops, ok := readGradientStops(&r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			f.cur = f.cur.ConicGradient(mygoui.ConicGradient{
+				Angle: angle, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+			})
+
+		case opRadialGradient:
+			radius, ok1 := r.f32()
+			cx, ok2 := r.f32()
+			cy, ok3 := r.f32()
+			oklab, ok4 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			stops, ok := readGradientStops(&r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			f.cur = f.cur.RadialGradient(mygoui.RadialGradient{
+				Radius: radius, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+			})
+
 		default:
 			return
 		}
 	}
+}
+
+func readGradientStops(r *tapeReader) ([]mygoui.GradientStop, bool) {
+	n, ok := r.u8()
+	if !ok {
+		return nil, false
+	}
+	if n > 16 {
+		n = 16
+	}
+	stops := make([]mygoui.GradientStop, 0, int(n))
+	for range int(n) {
+		rgba, ok1 := r.u32()
+		at, ok2 := r.f32()
+		if !ok1 || !ok2 {
+			return nil, false
+		}
+		stops = append(stops, mygoui.GradientStop{Color: unpackColor(rgba), At: at})
+	}
+	return stops, true
 }
 
 func flushPaint(painterHandle, cmdPtr, cmdLen uintptr) {
@@ -3219,11 +3324,18 @@ func flushPaint(painterHandle, cmdPtr, cmdLen uintptr) {
 		return
 	}
 	r := tapeReader{b: host.BytesView(cmdPtr, cmdLen)}
+	flushPaintTape(p, &r, false)
+}
+
+func flushPaintTape(p *mygoui.Painter, r *tapeReader, stopOnCanvasEnd bool) {
 	var path *mygoui.Path
 	for {
 		op, ok := r.u8()
 		if !ok {
-			break
+			return
+		}
+		if stopOnCanvasEnd && op == paintCanvasEnd {
+			return
 		}
 		switch op {
 		case paintFillRect:
@@ -3399,6 +3511,110 @@ func flushPaint(painterHandle, cmdPtr, cmdLen uintptr) {
 			p.FillPathGradient(path, mygoui.LinearGradient{
 				Angle: angle, From: unpackColor(from), To: unpackColor(to),
 			})
+		case paintFillGradStops:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			w, ok3 := r.f32()
+			h, ok4 := r.f32()
+			rad, ok5 := r.f32()
+			angle, ok6 := r.f32()
+			oklab, ok7 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
+				return
+			}
+			stops, ok := readGradientStops(r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			p.FillGradient(mygoui.Rect{X: x, Y: y, W: w, H: h}, mygoui.LinearGradient{
+				Angle: angle, Oklab: oklab != 0, Stops: stops,
+			}, rad)
+		case paintFillConic:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			w, ok3 := r.f32()
+			h, ok4 := r.f32()
+			rad, ok5 := r.f32()
+			angle, ok6 := r.f32()
+			cx, ok7 := r.f32()
+			cy, ok8 := r.f32()
+			oklab, ok9 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 || !ok9 {
+				return
+			}
+			stops, ok := readGradientStops(r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			p.FillConicGradient(mygoui.Rect{X: x, Y: y, W: w, H: h}, mygoui.ConicGradient{
+				Angle: angle, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+			}, rad)
+		case paintFillRadial:
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			w, ok3 := r.f32()
+			h, ok4 := r.f32()
+			rad, ok5 := r.f32()
+			radius, ok6 := r.f32()
+			cx, ok7 := r.f32()
+			cy, ok8 := r.f32()
+			oklab, ok9 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 || !ok9 {
+				return
+			}
+			stops, ok := readGradientStops(r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			p.FillRadialGradient(mygoui.Rect{X: x, Y: y, W: w, H: h}, mygoui.RadialGradient{
+				Radius: radius, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+			}, rad)
+		case paintCanvasBegin:
+			key, ok := r.str()
+			if !ok {
+				return
+			}
+			raw, ok := canvasRegistry.Load(key)
+			if !ok {
+				host.SetError(fmt.Errorf("zighost: canvas %q not registered", key))
+				// Skip nested ops until end so the tape stays aligned.
+				flushPaintTape(p, r, true)
+				continue
+			}
+			cv := raw.(*mygoui.Canvas)
+			cv.Draw(p, func(cp *mygoui.Painter) {
+				flushPaintTape(cp, r, true)
+			})
+		case paintCanvasEnd:
+			// Unmatched end: ignore.
+		case paintImage:
+			key, ok1 := r.str()
+			x, ok2 := r.f32()
+			y, ok3 := r.f32()
+			w, ok4 := r.f32()
+			h, ok5 := r.f32()
+			fit, ok6 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+				return
+			}
+			var src mygoui.ImageSource
+			if raw, ok := bitmapRegistry.Load(key); ok {
+				src = raw.(*mygoui.Bitmap)
+			} else if raw, ok := canvasRegistry.Load(key); ok {
+				src = raw.(*mygoui.Canvas).Bitmap()
+			} else {
+				continue
+			}
+			f := mygoui.Contain
+			switch fit {
+			case 1:
+				f = mygoui.Cover
+			case 2:
+				f = mygoui.FillBox
+			case 3:
+				f = mygoui.ScaleDown
+			}
+			p.Image(src, mygoui.Rect{X: x, Y: y, W: w, H: h}, f)
 		default:
 			return
 		}

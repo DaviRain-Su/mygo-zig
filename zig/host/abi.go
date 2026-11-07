@@ -65,6 +65,7 @@ const (
 	HostOpVideoEnd       uintptr = 234 // a0 = key ptr, a1 = key len
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
+	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
 )
 
 // CVideoGIFSpec registers a looping GIF player by key for later Video() ops.
@@ -113,6 +114,12 @@ type CFontSpec struct {
 type CBitmapSpec struct {
 	KeyPtr, KeyLen   uintptr
 	DataPtr, DataLen uintptr
+}
+
+// CCanvasSpec creates/resizes an offscreen Canvas by key.
+type CCanvasSpec struct {
+	KeyPtr, KeyLen uintptr
+	Width, Height  uint32
 }
 
 // Window control sub-opcodes for HostOpWindowControl.

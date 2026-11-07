@@ -823,13 +823,31 @@ const Gallery = struct {
             }
         }
 
-        _ = c.text("Painter paths").fontSize(13).bold().textColor(t.text_muted);
+        _ = c.text("Painter paths · gradients · canvas").fontSize(13).bold().textColor(t.text_muted);
+        c.registerCanvas("chip", 64, 64);
         _ = c.box()
             .fillWidth()
-            .height(120)
+            .height(160)
             .border(1, t.border)
             .radius(8)
             .draw(*Gallery, self, Gallery.paintPaths);
+
+        // Element-level multi-stop / conic / radial fills
+        {
+            const stops = [_]ui.GradientStop{
+                .{ .color = ui.Color.rgb(56, 189, 248), .at = 0 },
+                .{ .color = ui.Color.rgb(167, 139, 250), .at = 0.5 },
+                .{ .color = ui.Color.rgb(244, 63, 94), .at = 1 },
+            };
+            const row = c.row().fillWidth().gap(8);
+            {
+                const b = row.begin();
+                defer b.end();
+                _ = c.box().grow(1).height(48).radius(8).linearGradStops(90, false, &stops);
+                _ = c.box().grow(1).height(48).radius(8).conicGradient(0, .{}, false, &stops);
+                _ = c.box().grow(1).height(48).radius(8).radialGradient(0, .{}, false, &stops);
+            }
+        }
 
         _ = c.text("Draggable card (snap corners)").fontSize(13).bold().textColor(t.text_muted);
         {
@@ -866,7 +884,11 @@ const Gallery = struct {
 
     fn paintPaths(self: *Gallery, p: *ui.Painter, r: ui.Rect) void {
         _ = self;
-        p.fillLinearGradient(r.x, r.y, r.w, r.h, 8, 135, ui.Color.rgb(30, 41, 59), ui.Color.rgb(15, 23, 42));
+        const stops = [_]ui.GradientStop{
+            .{ .color = ui.Color.rgb(30, 41, 59), .at = 0 },
+            .{ .color = ui.Color.rgb(15, 23, 42), .at = 1 },
+        };
+        p.fillLinearGradientStops(r.x, r.y, r.w, r.h, 8, 135, false, &stops);
         // Chevron via imperative path commands.
         const x0 = r.x + 24;
         const y0 = r.y + r.h * 0.5;
@@ -903,7 +925,19 @@ const Gallery = struct {
             p.pathSVG(d, ui.Color.rgb(250, 204, 21), 1.5, ui.Color.rgb(161, 98, 7));
         }
         p.text(r.x + r.w - 120, r.y + 12, "path + SVG", 12, ui.Color.rgb(100, 116, 139));
+    
+        // Offscreen canvas blit (registered once in viewCharts).
+        p.canvasBegin("chip");
+        p.fillRect(0, 0, 64, 64, ui.Color.rgb(15, 23, 42), 12);
+        const chip_stops = [_]ui.GradientStop{
+            .{ .color = ui.Color.rgb(56, 189, 248), .at = 0 },
+            .{ .color = ui.Color.rgb(244, 63, 94), .at = 1 },
+        };
+        p.fillRadialGradient(4, 4, 56, 56, 28, 0, .{}, false, &chip_stops);
+        p.canvasEnd();
+        p.image("chip", r.x + r.w - 80, r.y + 12, 64, 64, .contain);
     }
+
     fn provideLazyMIME(self: *Gallery, buf: []u8) usize {
         // Fresh payload each drag start.
         var tmp: [64]u8 = undefined;
