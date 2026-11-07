@@ -645,6 +645,10 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 			rects = append(rects, mygo.Rectangle{X: int(b.X), Y: int(b.Y), Width: int(b.Width), Height: int(b.Height)})
 		}
 		w.SetInputRegion(rects)
+	case WinCtlSetAnchor:
+		if in := PtrTo[CBounds](a2); in != nil {
+			w.SetAnchor(mygo.Rectangle{X: int(in.X), Y: int(in.Y), Width: int(in.Width), Height: int(in.Height)})
+		}
 	}
 	return 0
 }
@@ -1278,4 +1282,14 @@ func menuFromJSON(raw []byte, cbID, trayID uintptr) (*mygo.Menu, error) {
 		return out
 	}
 	return mygo.NewMenu(convert(spec)), nil
+}
+
+// TrayByID returns the live *mygo.Tray for a Zig tray id, or nil.
+func TrayByID(id uintptr) *mygo.Tray {
+	trayMu.Lock()
+	defer trayMu.Unlock()
+	if slot := trays[id]; slot != nil {
+		return slot.tray
+	}
+	return nil
 }

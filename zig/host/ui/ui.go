@@ -559,6 +559,8 @@ func uiDispatch(callZig host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 	switch op {
 	case host.HostOpWindowNewUI:
 		return newUIWindow(callZig, host.PtrTo[host.CWindowOptions](a0), a1, a2)
+	case host.HostOpFlyoutNewUI:
+		return newUIFlyout(callZig, host.PtrTo[host.CFlyoutSpec](a0), a1, a2)
 	case host.HostOpUIFlush:
 		flushUI(a0, a1, a2, host.PtrTo[cUIQuery](a3))
 		return 0
@@ -785,6 +787,113 @@ func newUIWindow(callZig host.CallZigFn, rawOpts *host.CWindowOptions, viewCbID,
 	w := mygo.NewWindow(opts)
 	if w == nil {
 		host.SetError(errors.New("mygo: failed to create UI window"))
+		return 0
+	}
+	wh.winID = int32(w.ID())
+	wh.win = w
+	w.OnClosed(func() {
+		for _, wv := range wh.webviews {
+			wv.Destroy()
+		}
+		clear(wh.lists)
+		clear(wh.grids)
+		clear(wh.outlines)
+		clear(wh.routers)
+		clear(wh.webviews)
+		clear(wh.wvURLs)
+		for _, p := range wh.videos {
+			p.Close()
+		}
+		clear(wh.videos)
+	})
+	host.SetError(nil)
+	return uintptr(wh.winID)
+}
+
+func newUIFlyout(callZig host.CallZigFn, spec *host.CFlyoutSpec, viewCbID, userdata uintptr) (winID uintptr) {
+	defer func() {
+		if r := recover(); r != nil {
+			host.SetError(fmt.Errorf("%v", r))
+			winID = 0
+		}
+	}()
+	if spec == nil {
+		host.SetError(errors.New("zighost: flyout needs spec"))
+		return 0
+	}
+	if (spec.ParentWinID == 0) == (spec.TrayID == 0) {
+		host.SetError(errors.New("zighost: flyout needs parent or tray"))
+		return 0
+	}
+
+	wh := &uiWindowHost{
+		callZig:  callZig,
+		viewCbID: viewCbID,
+		userdata: userdata,
+		lists:    map[string]*zigList{},
+		grids:    map[string]*zigGrid{},
+		outlines: map[string]*zigOutline{},
+		routers:  map[string]*mygoui.Router{},
+		webviews: map[string]*mygo.WebView{},
+		wvURLs:   map[string]string{},
+		videos:   map[string]*mygoui.VideoPlayer{},
+	}
+
+	placement := mygo.Placement(host.CopyString(spec.PlacementPtr, spec.PlacementLen))
+	opts := mygo.FlyoutOptions{
+		Anchor: mygo.Rectangle{
+			X: int(spec.Anchor.X), Y: int(spec.Anchor.Y),
+			Width: int(spec.Anchor.Width), Height: int(spec.Anchor.Height),
+		},
+		Placement:    placement,
+		Gap:          int(spec.Gap),
+		Width:        int(spec.Width),
+		Height:       int(spec.Height),
+		MinWidth:     int(spec.MinWidth),
+		MinHeight:    int(spec.MinHeight),
+		MaxWidth:     int(spec.MaxWidth),
+		MaxHeight:    int(spec.MaxHeight),
+		CornerRadius: int(spec.CornerRadius),
+		Focusable:    spec.Flags&1 != 0,
+		Hidden:       spec.Flags&2 != 0,
+		Shadow:       spec.Flags&4 != 0,
+		Popover:      spec.Flags&8 != 0,
+		FitContent:   spec.Flags&16 != 0,
+		Content: mygoui.View(func(c *mygoui.Context) {
+			w, h := c.Size()
+			th := buildTheme(c.Theme())
+			var active uint8
+			if c.WindowActive() {
+				active = 1
+			}
+			info := cUIFrameInfo{
+				WindowID:     wh.winID,
+				Width:        w,
+				Height:       h,
+				WindowActive: active,
+				Theme:        th,
+			}
+			runFrame(c, wh, th, func(handle uintptr) {
+				wh.callZig(host.ZigEventUIView, wh.viewCbID, handle, uintptr(unsafe.Pointer(&info)), wh.userdata)
+			})
+		}),
+	}
+	if spec.ParentWinID != 0 {
+		opts.Parent = mygo.WindowByID(int(spec.ParentWinID))
+		if opts.Parent == nil {
+			host.SetError(errors.New("zighost: flyout parent not found"))
+			return 0
+		}
+	} else {
+		opts.Tray = host.TrayByID(spec.TrayID)
+		if opts.Tray == nil {
+			host.SetError(errors.New("zighost: flyout tray not found"))
+			return 0
+		}
+	}
+	w := mygo.NewFlyout(opts)
+	if w == nil {
+		host.SetError(errors.New("zighost: failed to create flyout"))
 		return 0
 	}
 	wh.winID = int32(w.ID())

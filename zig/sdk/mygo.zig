@@ -40,6 +40,7 @@ pub const HostOp = enum(usize) {
     window_new_ui = 100,
     ui_flush = 101,
     ui_paint_flush = 102,
+    flyout_new_ui = 103,
 
     markdown_view = 200,
     editor_view = 210,
@@ -74,6 +75,7 @@ pub const WinCtl = enum(usize) {
     load_url = 13,
     load_html = 14,
     set_input_region = 15,
+    set_anchor = 16,
 };
 
 const ZigEvent = enum(usize) {
@@ -503,6 +505,12 @@ pub const Window = struct {
             buf[i] = .{ .x = r.x, .y = r.y, .width = r.width, .height = r.height };
         }
         _ = self.ctl(.set_input_region, if (n > 0) @intFromPtr(&buf) else 0, n);
+    }
+
+    /// Re-anchor a flyout against another rectangle of its parent (DIPs).
+    pub fn setAnchor(self: Window, r: Rectangle) void {
+        var b = CBounds{ .x = r.x, .y = r.y, .width = r.width, .height = r.height };
+        _ = self.ctl(.set_anchor, @intFromPtr(&b), 0);
     }
 
     pub fn invalidate(self: Window) void {
@@ -982,6 +990,95 @@ pub fn newWindowUi(
     const id: i32 = @intCast(@as(isize, @bitCast(dispatch(
         .window_new_ui,
         @intFromPtr(&raw),
+        ui_view_count,
+        @intFromPtr(state),
+        0,
+    ))));
+    if (id <= 0) return Error.MyGoError;
+    return .{ .id = id };
+}
+
+
+pub const FlyoutFlag = struct {
+    pub const focusable: u32 = 1;
+    pub const hidden: u32 = 2;
+    pub const shadow: u32 = 4;
+    pub const popover: u32 = 8;
+    pub const fit_content: u32 = 16;
+};
+
+pub const FlyoutOptions = struct {
+    parent: ?Window = null,
+    tray: ?Tray = null,
+    anchor: Rectangle = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+    placement: []const u8 = "bottom-start",
+    gap: i32 = 4,
+    width: i32 = 280,
+    height: i32 = 200,
+    min_width: i32 = 0,
+    min_height: i32 = 0,
+    max_width: i32 = 0,
+    max_height: i32 = 0,
+    corner_radius: i32 = 0,
+    flags: u32 = FlyoutFlag.focusable | FlyoutFlag.shadow,
+};
+
+const CFlyoutSpec = extern struct {
+    parent_win_id: usize = 0,
+    tray_id: usize = 0,
+    anchor: CBounds = .{},
+    width: i32 = 0,
+    height: i32 = 0,
+    gap: i32 = 0,
+    min_width: i32 = 0,
+    min_height: i32 = 0,
+    max_width: i32 = 0,
+    max_height: i32 = 0,
+    corner_radius: i32 = 0,
+    placement_ptr: usize = 0,
+    placement_len: usize = 0,
+    flags: u32 = 0,
+    _pad: [4]u8 = @splat(0),
+};
+
+/// Create a flyout window with Native UI content (same view callback as `newWindowUi`).
+/// Provide exactly one of `opts.parent` or `opts.tray`.
+pub fn newFlyoutUi(
+    comptime StatePtr: type,
+    state: StatePtr,
+    opts: FlyoutOptions,
+    comptime viewFn: fn (StatePtr, *ui.Context) void,
+) Error!Window {
+    if ((opts.parent == null) == (opts.tray == null)) return Error.MyGoError;
+    const Trampoline = struct {
+        fn onView(frame_handle: usize, info: *const ui.CFrameInfo, ud: usize) void {
+            const s: StatePtr = @ptrFromInt(ud);
+            var ctx = ui.Context.init(frame_handle, info);
+            viewFn(s, &ctx);
+            ctx.flush();
+        }
+    };
+    ui_view_handlers[ui_view_count] = &Trampoline.onView;
+    ui_view_count += 1;
+    var spec = CFlyoutSpec{
+        .parent_win_id = if (opts.parent) |w| @intCast(w.id) else 0,
+        .tray_id = if (opts.tray) |tr| tr.id else 0,
+        .anchor = .{ .x = opts.anchor.x, .y = opts.anchor.y, .width = opts.anchor.width, .height = opts.anchor.height },
+        .width = opts.width,
+        .height = opts.height,
+        .gap = opts.gap,
+        .min_width = opts.min_width,
+        .min_height = opts.min_height,
+        .max_width = opts.max_width,
+        .max_height = opts.max_height,
+        .corner_radius = opts.corner_radius,
+        .placement_ptr = sliceAddr(opts.placement),
+        .placement_len = opts.placement.len,
+        .flags = opts.flags,
+    };
+    const id: i32 = @intCast(@as(isize, @bitCast(dispatch(
+        .flyout_new_ui,
+        @intFromPtr(&spec),
         ui_view_count,
         @intFromPtr(state),
         0,

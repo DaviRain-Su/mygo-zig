@@ -53,6 +53,7 @@ const (
 	HostOpWindowNewUI  uintptr = 100
 	HostOpUIFlush      uintptr = 101
 	HostOpUIPaintFlush uintptr = 102
+	HostOpFlyoutNewUI  uintptr = 103 // a0=*CFlyoutSpec, a1=view_cb, a2=userdata
 
 	HostOpMarkdownView   uintptr = 200
 	HostOpEditorView     uintptr = 210
@@ -142,6 +143,7 @@ const (
 	WinCtlLoadURL        uintptr = 13
 	WinCtlLoadHTML       uintptr = 14
 	WinCtlSetInputRegion uintptr = 15 // a2=*CBounds, a3=count; a3=^0 → nil (full)
+	WinCtlSetAnchor      uintptr = 16 // a2=*CBounds — flyout only
 )
 
 // CStr matches `extern struct { data: ?[*]const u8, len: usize }` in Zig.
@@ -385,4 +387,19 @@ type CTrayIconSpec struct {
 	PNGPtr, PNGLen uintptr
 	Template       uint8
 	_              [7]byte
+}
+
+// CFlyoutSpec creates a NewFlyout with Native UI Content (HostOpFlyoutNewUI).
+type CFlyoutSpec struct {
+	ParentWinID                uintptr
+	TrayID                     uintptr
+	Anchor                     CBounds
+	Width, Height              int32
+	Gap                        int32
+	MinWidth, MinHeight        int32
+	MaxWidth, MaxHeight        int32
+	CornerRadius               int32
+	PlacementPtr, PlacementLen uintptr
+	Flags                      uint32 // 1=focusable 2=hidden 4=shadow 8=popover 16=fit_content
+	_                          [4]byte
 }

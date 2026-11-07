@@ -191,6 +191,8 @@ const Gallery = struct {
     tray_clicks: u32 = 0,
     tray_menu_buf: [32]u8 = undefined,
     tray_menu_len: usize = 0,
+    flyout_id: i32 = 0,
+    main_win_id: i32 = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
     mime_drop: [256]u8 = undefined,
@@ -529,12 +531,69 @@ const Gallery = struct {
     }
 
 
+
+    fn viewFlyout(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        const root = c.column().fill().padding(14).gap(10).begin();
+        defer root.end();
+        _ = c.box().fillWidth().height(8).radius(4).linearGradient(90, t.accent, t.success, false);
+        _ = c.text("Flyout panel").fontSize(16).bold();
+        _ = c.text("Native UI Content over NewFlyout.").fontSize(12).textColor(t.text_muted);
+        _ = c.textf("tray clicks={d}", .{self.tray_clicks}).fontSize(12);
+        if (c.primaryButton("fly-close", "Close").clicked()) {
+            if (self.flyout_id != 0) {
+                const w: mygo.Window = .{ .id = self.flyout_id };
+                w.close();
+                self.flyout_id = 0;
+            }
+        }
+    }
+
+    fn openParentFlyout(self: *Gallery) void {
+        if (self.flyout_id != 0) {
+            const w: mygo.Window = .{ .id = self.flyout_id };
+            w.close();
+            self.flyout_id = 0;
+        }
+        if (self.main_win_id == 0) return;
+        const fl = mygo.newFlyoutUi(*Gallery, self, .{
+            .parent = .{ .id = self.main_win_id },
+            .anchor = .{ .x = 40, .y = 80, .width = 120, .height = 28 },
+            .placement = "bottom-start",
+            .gap = 6,
+            .width = 260,
+            .height = 180,
+            .flags = mygo.FlyoutFlag.focusable | mygo.FlyoutFlag.shadow,
+        }, Gallery.viewFlyout) catch return;
+        self.flyout_id = fl.id;
+    }
+
+    fn openTrayFlyout(self: *Gallery) void {
+        if (self.tray_id == 0) return;
+        if (self.flyout_id != 0) {
+            const w: mygo.Window = .{ .id = self.flyout_id };
+            w.close();
+            self.flyout_id = 0;
+        }
+        const fl = mygo.newFlyoutUi(*Gallery, self, .{
+            .tray = .{ .id = self.tray_id },
+            .placement = "bottom",
+            .gap = 4,
+            .width = 280,
+            .height = 200,
+            .flags = mygo.FlyoutFlag.focusable | mygo.FlyoutFlag.shadow | mygo.FlyoutFlag.popover,
+        }, Gallery.viewFlyout) catch return;
+        self.flyout_id = fl.id;
+    }
+
     fn onTrayMenu(self: *Gallery, id: []const u8) void {
         const n = @min(id.len, self.tray_menu_buf.len);
         @memcpy(self.tray_menu_buf[0..n], id[0..n]);
         self.tray_menu_len = n;
         if (std.mem.eql(u8, id, "quit")) {
             mygo.quit();
+        } else if (std.mem.eql(u8, id, "show")) {
+            self.openTrayFlyout();
         }
     }
 
@@ -545,6 +604,8 @@ const Gallery = struct {
             var buf: [16]u8 = undefined;
             const title = std.fmt.bufPrint(&buf, "{d}", .{self.tray_clicks}) catch "*";
             tr.setTitle(title);
+            // Menu owns single-click on some platforms; when OnClick fires, show panel.
+            self.openTrayFlyout();
         }
     }
 
@@ -1185,6 +1246,16 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("flyout-open", if (self.flyout_id != 0) "Close flyout" else "Flyout…").clicked()) {
+                if (self.flyout_id != 0) {
+                    const w: mygo.Window = .{ .id = self.flyout_id };
+                    w.close();
+                    self.flyout_id = 0;
+                } else {
+                    self.openParentFlyout();
+                }
+            }
+
             if (c.button("tray-toggle", if (self.tray_id != 0) "Remove tray" else "Add tray").clicked()) {
                 if (self.tray_id != 0) self.destroyTray() else self.ensureTray();
             }
@@ -1461,7 +1532,7 @@ fn init() !void {
 
 fn onReady() void {
     app_state.ensureTray();
-    _ = mygo.newWindowUi(*Gallery, &app_state, .{
+    const win = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,
         .height = 680,
@@ -1469,7 +1540,9 @@ fn onReady() void {
         var buf: [256]u8 = undefined;
         std.debug.print("newWindowUi failed ({s}): {s}\n", .{ @errorName(err), mygo.lastError(&buf) });
         mygo.quit();
+        return;
     };
+    app_state.main_win_id = win.id;
 }
 
 comptime {
