@@ -469,6 +469,16 @@ pub const CoreOp = enum(u16) {
     handle_text_input = 421,
     effect = 422,
     video_query = 423,
+    track_scroll = 424,
+};
+
+/// How far a scroll container is scrolled, and how far it goes: pair it with
+/// Element.trackScroll to scroll from the app.
+pub const ScrollState = struct {
+    x: f32 = 0,
+    y: f32 = 0,
+    max_x: f32 = 0,
+    max_y: f32 = 0,
 };
 
 /// A layer of a mask: the alpha of a gradient across the element's box.

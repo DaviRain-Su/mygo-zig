@@ -1,5 +1,8 @@
 # Zig FFI completeness plan
 
+How upstream changes are reviewed, and what each review needed, is in
+[UPSTREAM.md](UPSTREAM.md).
+
 Last updated after Phase 0 consolidate + Phase 1 `terminal` plugin SDK.
 
 ## Layers (read this first)

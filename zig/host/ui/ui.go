@@ -250,6 +250,7 @@ const (
 	opOnTextKey            uint16 = 420 // cb, userdata
 	opHandleTextInput      uint16 = 421 // cb, userdata
 	opEffect               uint16 = 422 // margin x/y, cb, userdata
+	opTrackScroll          uint16 = 424 // state ptr, x, y → x, y, maxX, maxY
 )
 
 // PaintBuffer opcodes decoded by HostOpUIPaintFlush.
@@ -427,6 +428,8 @@ type uiWindowHost struct {
 	videos   map[string]*mygoui.VideoPlayer
 
 	textKeyOut []byte
+	// scrolls are the ScrollStates of Zig elements, by their address.
+	scrolls map[uintptr]*mygoui.ScrollState
 }
 
 var assetCache sync.Map // hash key → *SVG | ImageSource
@@ -4416,6 +4419,29 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				ud:     uintptr(ud),
 				margin: mygoui.Point{X: mx, Y: my},
 			})
+		case opTrackScroll:
+			state, ok1 := r.u64()
+			x, ok2 := r.f32()
+			y, ok3 := r.f32()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			if f.host.scrolls == nil {
+				f.host.scrolls = map[uintptr]*mygoui.ScrollState{}
+			}
+			st := f.host.scrolls[uintptr(state)]
+			if st == nil {
+				st = &mygoui.ScrollState{}
+				f.host.scrolls[uintptr(state)] = st
+			}
+			st.X, st.Y = x, y
+			f.cur = f.cur.TrackScroll(st)
+			if out != nil {
+				out.NumVal = float64(st.X)
+				out.NumVal2 = float64(st.Y)
+				out.NumVal3 = float64(st.MaxX)
+				out.NumVal4 = float64(st.MaxY)
+			}
 		case opAfter:
 			ms, ok := r.i32()
 			if !ok {

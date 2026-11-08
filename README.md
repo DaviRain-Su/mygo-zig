@@ -159,6 +159,7 @@ open "zig/examples/gallery-zig/dist/darwin-arm64/Gallery Zig.app"
 | [`zig/README.md`](zig/README.md) | the Zig reference: SDK, ABI, every API, the opt-in packages |
 | [`zig/COMPLETENESS.md`](zig/COMPLETENESS.md) | what is covered, opcode by opcode |
 | [`zig/EDGE.md`](zig/EDGE.md) | the host's edges and how they are closed |
+| [`zig/UPSTREAM.md`](zig/UPSTREAM.md) | each upstream review: what changed, what Zig needed |
 | [`docs/zig.md`](docs/zig.md) | the docs site page |
 | [`docs/architecture.md`](docs/architecture.md) | MyGo's layers, threading and the wire |
 

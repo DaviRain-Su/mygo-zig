@@ -1957,6 +1957,20 @@ pub const Element = struct {
         return self;
     }
 
+    /// Tracks the scroll of the element in state, so the app can scroll it.
+    pub fn trackScroll(self: Element, state: *ui.ScrollState) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.track_scroll));
+        self.ctx.writeU64(@intCast(@intFromPtr(state)));
+        self.ctx.writeF32(state.x);
+        self.ctx.writeF32(state.y);
+        const q = self.ctx.flushQuery();
+        state.x = @floatCast(q.num_val);
+        state.y = @floatCast(q.num_val2);
+        state.max_x = @floatCast(q.num_val3);
+        state.max_y = @floatCast(q.num_val4);
+        return self;
+    }
+
     /// Applies a composed 2D/3D transform.
     pub fn transform(self: Element, t: ui.Transform) Element {
         self.ctx.writeOp(@intFromEnum(CoreOp.transform));

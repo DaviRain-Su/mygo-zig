@@ -17,7 +17,7 @@
 // that each push rewrites one of, and latest.json the last commits, by
 // series, which the website fetches.
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -69,6 +69,19 @@ export const latestCommits = 300;
 
 /** The examples whose release builds are measured. */
 const apps = ["hello", "counter-native"];
+
+/**
+ * The Zig apps measured too: a Go shim plus its dylib, the whole size of an
+ * app written in Zig, next to the same app written in Go.
+ */
+const zigApps = [{ app: "counter-native-zig", lib: "counterzig" }];
+
+/** The file name of a lib, as zighost looks for it. */
+function libFileName(name: string, goos: string): string {
+  if (goos === "darwin") return `lib${name}.dylib`;
+  if (goos === "windows") return `${name}.dll`;
+  return `lib${name}.so`;
+}
 
 /** The apps with a webview, whose own process's memory counts apart from its processes' too. */
 const webviewApps = new Set(["hello"]);
@@ -249,12 +262,24 @@ async function measureApps(
   const size: Record<string, Metrics> = {};
   try {
     const bins: string[] = [];
+    const ldflags = "-s -w -X github.com/egoist/mygo.production=1" + (goos === "windows" ? " -H=windowsgui" : "");
     for (const app of apps) {
       if (!existsSync(join("examples", app))) continue;
       const bin = join(dir, goos === "windows" ? app + ".exe" : app);
-      const ldflags = "-s -w -X github.com/egoist/mygo.production=1" + (goos === "windows" ? " -H=windowsgui" : "");
       output(["go", "build", "-trimpath", "-tags", "mygo_noinspector", "-ldflags", ldflags, "-o", bin, "./examples/" + app]);
       size[app] = { bytes: (await stat(bin)).size };
+      bins.push(bin);
+    }
+    for (const { app, lib } of zigApps) {
+      const src = join("zig", "examples", app);
+      if (!existsSync(src)) continue;
+      outputIn(src, ["zig", "build", "-Doptimize=ReleaseSmall"]);
+      const bin = join(dir, goos === "windows" ? app + ".exe" : app);
+      output(["go", "build", "-trimpath", "-tags", "mygo_noinspector", "-ldflags", ldflags, "-o", bin, "./" + src]);
+      // The dylib beside the shim, where zighost finds it.
+      const libFile = libFileName(lib, goos);
+      await copyFile(join(src, "resources", libFile), join(dir, libFile));
+      size[app] = { bytes: (await stat(bin)).size + (await stat(join(dir, libFile))).size };
       bins.push(bin);
     }
     if (!e2e || !existsSync(join("internal", "idlemem"))) return { size };
@@ -277,7 +302,11 @@ async function measureApps(
 }
 
 function output(cmd: string[]): string {
-  const proc = Bun.spawnSync(cmd, { stderr: "inherit" });
+  return outputIn(".", cmd);
+}
+
+function outputIn(cwd: string, cmd: string[]): string {
+  const proc = Bun.spawnSync(cmd, { cwd, stderr: "inherit" });
   if (proc.exitCode !== 0) throw new Error(`${cmd.join(" ")} exited with ${proc.exitCode}`);
   return proc.stdout.toString().trim();
 }

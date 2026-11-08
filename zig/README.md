@@ -123,6 +123,7 @@ returns values or takes callbacks:
 | Group | Methods |
 | --- | --- |
 | Focus | `focused` · `focusVisible` · `focusWithin` · `focusLeft` · `focusGroup` |
+| Scroll | `trackScroll(&state)` — read and set a container's offset |
 | Press/click | `clicks` · `clickModifiers` · `pressedButton` · `pressedInside` · `pressedOutside` · `pressedPointer` · `pressCanceled` · `doubleClicked` · `rightClicked` |
 | State | `isDisabled` · `highlighted` · `dismissed` · `composing` · `transitioning` · `dragging` |
 | Geometry | `bounds` · `layoutBounds` · `localToWindow` · `windowToLocal` · `pointerPosition` |

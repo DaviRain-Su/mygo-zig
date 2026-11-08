@@ -49,6 +49,12 @@ jobs:
           go vet ./zig/host/...
           go run ./zig/cmd/uigen
           git diff --exit-code -- zig/host/ui/modifiers_gen.go zig/sdk/element_gen.zig
+      - name: SDK tests
+        run: |
+          # The ABI's layout, the wire's encodings, the pure helpers.
+          cd zig/sdk && zig test tests.zig
+          cd ../..
+          CGO_ENABLED=0 go test ./zig/host/... -count=1
       - name: Zig examples
         run: |
           for d in hello-zig counter-native-zig gallery-zig; do
