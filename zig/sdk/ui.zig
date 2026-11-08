@@ -927,6 +927,191 @@ pub const Graph = struct {
     }
 };
 
+/// A rich text editor (`ui/richtext`): formatted paragraphs, undo, and
+/// Markdown/HTML/JSON as their wire formats.
+///
+/// Import the Go host with `_ "github.com/egoist/mygo/zig/host/richtext"`.
+pub const RichText = struct {
+    const Sub = enum(usize) {
+        create = 1,
+        destroy = 2,
+        export_text = 3,
+        set = 4,
+        insert = 5,
+        command = 6,
+        heading = 7,
+        set_align = 8,
+        selection = 9,
+        set_selection = 10,
+        version = 11,
+        view = 12,
+        can = 13,
+    };
+
+    pub const Format = enum(u32) {
+        text = 0,
+        markdown = 1,
+        html = 2,
+        json = 3,
+        rtf = 4,
+    };
+
+    pub const Command = enum(u32) {
+        bold = 1,
+        italic = 2,
+        underline = 3,
+        strikethrough = 4,
+        code = 5,
+        bullet_list = 6,
+        number_list = 7,
+        quote = 8,
+        code_block = 9,
+        undo = 10,
+        redo = 11,
+    };
+
+    pub const Selection = struct {
+        anchor: i32 = 0,
+        caret: i32 = 0,
+    };
+
+    pub const ViewOptions = struct {
+        label: []const u8 = "",
+        placeholder: []const u8 = "",
+        read_only: bool = false,
+        no_markdown: bool = false,
+    };
+
+    const CSpec = extern struct {
+        ptr: usize = 0,
+        len: usize = 0,
+        kind: u32 = 0,
+        _pad: [4]u8 = .{ 0, 0, 0, 0 },
+    };
+
+    const CIn = extern struct {
+        ptr: usize = 0,
+        len: usize = 0,
+    };
+
+    const COut = extern struct {
+        ptr: usize = 0,
+        cap: usize = 0,
+    };
+
+    const CSel = extern struct {
+        anchor: i32 = 0,
+        caret: i32 = 0,
+    };
+
+    const CView = extern struct {
+        label_ptr: usize = 0,
+        label_len: usize = 0,
+        placeholder_ptr: usize = 0,
+        placeholder_len: usize = 0,
+        flags: u32 = 0,
+        _pad: [4]u8 = .{ 0, 0, 0, 0 },
+    };
+
+    /// A document kept by the host.
+    pub const Doc = struct {
+        id: usize,
+
+        pub fn valid(self: Doc) bool {
+            return self.id != 0;
+        }
+
+        /// save writes the text in a format into buf.
+        pub fn save(self: Doc, format: Format, buf: []u8) []u8 {
+            var out = COut{ .ptr = if (buf.len > 0) @intFromPtr(buf.ptr) else 0, .cap = buf.len };
+            const n = mygo.dispatch(.richtext, @intFromEnum(Sub.export_text), self.id, @intFromPtr(&out), @intFromEnum(format));
+            if (n == std.math.maxInt(usize)) return buf[0..0];
+            return buf[0..@min(n, buf.len)];
+        }
+
+        /// set replaces the text with data of a format.
+        pub fn set(self: Doc, format: Format, data: []const u8) void {
+            var in = CIn{ .ptr = mygo.sliceAddr(data), .len = data.len };
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.set), self.id, @intFromEnum(format), @intFromPtr(&in));
+        }
+
+        /// insert writes text at a byte offset.
+        pub fn insert(self: Doc, at: usize, data: []const u8) void {
+            var in = CIn{ .ptr = mygo.sliceAddr(data), .len = data.len };
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.insert), self.id, at, @intFromPtr(&in));
+        }
+
+        pub fn command(self: Doc, cmd: Command) bool {
+            return mygo.dispatch(.richtext, @intFromEnum(Sub.command), self.id, @intFromEnum(cmd), 0) != 0;
+        }
+
+        pub fn heading(self: Doc, level: i32) void {
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.heading), self.id, @intCast(@max(level, 0)), 0);
+        }
+
+        pub fn setAlign(self: Doc, a: Align) void {
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.set_align), self.id, @intFromEnum(a), 0);
+        }
+
+        pub fn selection(self: Doc) Selection {
+            var sel = CSel{};
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.selection), self.id, @intFromPtr(&sel), 0);
+            return .{ .anchor = sel.anchor, .caret = sel.caret };
+        }
+
+        pub fn setSelection(self: Doc, anchor: i32, caret: i32) void {
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.set_selection), self.id, @intCast(anchor), @intCast(caret));
+        }
+
+        pub fn version(self: Doc) u64 {
+            return mygo.dispatch(.richtext, @intFromEnum(Sub.version), self.id, 0, 0);
+        }
+
+        pub fn canUndo(self: Doc) bool {
+            return mygo.dispatch(.richtext, @intFromEnum(Sub.can), self.id, 0, 0) != 0;
+        }
+
+        pub fn canRedo(self: Doc) bool {
+            return mygo.dispatch(.richtext, @intFromEnum(Sub.can), self.id, 1, 0) != 0;
+        }
+
+        pub fn destroy(self: *Doc) void {
+            if (self.id == 0) return;
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.destroy), self.id, 0, 0);
+            self.id = 0;
+        }
+
+        /// view builds the editor inside the calling frame.
+        pub fn view(self: Doc, c: *Context, o: ViewOptions) Element {
+            var flags: u32 = 0;
+            if (o.read_only) flags |= 1;
+            if (o.no_markdown) flags |= 2;
+            var spec = CView{
+                .label_ptr = mygo.sliceAddr(o.label),
+                .label_len = o.label.len,
+                .placeholder_ptr = mygo.sliceAddr(o.placeholder),
+                .placeholder_len = o.placeholder.len,
+                .flags = flags,
+            };
+            _ = mygo.dispatch(.richtext, @intFromEnum(Sub.view), c.frame_handle, self.id, @intFromPtr(&spec));
+            return .{ .ctx = c };
+        }
+    };
+
+    /// create makes a document from data of a format.
+    pub fn create(format: Format, data: []const u8) mygo.Error!Doc {
+        var spec = CSpec{ .ptr = mygo.sliceAddr(data), .len = data.len, .kind = @intFromEnum(format) };
+        const id = mygo.dispatch(.richtext, @intFromEnum(Sub.create), @intFromPtr(&spec), 0, 0);
+        if (id == 0 or id == std.math.maxInt(usize)) return mygo.Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    /// markdown makes a document of Markdown text.
+    pub fn markdown(data: []const u8) mygo.Error!Doc {
+        return create(.markdown, data);
+    }
+};
+
 /// One key a text input takes, as OnTextKey sees it.
 pub const TextKey = struct {
     key: Key = .unknown,

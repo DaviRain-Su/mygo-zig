@@ -57,7 +57,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
 ### Opt-in rich text & charts
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game · graph
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game · graph · richtext
 
 ### 202 Element modifiers (generated)
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, `draggable`, …
@@ -125,6 +125,23 @@ _ = board.view(c, .{ .minimap = true, .snap_grid = 16 }).fill().grow(1.0);
 `addNode` (returns the id), `selection`, `delete` / `group` / `ungroup` /
 `layout` / `fit` / `undo` / `redo` / `copy` / `paste` / `lock` / `selectAll`,
 and `onConnect` / `onMove` / `onDelete` / `onViewport` (JSON payloads).
+
+### Rich text
+
+`ui/richtext` is bound as an opt-in host: `_ "github.com/egoist/mygo/zig/host/richtext"`.
+
+```zig
+var doc = try ui.RichText.markdown(src);          // or .create(.html, …)
+_ = doc.command(.bold);                            // bold/italic/underline/code/lists/quote/undo…
+doc.heading(2);
+doc.setAlign(.center);
+var buf: [64 << 10]u8 = undefined;
+const md = doc.save(.markdown, buf[0..]);          // .text / .html / .json
+_ = doc.view(c, .{ .placeholder = "Write…" }).fill().grow(1.0);
+```
+
+`Doc` also has `set(format, data)`, `insert(at, text)`, `selection` /
+`setSelection`, `version`, `canUndo` / `canRedo` and `destroy`.
 
 ### System text input (IME)
 

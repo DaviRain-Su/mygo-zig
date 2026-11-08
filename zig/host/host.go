@@ -422,6 +422,13 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	if op == HostOpNowPlaying {
 		return hostNowPlaying(activeCall, a0, a1, a2, a3)
 	}
+	if op == HostOpRichText {
+		if RichTextDispatch == nil {
+			SetError(errors.New("zighost: richtext host not linked (import _ \"github.com/egoist/mygo/zig/host/richtext\")"))
+			return ^uintptr(0)
+		}
+		return RichTextDispatch(op, a0, a1, a2, a3)
+	}
 	if op == HostOpGraph {
 		if GraphDispatch == nil {
 			SetError(errors.New("zighost: graph host not linked (import _ \"github.com/egoist/mygo/zig/host/graph\")"))

@@ -206,3 +206,24 @@ Not done, with the reason:
 - `ui/graph` gained `RemoveSelection`, `SelectAll` and `FitContent`.
 - The gallery has a Graph tab: a board from JSON, Zig node bodies, layout,
   undo/redo, grouping and JSON export.
+
+## Phase 13 — rich text
+
+- `zig/host/richtext` (opt-in, `HostOpRichText=256`) binds `ui/richtext`:
+  create from text / Markdown / HTML / JSON / RTF, export to
+  text / Markdown / HTML / JSON, `set` and `insert`,
+  commands (bold, italic, underline, strikethrough, code, bullet and number
+  lists, quote, code block, undo, redo), `heading`, `setAlign`,
+  selection, `version`, `canUndo` / `canRedo`, destroy, and the editor view
+  with label / placeholder / read-only / no-Markdown.
+- The gallery has a Rich tab: commands over a Markdown document, version,
+  and "Copy Markdown".
+- `zig/host/richtext` tests create/export in every format, formatting by
+  selection, insert, undo and selection round trips.
+
+Still Go-only, all by design rather than by effort:
+- `EditorOptions.OnLink`, `OnLinkCommand` and `TagStyle` are Go callbacks;
+  the SDK takes the data options (label, placeholder, read-only, no
+  Markdown).
+- `ui/richtext`'s `Theme` and per-run attributes stay in Go; Zig drives the
+  document, not its styling tables.

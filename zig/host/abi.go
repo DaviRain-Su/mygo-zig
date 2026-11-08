@@ -244,6 +244,7 @@ const (
 	HostOpNowPlaying     uintptr = 252 // a0=subop NowPlaying
 	HostOpAudio          uintptr = 253 // a0=subop (audio.Sound / audio.Player)
 	HostOpGraph          uintptr = 255 // a0=subop (ui/graph boards)
+	HostOpRichText       uintptr = 256 // a0=subop (ui/richtext documents)
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -520,6 +521,9 @@ var DocumentsDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // GraphDispatch is populated by `zig/host/graph` when imported.
 var GraphDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+
+// RichTextDispatch is populated by `zig/host/richtext` when imported.
+var RichTextDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr

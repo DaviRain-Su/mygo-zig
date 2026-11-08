@@ -24,7 +24,7 @@ const dock_menu_items = [_]mygo.MenuItem{
     .{ .id = "dock-about", .label = "About Gallery Zig", .tooltip = "Version 0.1.0" },
 };
 
-const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Graph", "Charts", "Markdown", "Editor", "Term" };
+const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Graph", "Charts", "Markdown", "Editor", "Rich", "Term" };
 const edit_submenu = [_]ui.MenuEntry{
     ui.MenuEntry.ofLabel("Cut"),
     ui.MenuEntry.ofLabel("Copy"),
@@ -76,6 +76,19 @@ const table_cols = [_]ui.TableColumn{
     .{ .title = "Score", .width = 72, .@"align" = .end },
     .{ .title = "Status", .width = 0 },
 };
+
+const sample_rich =
+    \\# Rich text in Zig
+    \\
+    \\Edit **formatted** text through `ui/richtext`: headings, _emphasis_,
+    \\lists, quotes and code, with undo.
+    \\
+    \\- Toggle bold, italic, code
+    \\- Undo and redo
+    \\- Save back to Markdown
+    \\
+    \\> The document lives in Go; Zig drives the commands.
+;
 
 const graph_doc =
     \\{"camera":{"x":220,"y":140,"zoom":1},"edgeStyle":0,"snapGrid":16,
@@ -267,6 +280,8 @@ const Gallery = struct {
     beep_ms: u64 = 0,
     timeline_run: u64 = 0,
     board: ui.Graph.Board = .{ .id = 0 },
+    doc: ui.RichText.Doc = .{ .id = 0 },
+    rich_buf: [64 * 1024]u8 = @splat(0),
     graph_sel: [4][]const u8 = @splat(""),
     graph_sel_count: usize = 0,
     graph_sel_buf: [512]u8 = @splat(0),
@@ -1261,6 +1276,33 @@ const Gallery = struct {
             self.pumpStream(c);
             _ = c.video("stream", .contain).fillWidth().height(140);
         }
+    }
+
+    fn viewRich(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        if (self.doc.id == 0) {
+            self.doc = ui.RichText.markdown(sample_rich) catch .{ .id = 0 };
+        }
+        {
+            const row = c.row().fillWidth().gap(6).center().begin();
+            defer row.end();
+            if (c.button("rt-b", "B").clicked()) _ = self.doc.command(.bold);
+            if (c.button("rt-i", "I").clicked()) _ = self.doc.command(.italic);
+            if (c.button("rt-u", "U").clicked()) _ = self.doc.command(.underline);
+            if (c.button("rt-code", "Code").clicked()) _ = self.doc.command(.code);
+            if (c.button("rt-ul", "• List").clicked()) _ = self.doc.command(.bullet_list);
+            if (c.button("rt-ol", "1. List").clicked()) _ = self.doc.command(.number_list);
+            if (c.button("rt-quote", "Quote").clicked()) _ = self.doc.command(.quote);
+            if (c.button("rt-h2", "H2").clicked()) self.doc.heading(2);
+            if (c.button("rt-undo", "Undo").clicked()) _ = self.doc.command(.undo);
+            if (c.button("rt-redo", "Redo").clicked()) _ = self.doc.command(.redo);
+            if (c.button("rt-save", "Copy Markdown").clicked()) {
+                const md = self.doc.save(.markdown, self.rich_buf[0..]);
+                mygo.Clipboard.writeText(md);
+            }
+            _ = c.textf("v{d}", .{self.doc.version()}).fontSize(11).textColor(t.text_muted).grow(1.0);
+        }
+        _ = self.doc.view(c, .{ .placeholder = "Write something…" }).fill().grow(1.0);
     }
 
     fn viewGraph(self: *Gallery, c: *ui.Context) void {
@@ -2598,6 +2640,7 @@ const Gallery = struct {
             8 => self.viewCharts(c),
             9 => self.viewMarkdown(c),
             10 => self.viewEditor(c),
+            11 => self.viewRich(c),
             else => self.viewTerm(c),
         }
     }

@@ -89,6 +89,7 @@ pub const HostOp = enum(usize) {
     register_canvas = 242,
     audio = 253,
     graph = 255,
+    richtext = 256,
 };
 
 pub const WinCtl = enum(usize) {
