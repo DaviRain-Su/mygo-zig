@@ -39,8 +39,8 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 | `zig/host/sqlite` | Done (Phase 2) | More-tab demo; JSON args/results |
 | `zig/host/websocket` / fetch | Backlog | Zig often has its own HTTP |
 | `zig/host/updater` | Backlog | after shipping apps |
-| `zig/host/permissionflow` | Backlog | macOS polish |
-| `zig/host/watch` | Backlog | core `watch`, not under plugins/ |
+| `zig/host/permissionflow` | Done (Phase 3) | Check/Allowed/OpenSettings + async Request/Guide/Wait |
+| `zig/host/watch` | Done (Phase 3) | push JSON FileEvent batches |
 
 ## Explicitly deferred (niche / product)
 
@@ -59,7 +59,7 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 1. **Phase 0** — consolidate docs + CI (this file) — Done
 2. **Phase 1** — `terminal` opt-in SDK + gallery Term tab — Done
 3. **Phase 2** — `sqlite` minimal Open/Execute/Query/Transaction — Done
-4. **Phase 3** — permissionflow / updater / watch as needed; docs site when users exist
+4. **Phase 3** — watch + permissionflow — Done; updater / docs site when needed
 
 ## Terminal ABI notes
 
@@ -72,3 +72,10 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 - `HostOpSQLite = 237` subops: open/close/execute/query/transaction
 - Args / statement lists / results are UTF-8 JSON (plugin TS client shape)
 - Query out buffer currently 256 KiB on the Zig side (dupe after host write)
+
+## Watch / PermissionFlow ABI notes
+
+- `HostOpWatch = 238`, `ZigEventWatch = 36` (batch JSON / done)
+- `HostOpPermissionFlow = 239`, `ZigEventPermFlow = 37` (async status)
+- Permission names match Go strings (`microphone`, `accessibility`, …)
+- Status codes: 0 unknown, 1 not_determined, 2 denied, 3 granted

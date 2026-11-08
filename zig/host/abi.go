@@ -42,6 +42,8 @@ const (
 	ZigEventLocale        uintptr = 33 // a0=cb_id a1=*CStr locale
 	ZigEventRegion        uintptr = 34 // a0=cb_id a1=*CStr region JSON
 	ZigEventTerminal      uintptr = 35 // a0=cb_id a1=term_id a2=kind a3=payload
+	ZigEventWatch         uintptr = 36 // a0=cb_id a1=watch_id a2=kind a3=payload
+	ZigEventPermFlow      uintptr = 37 // a0=cb_id a1=req_id a2=status a3=*CStr err
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -101,6 +103,8 @@ const (
 	HostOpTerminal       uintptr = 235 // a0=subop (lifecycle)
 	HostOpTerminalView   uintptr = 236 // a0=frame a1=term_id
 	HostOpSQLite         uintptr = 237 // a0=subop
+	HostOpWatch          uintptr = 238 // a0=subop (mygo.WatchFiles)
+	HostOpPermissionFlow uintptr = 239 // a0=subop
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -354,6 +358,12 @@ var TerminalDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // SQLiteDispatch is populated by `zig/host/sqlite` when imported.
 var SQLiteDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+
+// WatchDispatch is populated by `zig/host/watch` when imported.
+var WatchDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+
+// PermissionFlowDispatch is populated by `zig/host/permissionflow` when imported.
+var PermissionFlowDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
@@ -951,4 +961,43 @@ type CSQLiteTxSpec struct {
 	DBID                 uintptr
 	StmtsPtr, StmtsLen   uintptr // JSON [{sql,args},...]
 	OutPtr, OutCap       uintptr
+}
+
+// Watch sub-ops for HostOpWatch.
+const (
+	WatchStart uintptr = 1 // a1=*CWatchStartSpec → id
+	WatchClose uintptr = 2 // a1=id
+)
+
+const (
+	WatchEvBatch uintptr = 1 // a3=*CStr JSON []FileEvent
+	WatchEvDone  uintptr = 2 // a3=*CStr error message (empty = EOF/clean)
+)
+
+type CWatchStartSpec struct {
+	PathPtr, PathLen uintptr
+	EventCb          uintptr
+	Recursive        uint8
+	HintsOnly        uint8
+	_                [6]byte
+	DebounceMS       int32
+	MaxDelayMS       int32
+	MaxEntries       int32
+}
+
+// PermissionFlow sub-ops for HostOpPermissionFlow.
+const (
+	PermCheck        uintptr = 1 // a1=name_ptr a2=name_len → status (0..3), ^0 on err
+	PermAllowed      uintptr = 2 // → 1/0
+	PermRequest      uintptr = 3 // a1=*CPermAsyncSpec → req_id; result via ZigEventPermFlow
+	PermOpenSettings uintptr = 4 // → 0 ok
+	PermGuide        uintptr = 5 // a1=*CPermAsyncSpec → req_id
+	PermWait         uintptr = 6 // a1=*CPermAsyncSpec → req_id
+)
+
+type CPermAsyncSpec struct {
+	NamePtr, NameLen uintptr
+	AppPtr, AppLen   uintptr // Guide only
+	NameLabelPtr, NameLabelLen uintptr
+	CbID             uintptr
 }

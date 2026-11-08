@@ -71,6 +71,8 @@ pub const HostOp = enum(usize) {
     terminal = 235,
     terminal_view = 236,
     sqlite = 237,
+    watch = 238,
+    permission_flow = 239,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -226,6 +228,8 @@ const ZigEvent = enum(usize) {
     locale = 33,
     region = 34,
     terminal = 35,
+    watch = 36,
+    perm_flow = 37,
 };
 
 pub const CStr = extern struct {
@@ -673,6 +677,30 @@ fn registerTerminalHandler(h: RawTerminalHandler, userdata: usize) usize {
     return terminal_count;
 }
 
+const RawWatchHandler = *const fn (watch_id: usize, kind: u8, a3: usize, userdata: usize) void;
+var watch_handlers: [16]RawWatchHandler = undefined;
+var watch_count: usize = 0;
+var watch_handler_userdata: [16]usize = undefined;
+
+fn registerWatchHandler(h: RawWatchHandler, userdata: usize) usize {
+    watch_handlers[watch_count] = h;
+    watch_handler_userdata[watch_count] = userdata;
+    watch_count += 1;
+    return watch_count;
+}
+
+const RawPermFlowHandler = *const fn (req_id: usize, status: u8, err_json: []const u8, userdata: usize) void;
+var perm_handlers: [16]RawPermFlowHandler = undefined;
+var perm_count: usize = 0;
+var perm_handler_userdata: [16]usize = undefined;
+
+fn registerPermFlowHandler(h: RawPermFlowHandler, userdata: usize) usize {
+    perm_handlers[perm_count] = h;
+    perm_handler_userdata[perm_count] = userdata;
+    perm_count += 1;
+    return perm_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -1062,6 +1090,20 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                 .terminal => {
                     if (a0 == 0 or a0 > terminal_count) return 0;
                     terminal_handlers[a0 - 1](a1, @truncate(a2), a3, terminal_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .watch => {
+                    if (a0 == 0 or a0 > watch_count) return 0;
+                    watch_handlers[a0 - 1](a1, @truncate(a2), a3, watch_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .perm_flow => {
+                    if (a0 == 0 or a0 > perm_count) return 0;
+                    const err_msg = if (a3 != 0) blk: {
+                        const cs: *const CStr = @ptrFromInt(a3);
+                        break :blk cs.toSlice();
+                    } else "";
+                    perm_handlers[a0 - 1](a1, @truncate(a2), err_msg, perm_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -2576,6 +2618,151 @@ pub const Protocol = struct {
 };
 
 
+
+
+pub const Watch = struct {
+    id: usize = 0,
+
+    pub const Options = struct {
+        recursive: bool = false,
+        hints_only: bool = false,
+        debounce_ms: i32 = 0, // 0 = host default (50ms); negative = immediate
+        max_delay_ms: i32 = 0,
+        max_entries: i32 = 0,
+    };
+
+    pub const Event = union(enum) {
+        batch: []const u8, // JSON array of FileEvent
+        done: []const u8, // empty = clean EOF; else error message
+    };
+
+    pub fn start(
+        path: []const u8,
+        opts: Options,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, Watch, Event) void,
+    ) Error!Watch {
+        const S = struct {
+            fn onWatch(watch_id: usize, kind: u8, a3: usize, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                const w = Watch{ .id = watch_id };
+                const payload = if (a3 != 0) blk: {
+                    const cs: *const CStr = @ptrFromInt(a3);
+                    break :blk cs.toSlice();
+                } else "";
+                switch (kind) {
+                    1 => handler(s, w, .{ .batch = payload }),
+                    2 => handler(s, w, .{ .done = payload }),
+                    else => {},
+                }
+            }
+        };
+        const cb = registerWatchHandler(&S.onWatch, @intFromPtr(state));
+        const Spec = extern struct {
+            path_ptr: usize = 0,
+            path_len: usize = 0,
+            event_cb: usize = 0,
+            recursive: u8 = 0,
+            hints_only: u8 = 0,
+            _pad: [6]u8 = @splat(0),
+            debounce_ms: i32 = 0,
+            max_delay_ms: i32 = 0,
+            max_entries: i32 = 0,
+        };
+        var spec = Spec{
+            .path_ptr = sliceAddr(path),
+            .path_len = path.len,
+            .event_cb = cb,
+            .recursive = @intFromBool(opts.recursive),
+            .hints_only = @intFromBool(opts.hints_only),
+            .debounce_ms = opts.debounce_ms,
+            .max_delay_ms = opts.max_delay_ms,
+            .max_entries = opts.max_entries,
+        };
+        const id = dispatch(.watch, 1, @intFromPtr(&spec), 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    pub fn close(self: Watch) void {
+        _ = dispatch(.watch, 2, self.id, 0, 0);
+    }
+};
+
+pub const PermissionFlow = struct {
+    pub const Status = enum(u8) {
+        unknown = 0,
+        not_determined = 1,
+        denied = 2,
+        granted = 3,
+    };
+
+    pub fn check(name: []const u8) Error!Status {
+        const v = dispatch(.permission_flow, 1, sliceAddr(name), name.len, 0);
+        if (v == std.math.maxInt(usize)) return Error.MyGoError;
+        return @enumFromInt(@as(u8, @truncate(v)));
+    }
+
+    pub fn allowed(name: []const u8) bool {
+        return dispatch(.permission_flow, 2, sliceAddr(name), name.len, 0) != 0;
+    }
+
+    pub fn openSettings(name: []const u8) Error!void {
+        if (dispatch(.permission_flow, 4, sliceAddr(name), name.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    fn kickAsync(
+        sub: usize,
+        name: []const u8,
+        app: []const u8,
+        label: []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, usize, Status, []const u8) void,
+    ) Error!usize {
+        const S = struct {
+            fn onPerm(req_id: usize, status: u8, err_msg: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, req_id, @enumFromInt(status), err_msg);
+            }
+        };
+        const cb = registerPermFlowHandler(&S.onPerm, @intFromPtr(state));
+        const Spec = extern struct {
+            name_ptr: usize = 0,
+            name_len: usize = 0,
+            app_ptr: usize = 0,
+            app_len: usize = 0,
+            name_label_ptr: usize = 0,
+            name_label_len: usize = 0,
+            cb_id: usize = 0,
+        };
+        var spec = Spec{
+            .name_ptr = sliceAddr(name),
+            .name_len = name.len,
+            .app_ptr = sliceAddr(app),
+            .app_len = app.len,
+            .name_label_ptr = sliceAddr(label),
+            .name_label_len = label.len,
+            .cb_id = cb,
+        };
+        const id = dispatch(.permission_flow, sub, @intFromPtr(&spec), 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return id;
+    }
+
+    pub fn request(comptime StatePtr: type, state: StatePtr, name: []const u8, comptime handler: fn (StatePtr, usize, Status, []const u8) void) Error!usize {
+        return kickAsync(3, name, "", "", StatePtr, state, handler);
+    }
+
+    pub fn guide(comptime StatePtr: type, state: StatePtr, name: []const u8, comptime handler: fn (StatePtr, usize, Status, []const u8) void) Error!usize {
+        return kickAsync(5, name, "", "", StatePtr, state, handler);
+    }
+
+    pub fn wait(comptime StatePtr: type, state: StatePtr, name: []const u8, comptime handler: fn (StatePtr, usize, Status, []const u8) void) Error!usize {
+        return kickAsync(6, name, "", "", StatePtr, state, handler);
+    }
+};
 
 pub const SQLite = struct {
     id: usize = 0,

@@ -340,6 +340,20 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return EditorDispatch(op, a0, a1, a2, a3)
 	}
+	if op == HostOpWatch {
+		if WatchDispatch == nil {
+			SetError(errors.New("zighost: watch not linked (import _ \"github.com/egoist/mygo/zig/host/watch\")"))
+			return ^uintptr(0)
+		}
+		return WatchDispatch(activeCall, op, a0, a1, a2, a3)
+	}
+	if op == HostOpPermissionFlow {
+		if PermissionFlowDispatch == nil {
+			SetError(errors.New("zighost: permissionflow not linked (import _ \"github.com/egoist/mygo/zig/host/permissionflow\")"))
+			return ^uintptr(0)
+		}
+		return PermissionFlowDispatch(activeCall, op, a0, a1, a2, a3)
+	}
 	if op == HostOpSQLite {
 		if SQLiteDispatch == nil {
 			SetError(errors.New("zighost: sqlite not linked (import _ \"github.com/egoist/mygo/zig/host/sqlite\")"))

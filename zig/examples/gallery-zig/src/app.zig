@@ -198,6 +198,7 @@ const Gallery = struct {
         term_title_len: usize = 0,
         term_title_buf: [128]u8 = undefined,
         sqlite_id: usize = 0,
+        watch_id: usize = 0,
     web_win_id: i32 = 0,
     notif_id_buf: [64]u8 = undefined,
     notif_id_len: usize = 0,
@@ -1487,6 +1488,15 @@ const Gallery = struct {
                     win.setContentRulesJSON(ids) catch {};
                 }
             }
+            if (c.button("watch-demo", "Watch userData").clicked()) {
+                self.startWatchDemo();
+            }
+            if (c.button("perm-check", "Check microphone").clicked()) {
+                self.checkMic();
+            }
+            if (c.button("perm-settings", "Open Accessibility settings").clicked()) {
+                mygo.PermissionFlow.openSettings("accessibility") catch {};
+            }
             if (c.button("sqlite-demo", "SQLite insert+query").clicked()) {
                 self.runSQLiteDemo();
             }
@@ -2003,6 +2013,71 @@ const Gallery = struct {
     }
 
     
+
+
+    fn startWatchDemo(self: *Gallery) void {
+        if (self.watch_id != 0) {
+            (mygo.Watch{ .id = self.watch_id }).close();
+            self.watch_id = 0;
+        }
+        const alloc = std.heap.page_allocator;
+        const dir = mygo.Path.get(alloc, "userData") catch {
+            const msg = "watch: no userData";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        defer alloc.free(dir);
+        const w = mygo.Watch.start(dir, .{ .recursive = false, .hints_only = true }, *Gallery, self, onWatchEvent) catch {
+            const msg = "watch: start failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        self.watch_id = w.id;
+        const msg = "watching userData…";
+        @memcpy(self.path_buf[0..msg.len], msg);
+        self.path_len = msg.len;
+    }
+
+    fn onWatchEvent(self: *Gallery, _: mygo.Watch, ev: mygo.Watch.Event) void {
+        switch (ev) {
+            .batch => |json| {
+                const n = @min(json.len, self.path_buf.len);
+                @memcpy(self.path_buf[0..n], json[0..n]);
+                self.path_len = n;
+            },
+            .done => |msg| {
+                self.watch_id = 0;
+                if (msg.len == 0) {
+                    const done = "watch: done";
+                    @memcpy(self.path_buf[0..done.len], done);
+                    self.path_len = done.len;
+                } else {
+                    const n = @min(msg.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..n], msg[0..n]);
+                    self.path_len = n;
+                }
+            },
+        }
+    }
+
+    fn checkMic(self: *Gallery) void {
+        const st = mygo.PermissionFlow.check("microphone") catch {
+            const msg = "perm: check failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        const label: []const u8 = switch (st) {
+            .unknown => "microphone: unknown",
+            .not_determined => "microphone: not determined",
+            .denied => "microphone: denied",
+            .granted => "microphone: granted",
+        };
+        @memcpy(self.path_buf[0..label.len], label);
+        self.path_len = label.len;
+    }
 
     fn runSQLiteDemo(self: *Gallery) void {
         const alloc = std.heap.page_allocator;
