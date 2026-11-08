@@ -48,6 +48,8 @@ const (
 	ZigEventGameUpdate    uintptr = 39 // a0=cb_id a1=*CGameInput a2=0 a3=userdata
 	ZigEventGameDraw      uintptr = 40 // a0=cb_id a1=painter a2=*CGameDraw a3=userdata
 	ZigEventDocuments     uintptr = 41 // a0=cb_id a1=doc_id a2=kind a3=payload → return win_id for kind=1
+	ZigEventNetwork       uintptr = 42 // a0=cb_id a1=*CStr JSON NetworkStatus
+	ZigEventNowPlaying    uintptr = 43 // a0=cb_id a1=cmd a2=position_ns
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -117,6 +119,8 @@ const (
 	HostOpGamepad        uintptr = 248 // a0=subop
 	HostOpWebView        uintptr = 249 // a0=subop first-class WebView
 	HostOpDocuments      uintptr = 250 // a0=subop bytes documents
+	HostOpNetwork        uintptr = 251 // a0=subop Network.Status/OnChanged
+	HostOpNowPlaying     uintptr = 252 // a0=subop NowPlaying
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -327,6 +331,7 @@ type CWindowOptions struct {
 	TitleBarHeight  int32
 	_PadTB          [4]byte
 	SessionName     CStr
+	StateKey        CStr
 }
 
 // CAssetSpec describes an embedded asset registered by Zig (`@embedFile`).

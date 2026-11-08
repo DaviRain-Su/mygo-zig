@@ -49,6 +49,8 @@ const (
 	docName        = 21 // → string out
 	docForWindow   = 22 // a1=win_id → doc_id or 0
 	docFocus       = 23
+	docIsReadOnly  = 24
+	docHasConflict = 25
 )
 
 const (
@@ -361,6 +363,24 @@ func dispatch(call host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 			return notFound()
 		}
 		d.Window().Focus()
+		return 0
+	case docIsReadOnly:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		if d.IsReadOnly() {
+			return 1
+		}
+		return 0
+	case docHasConflict:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		if d.HasConflict() {
+			return 1
+		}
 		return 0
 	default:
 		host.SetError(errors.New("zighost: unknown documents subop"))

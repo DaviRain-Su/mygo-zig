@@ -283,6 +283,7 @@ func ParseWindowOptions(raw *CWindowOptions) mygo.WindowOptions {
 	if name := StrField(raw.SessionName); name != "" {
 		opts.Page.Session = mygo.NewSession(name)
 	}
+	opts.StateKey = StrField(raw.StateKey)
 	return opts
 }
 
@@ -411,6 +412,12 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 			return ^uintptr(0)
 		}
 		return DocumentsDispatch(activeCall, op, a0, a1, a2, a3)
+	}
+	if op == HostOpNetwork {
+		return hostNetwork(activeCall, a0, a1, a2, a3)
+	}
+	if op == HostOpNowPlaying {
+		return hostNowPlaying(activeCall, a0, a1, a2, a3)
 	}
 	if op == HostOpSQLite {
 		if SQLiteDispatch == nil {
@@ -3659,3 +3666,110 @@ func printToPDF(w *mygo.Window, a2 uintptr) uintptr {
 }
 
 func titleRespond(a2 uintptr) uintptr { return navigateRespond(a2) }
+
+const (
+	netStatus    = 1 // a1=out a2=cap → JSON
+	netOnChanged = 2 // a1=cb_id
+)
+
+func hostNetwork(call CallZigFn, sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case netStatus:
+		raw, _ := json.Marshal(mygo.Network.Status())
+		return WriteBytesToOut(raw, a1, a2)
+	case netOnChanged:
+		cb := a1
+		mygo.Network.OnChanged(func(st mygo.NetworkStatus) {
+			raw, _ := json.Marshal(st)
+			ptr, n := SliceAddr(raw)
+			cs := CStr{Data: ptr, Len: n}
+			call(ZigEventNetwork, cb, PtrOf(&cs), 0, 0)
+			runtime.KeepAlive(raw)
+			runtime.KeepAlive(cs)
+		})
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown network subop"))
+		return ^uintptr(0)
+	}
+}
+
+const (
+	npSet         = 1 // a1=*CNowPlayingInfo
+	npClear       = 2
+	npInfo        = 3 // a1=out a2=cap → JSON (no artwork)
+	npSetPlayback = 4 // a1=state a2=position_ns
+	npOnCommand   = 5 // a1=cb_id
+)
+
+type CNowPlayingInfo struct {
+	TitlePtr, TitleLen     uintptr
+	ArtistPtr, ArtistLen   uintptr
+	AlbumPtr, AlbumLen     uintptr
+	ArtworkPtr, ArtworkLen uintptr
+	DurationNS             int64
+	PositionNS             int64
+	Rate                   float64
+	State                  int32
+	Commands               uint32
+}
+
+func hostNowPlaying(call CallZigFn, sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case npSet:
+		spec := PtrTo[CNowPlayingInfo](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: NowPlaying.Set needs info"))
+			return ^uintptr(0)
+		}
+		info := mygo.NowPlayingInfo{
+			Title:    CopyString(spec.TitlePtr, spec.TitleLen),
+			Artist:   CopyString(spec.ArtistPtr, spec.ArtistLen),
+			Album:    CopyString(spec.AlbumPtr, spec.AlbumLen),
+			Artwork:  CopyBytes(spec.ArtworkPtr, spec.ArtworkLen),
+			Duration: time.Duration(spec.DurationNS),
+			Position: time.Duration(spec.PositionNS),
+			Rate:     spec.Rate,
+			State:    mygo.PlaybackState(spec.State),
+			Commands: mygo.MediaCommand(spec.Commands),
+		}
+		mygo.NowPlaying.Set(info)
+		return 0
+	case npClear:
+		mygo.NowPlaying.Clear()
+		return 0
+	case npInfo:
+		info, ok := mygo.NowPlaying.Info()
+		if !ok {
+			return WriteBytesToOut([]byte("null"), a1, a2)
+		}
+		type wire struct {
+			Title    string  `json:"title"`
+			Artist   string  `json:"artist"`
+			Album    string  `json:"album"`
+			Duration int64   `json:"durationNs"`
+			Position int64   `json:"positionNs"`
+			Rate     float64 `json:"rate"`
+			State    int     `json:"state"`
+			Commands uint32  `json:"commands"`
+		}
+		raw, _ := json.Marshal(wire{
+			Title: info.Title, Artist: info.Artist, Album: info.Album,
+			Duration: int64(info.Duration), Position: int64(info.Position),
+			Rate: info.Rate, State: int(info.State), Commands: uint32(info.Commands),
+		})
+		return WriteBytesToOut(raw, a1, a2)
+	case npSetPlayback:
+		mygo.NowPlaying.SetPlayback(mygo.PlaybackState(a1), time.Duration(int64(a2)))
+		return 0
+	case npOnCommand:
+		cb := a1
+		mygo.NowPlaying.OnCommand(func(cmd mygo.MediaCommand, pos time.Duration) {
+			call(ZigEventNowPlaying, cb, uintptr(cmd), uintptr(pos), 0)
+		})
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown nowplaying subop"))
+		return ^uintptr(0)
+	}
+}

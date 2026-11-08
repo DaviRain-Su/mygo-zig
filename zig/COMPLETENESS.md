@@ -104,3 +104,10 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 - `HostOpWebView=249` — full create options (PageOptions) + destroy/focus/capture + parent/page ids; `ui` op 340
 - `HostOpDocuments=250`, `ZigEventDocuments=41` — configure…focus (subops 1–23), Zig supplies window
 - `Shell` subop 10 — `WriteShortcutLink` (Windows; ErrUnsupported elsewhere)
+
+## Phase 7 — remaining desktop parity
+
+- `WindowOptions.state_key` → Go `StateKey` (remember bounds)
+- Documents `isReadOnly` / `hasConflict`
+- `HostOpNetwork=251`, `ZigEventNetwork=42` — Status JSON + OnChanged
+- `HostOpNowPlaying=252`, `ZigEventNowPlaying=43` — Set/Clear/Info/SetPlayback/OnCommand

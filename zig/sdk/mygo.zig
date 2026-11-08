@@ -81,6 +81,8 @@ pub const HostOp = enum(usize) {
     gamepad = 248,
     webview = 249,
     documents = 250,
+    network = 251,
+    now_playing = 252,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -242,6 +244,8 @@ const ZigEvent = enum(usize) {
     game_update = 39,
     game_draw = 40,
     documents = 41,
+    network = 42,
+    now_playing = 43,
 };
 
 pub const CStr = extern struct {
@@ -286,6 +290,7 @@ pub const CWindowOptions = extern struct {
     title_bar_height: i32 = 0,
     _pad_tb: [4]u8 = @splat(0),
     session_name: CStr = .{},
+    state_key: CStr = .{},
 };
 
 const CAssetSpec = extern struct {
@@ -759,6 +764,30 @@ pub fn registerDocHandler(h: RawDocHandler, userdata: usize) usize {
     return doc_count;
 }
 
+const RawNetworkHandler = *const fn (payload: []const u8, userdata: usize) void;
+var network_handlers: [8]RawNetworkHandler = undefined;
+var network_handler_ud: [8]usize = undefined;
+var network_count: usize = 0;
+
+pub fn registerNetworkHandler(h: RawNetworkHandler, userdata: usize) usize {
+    network_handlers[network_count] = h;
+    network_handler_ud[network_count] = userdata;
+    network_count += 1;
+    return network_count;
+}
+
+const RawNowPlayingHandler = *const fn (cmd: usize, position_ns: usize, userdata: usize) void;
+var nowplaying_handlers: [8]RawNowPlayingHandler = undefined;
+var nowplaying_handler_ud: [8]usize = undefined;
+var nowplaying_count: usize = 0;
+
+pub fn registerNowPlayingHandler(h: RawNowPlayingHandler, userdata: usize) usize {
+    nowplaying_handlers[nowplaying_count] = h;
+    nowplaying_handler_ud[nowplaying_count] = userdata;
+    nowplaying_count += 1;
+    return nowplaying_count;
+}
+
 pub const GameInput = extern struct {
     keys_down: u64 = 0,
     keys_pressed: u64 = 0,
@@ -1223,6 +1252,20 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > doc_count) return 0;
                     return @intCast(doc_handlers[a0 - 1](a1, @truncate(a2), a3, doc_handler_ud[a0 - 1]));
                 },
+                .network => {
+                    if (a0 == 0 or a0 > network_count) return 0;
+                    const payload = if (a1 != 0) blk: {
+                        const cs: *const CStr = @ptrFromInt(a1);
+                        break :blk cs.toSlice();
+                    } else "";
+                    network_handlers[a0 - 1](payload, network_handler_ud[a0 - 1]);
+                    return 0;
+                },
+                .now_playing => {
+                    if (a0 == 0 or a0 > nowplaying_count) return 0;
+                    nowplaying_handlers[a0 - 1](a1, a2, nowplaying_handler_ud[a0 - 1]);
+                    return 0;
+                },
             }
         }
     };
@@ -1290,6 +1333,8 @@ pub const WindowOptions = struct {
     title_bar_height: i32 = 0,
     /// Named persistent session (NewSession); empty = default.
     session_name: []const u8 = "",
+    /// Remembers position/size/maximized across launches (WindowOptions.StateKey).
+    state_key: []const u8 = "",
 
     pub fn toC(self: WindowOptions) CWindowOptions {
         return .{
@@ -1314,6 +1359,7 @@ pub const WindowOptions = struct {
             .title_bar_style = CStr.fromSlice(self.title_bar_style),
             .title_bar_height = self.title_bar_height,
             .session_name = CStr.fromSlice(self.session_name),
+            .state_key = CStr.fromSlice(self.state_key),
         };
     }
 };
@@ -3136,6 +3182,121 @@ pub const Documents = struct {
 
     pub fn focus(doc_id: usize) void {
         _ = dispatch(.documents, 23, doc_id, 0, 0);
+    }
+
+    pub fn isReadOnly(doc_id: usize) bool {
+        return dispatch(.documents, 24, doc_id, 0, 0) != 0;
+    }
+
+    pub fn hasConflict(doc_id: usize) bool {
+        return dispatch(.documents, 25, doc_id, 0, 0) != 0;
+    }
+};
+
+
+pub const Network = struct {
+    pub fn statusJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [256]u8 = undefined;
+        const got = dispatch(.network, 1, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn onChanged(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onNet(payload: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, payload);
+            }
+        };
+        const cb = registerNetworkHandler(&S.onNet, @intFromPtr(state));
+        _ = dispatch(.network, 2, cb, 0, 0);
+    }
+};
+
+pub const NowPlaying = struct {
+    pub const MediaPlay: u32 = 1 << 0;
+    pub const MediaPause: u32 = 1 << 1;
+    pub const MediaTogglePlayPause: u32 = 1 << 2;
+    pub const MediaStop: u32 = 1 << 3;
+    pub const MediaNext: u32 = 1 << 4;
+    pub const MediaPrevious: u32 = 1 << 5;
+    pub const MediaSeek: u32 = 1 << 6;
+
+    pub const PlaybackPlaying: i32 = 0;
+    pub const PlaybackPaused: i32 = 1;
+    pub const PlaybackStopped: i32 = 2;
+
+    pub const Info = struct {
+        title: []const u8 = "",
+        artist: []const u8 = "",
+        album: []const u8 = "",
+        artwork: []const u8 = "",
+        duration_ns: i64 = 0,
+        position_ns: i64 = 0,
+        rate: f64 = 0,
+        state: i32 = PlaybackPlaying,
+        commands: u32 = MediaPlay | MediaPause | MediaStop,
+    };
+
+    pub fn set(info: Info) void {
+        const Spec = extern struct {
+            title_ptr: usize = 0,
+            title_len: usize = 0,
+            artist_ptr: usize = 0,
+            artist_len: usize = 0,
+            album_ptr: usize = 0,
+            album_len: usize = 0,
+            artwork_ptr: usize = 0,
+            artwork_len: usize = 0,
+            duration_ns: i64 = 0,
+            position_ns: i64 = 0,
+            rate: f64 = 0,
+            state: i32 = 0,
+            commands: u32 = 0,
+        };
+        var spec = Spec{
+            .title_ptr = sliceAddr(info.title),
+            .title_len = info.title.len,
+            .artist_ptr = sliceAddr(info.artist),
+            .artist_len = info.artist.len,
+            .album_ptr = sliceAddr(info.album),
+            .album_len = info.album.len,
+            .artwork_ptr = sliceAddr(info.artwork),
+            .artwork_len = info.artwork.len,
+            .duration_ns = info.duration_ns,
+            .position_ns = info.position_ns,
+            .rate = info.rate,
+            .state = info.state,
+            .commands = info.commands,
+        };
+        _ = dispatch(.now_playing, 1, @intFromPtr(&spec), 0, 0);
+    }
+
+    pub fn clear() void {
+        _ = dispatch(.now_playing, 2, 0, 0, 0);
+    }
+
+    pub fn infoJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.now_playing, 3, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn setPlayback(state: i32, position_ns: i64) void {
+        _ = dispatch(.now_playing, 4, @intCast(state), @intCast(position_ns), 0);
+    }
+
+    pub fn onCommand(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, cmd: u32, position_ns: u64) void) void {
+        const S = struct {
+            fn onCmd(cmd: usize, pos: usize, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, @truncate(cmd), pos);
+            }
+        };
+        const cb = registerNowPlayingHandler(&S.onCmd, @intFromPtr(state));
+        _ = dispatch(.now_playing, 5, cb, 0, 0);
     }
 };
 
