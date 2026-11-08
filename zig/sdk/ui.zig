@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const mygo = @import("mygo.zig");
+const abi = @import("abi.zig");
 pub const Element = @import("element_gen.zig").Element;
 
 pub const RawViewHandler = *const fn (frame_handle: usize, info: *const CFrameInfo, userdata: usize) void;
@@ -133,6 +134,18 @@ pub const Key = enum(u16) {
     right = 13,
     up = 14,
     down = 15,
+    f1 = 16,
+    f2 = 17,
+    f3 = 18,
+    f4 = 19,
+    f5 = 20,
+    f6 = 21,
+    f7 = 22,
+    f8 = 23,
+    f9 = 24,
+    f10 = 25,
+    f11 = 26,
+    f12 = 27,
     _,
 };
 
@@ -143,6 +156,101 @@ pub const PointerType = enum(u8) {
     touch = 2,
     _,
 };
+
+/// Kinds of input (`ui.InputKind`).
+pub const InputKind = enum(u8) {
+    key_down = 1,
+    key_up = 2,
+    text = 3,
+    compose = 4,
+    command = 5,
+    pointer_down = 6,
+    pointer_up = 7,
+    pointer_move = 8,
+    scroll = 9,
+    select = 10,
+    zoom = 11,
+    _,
+};
+
+/// One input event, as an element's `observeInput` / `handleInput` see it.
+pub const InputEvent = struct {
+    kind: InputKind = .key_down,
+    key: Key = .unknown,
+    physical_key: Key = .unknown,
+    /// The key by its position on any keyboard (`ui.KeyCode`).
+    code: u16 = 0,
+    mods: Modifiers = .{},
+    repeat: bool = false,
+    canceled: bool = false,
+    /// UTF-8 text of a text or compose event; valid while the handler runs.
+    text: []const u8 = "",
+    caret: i32 = 0,
+    x: f32 = 0,
+    y: f32 = 0,
+    button: i32 = 0,
+    clicks: i32 = 0,
+    pointer: PointerType = .mouse,
+    pressure: f32 = 0,
+    dx: f32 = 0,
+    dy: f32 = 0,
+    precise: bool = false,
+    momentum: bool = false,
+    scale: f32 = 0,
+    start: i32 = 0,
+    end: i32 = 0,
+};
+
+pub const CInput = abi.Input;
+pub const Hit = abi.Hit;
+
+/// inputEvent reads a host event. The text slice is valid while the handler runs.
+pub fn inputEvent(c: *const abi.Input) InputEvent {
+    const text: []const u8 = if (c.text_len > 0 and c.text_ptr != 0)
+        @as([*]const u8, @ptrFromInt(c.text_ptr))[0..c.text_len]
+    else
+        "";
+    return .{
+        .kind = @enumFromInt(@as(u8, @truncate(c.kind))),
+        .key = @enumFromInt(@as(u16, @truncate(c.key))),
+        .physical_key = @enumFromInt(@as(u16, @truncate(c.physical_key))),
+        .code = @truncate(c.code),
+        .mods = @bitCast(@as(u8, @truncate(c.mods))),
+        .repeat = c.flags & 1 != 0,
+        .canceled = c.flags & 2 != 0,
+        .precise = c.flags & 4 != 0,
+        .momentum = c.flags & 8 != 0,
+        .text = text,
+        .caret = c.caret,
+        .x = c.x,
+        .y = c.y,
+        .button = @bitCast(c.button),
+        .clicks = @bitCast(c.clicks),
+        .pointer = @enumFromInt(@as(u8, @truncate(c.pointer))),
+        .pressure = c.pressure,
+        .dx = c.dx,
+        .dy = c.dy,
+        .scale = c.scale,
+        .start = c.start,
+        .end = c.end,
+    };
+}
+
+/// registerInputHandler adds an element input handler, returning its id.
+pub fn registerInputHandler(handler: mygo.RawUIInput) usize {
+    if (mygo.ui_input_count >= mygo.ui_input_handlers.len) return 0;
+    mygo.ui_input_handlers[mygo.ui_input_count] = handler;
+    mygo.ui_input_count += 1;
+    return mygo.ui_input_count;
+}
+
+/// registerHitHandler adds an element hit test, returning its id.
+pub fn registerHitHandler(handler: mygo.RawUIHit) usize {
+    if (mygo.ui_hit_count >= mygo.ui_hit_handlers.len) return 0;
+    mygo.ui_hit_handlers[mygo.ui_hit_count] = handler;
+    mygo.ui_hit_count += 1;
+    return mygo.ui_hit_count;
+}
 
 pub const CoreOp = enum(u16) {
     column = 1,
@@ -330,6 +438,73 @@ pub const CoreOp = enum(u16) {
     focus_group = 394,
     key_shortcuts = 395,
     query_in_view_margin = 396,
+    observe_input = 397,
+    handle_input = 398,
+    hit_test = 399,
+    scroll_snap = 400,
+    scroll_into_view = 401,
+    query_dropped_files = 402,
+    query_file_drag_over = 403,
+    mask_linear_gradient = 404,
+    mask_radial_gradient = 405,
+    mask_conic_gradient = 406,
+    transition = 407,
+    content_transition = 408,
+    checkbox_state = 409,
+};
+
+/// The state of a check box that may be mixed, as a "select all" box.
+pub const CheckState = enum(u8) {
+    off = 0,
+    on = 1,
+    mixed = 2,
+    _,
+};
+
+/// How an element's changes animate (Element.transition).
+pub const TransitionOptions = struct {
+    duration_ms: i32 = 0,
+    delay_ms: i32 = 0,
+    /// Negative shows every change at once, without a copy.
+    exit_ms: i32 = 0,
+    animation: AnimPreset = .custom,
+    bounce: f32 = 0,
+    non_motion: bool = false,
+    position: bool = false,
+    size: bool = false,
+    colors: bool = false,
+    shadows: bool = false,
+    width: bool = false,
+    height: bool = false,
+};
+
+/// How an element's content animates as it changes (Element.contentTransition).
+pub const ContentTransitionOptions = struct {
+    numeric: bool = false,
+    down: bool = false,
+    morph: bool = false,
+    duration_ms: i32 = 0,
+    delay_ms: i32 = 0,
+    animation: AnimPreset = .custom,
+    bounce: f32 = 0,
+    non_motion: bool = false,
+};
+
+/// Where ScrollIntoView lines an element up (`ui.ScrollAlign`).
+pub const ScrollAlign = enum(u8) {
+    nearest = 0,
+    start = 1,
+    center = 2,
+    end = 3,
+    _,
+};
+
+/// How a scroll container rests (`ui.Snap`).
+pub const Snap = enum(u8) {
+    none = 0,
+    mandatory = 1,
+    proximity = 2,
+    _,
 };
 
 const PaintOp = enum(u8) {
@@ -1313,7 +1488,7 @@ pub const Context = struct {
         return q;
     }
 
-    fn flushQueryInto(self: *Context, q: *CQuery) void {
+    pub fn flushQueryInto(self: *Context, q: *CQuery) void {
         if (self.len > 0) {
             _ = mygo.dispatch(.ui_flush, self.frame_handle, @intFromPtr(&self.buf), self.len, @intFromPtr(q));
             self.len = 0;
@@ -1529,6 +1704,18 @@ pub const Context = struct {
         self.writeOp(@intFromEnum(CoreOp.primary_button));
         self.writeStr(key);
         self.writeStr(lbl);
+        return .{ .ctx = self };
+    }
+
+    /// A check box that may be mixed: a row that sets it to on when clicked,
+    /// or to off when it is on.
+    pub fn checkboxState(self: *Context, key: []const u8, state: *CheckState, lbl: []const u8) Element {
+        self.writeOp(@intFromEnum(CoreOp.checkbox_state));
+        self.writeStr(key);
+        self.writeU8(@intFromEnum(state.*));
+        self.writeStr(lbl);
+        const q = self.flushQuery();
+        state.* = @enumFromInt(@as(u8, @intCast(q.int_val)));
         return .{ .ctx = self };
     }
 

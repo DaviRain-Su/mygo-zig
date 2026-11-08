@@ -17,6 +17,7 @@ import (
 	"image"
 	"io"
 	"math"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -226,6 +227,19 @@ const (
 	opFocusGroup           uint16 = 394
 	opKeyShortcuts         uint16 = 395
 	opQueryInViewMargin    uint16 = 396
+	opObserveInput         uint16 = 397 // cb, userdata: fn(*CUIInput, userdata)
+	opHandleInput          uint16 = 398 // cb, userdata: fn(*CUIInput, userdata) → 1 took it
+	opHitTest              uint16 = 399 // cb, userdata: fn(px, py, *CUIHit, userdata) → 1 hit
+	opScrollSnap           uint16 = 400 // u8 snap
+	opScrollIntoView       uint16 = 401 // u8 block, u8 inline, u8 smooth
+	opQueryDroppedFiles    uint16 = 402 // str list into out buffer
+	opQueryFileDragOver    uint16 = 403
+	opMaskLinearGradient   uint16 = 404 // angle, oklab, n, (rgba,at)*
+	opMaskRadialGradient   uint16 = 405 // radius, cx, cy, oklab, n, stops
+	opMaskConicGradient    uint16 = 406 // angle, cx, cy, oklab, n, stops
+	opTransition           uint16 = 407 // flags, preset, dur, delay, exit, bounce, nonMotion
+	opContentTransition    uint16 = 408 // flags, preset, dur, delay, bounce, nonMotion
+	opCheckboxState        uint16 = 409 // key, state, label
 )
 
 // PaintBuffer opcodes decoded by HostOpUIPaintFlush.
@@ -1276,6 +1290,42 @@ func applyMenu(m *mygoui.Menu, nodes []zigMenuNode, chosenID *string) {
 			})
 		}
 	}
+}
+
+// zigInput marshals an InputEvent for a Zig handler.
+func zigInput(ev mygoui.InputEvent) host.CUIInput {
+	in := host.CUIInput{
+		Kind:        uint32(ev.Kind),
+		Mods:        uint32(ev.Mods),
+		Key:         uint32(ev.Key),
+		PhysicalKey: uint32(ev.PhysicalKey),
+		Code:        uint32(ev.Code),
+		Button:      uint32(int32(ev.Button)),
+		Clicks:      uint32(ev.Clicks),
+		Caret:       int32(ev.Caret),
+		Start:       int32(ev.Start),
+		End:         int32(ev.End),
+		Pointer:     uint32(ev.Pointer),
+		X:           ev.X,
+		Y:           ev.Y,
+		Pressure:    ev.Pressure,
+		Scale:       ev.Scale,
+		DX:          ev.DX,
+		DY:          ev.DY,
+	}
+	if ev.Repeat {
+		in.Flags |= 1
+	}
+	if ev.Canceled {
+		in.Flags |= 2
+	}
+	if ev.Precise {
+		in.Flags |= 4
+	}
+	if ev.Momentum {
+		in.Flags |= 8
+	}
+	return in
 }
 
 func writeRect(out *cUIQuery, r mygoui.Rect) {
@@ -3528,7 +3578,187 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				return
 			}
 			f.cur = f.cur.KeyShortcuts(mygoui.Modifiers(mods), mygoui.Key(key))
+		case opObserveInput:
+			cbID, ok1 := r.u64()
+			ud, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh := f.host
+			f.cur = f.cur.ObserveInput(func(ev mygoui.InputEvent) {
+				input := zigInput(ev)
+				text := []byte(ev.Text)
+				input.TextPtr, input.TextLen = host.SliceAddr(text)
+				wh.callZig(host.ZigEventUIInput, uintptr(cbID), uintptr(unsafe.Pointer(&input)), uintptr(ud), 0)
+				runtime.KeepAlive(text)
+			})
+		case opHandleInput:
+			cbID, ok1 := r.u64()
+			ud, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh := f.host
+			f.cur = f.cur.HandleInput(func(ev mygoui.InputEvent) bool {
+				input := zigInput(ev)
+				text := []byte(ev.Text)
+				input.TextPtr, input.TextLen = host.SliceAddr(text)
+				took := wh.callZig(host.ZigEventUIInput, uintptr(cbID), uintptr(unsafe.Pointer(&input)), uintptr(ud), 0)
+				runtime.KeepAlive(text)
+				return took != 0
+			})
+		case opHitTest:
+			cbID, ok1 := r.u64()
+			ud, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh := f.host
+			f.cur = f.cur.HitTest(func(px, py float32, rect mygoui.Rect) bool {
+				hit := host.CUIHit{
+					X: rect.X, Y: rect.Y, W: rect.W, H: rect.H,
+					PX: px, PY: py,
+				}
+				got := wh.callZig(host.ZigEventUIHitTest, uintptr(cbID), uintptr(unsafe.Pointer(&hit)), uintptr(ud), 0)
+				return got != 0
+			})
 
+		case opScrollSnap:
+			snap, ok := r.u8()
+			if !ok {
+				return
+			}
+			f.cur = f.cur.ScrollSnap(mygoui.Snap(snap))
+		case opScrollIntoView:
+			block, ok1 := r.u8()
+			inline, ok2 := r.u8()
+			smooth, ok3 := r.u8()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			opts := mygoui.ScrollIntoViewOptions{
+				Block:  mygoui.ScrollAlign(block),
+				Inline: mygoui.ScrollAlign(inline),
+			}
+			if smooth != 0 {
+				anim := mygoui.Smooth
+				opts.Animation = &anim
+			}
+			f.cur = f.cur.ScrollIntoView(opts)
+		case opQueryDroppedFiles:
+			files := f.cur.DroppedFiles()
+			if out != nil {
+				out.BoolVal = u8Bool(len(files) > 0)
+				if savedBufPtr != 0 && savedBufCap > 0 {
+					out.TextLen = uintptr(writeStrList(host.BytesView(savedBufPtr, savedBufCap), files))
+				}
+			}
+		case opQueryFileDragOver:
+			if out != nil {
+				out.BoolVal = u8Bool(f.cur.FileDragOver())
+			}
+
+		case opMaskLinearGradient:
+			angle, ok1 := r.f32()
+			oklab, ok2 := r.u8()
+			if !ok1 || !ok2 {
+				return
+			}
+			stops, ok := readGradientStops(&r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			f.cur = f.cur.MaskLinearGradient(mygoui.LinearGradient{Angle: angle, Oklab: oklab != 0, Stops: stops})
+		case opMaskRadialGradient:
+			radius, ok1 := r.f32()
+			cx, ok2 := r.f32()
+			cy, ok3 := r.f32()
+			oklab, ok4 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			stops, ok := readGradientStops(&r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			f.cur = f.cur.MaskRadialGradient(mygoui.RadialGradient{
+				Radius: radius, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+			})
+		case opMaskConicGradient:
+			angle, ok1 := r.f32()
+			cx, ok2 := r.f32()
+			cy, ok3 := r.f32()
+			oklab, ok4 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			stops, ok := readGradientStops(&r)
+			if !ok || len(stops) == 0 {
+				return
+			}
+			f.cur = f.cur.MaskConicGradient(mygoui.ConicGradient{
+				Angle: angle, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+			})
+		case opTransition:
+			flags, ok1 := r.u8()
+			preset, ok2 := r.u8()
+			dur, ok3 := r.i32()
+			delay, ok4 := r.i32()
+			exit, ok5 := r.i32()
+			bounce, ok6 := r.f32()
+			nonMotion, ok7 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
+				return
+			}
+			tr := mygoui.ElementTransition{
+				Position: flags&1 != 0,
+				Size:     flags&2 != 0,
+				Colors:   flags&4 != 0,
+				Shadows:  flags&8 != 0,
+				Width:    flags&16 != 0,
+				Height:   flags&32 != 0,
+			}
+			switch {
+			case exit < 0:
+				tr.ExitDuration = -1
+			case exit > 0:
+				tr.ExitDuration = time.Duration(exit) * time.Millisecond
+			}
+			anim := zigAnim(preset, dur, delay, bounce, nonMotion != 0, false)
+			tr.Animation = &anim
+			f.cur = f.cur.Transition(tr)
+		case opContentTransition:
+			flags, ok1 := r.u8()
+			preset, ok2 := r.u8()
+			dur, ok3 := r.i32()
+			delay, ok4 := r.i32()
+			bounce, ok5 := r.f32()
+			nonMotion, ok6 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 {
+				return
+			}
+			ct := mygoui.ContentTransition{
+				Numeric: flags&1 != 0,
+				Down:    flags&2 != 0,
+				Morph:   flags&4 != 0,
+			}
+			anim := zigAnim(preset, dur, delay, bounce, nonMotion != 0, false)
+			ct.Animation = &anim
+			f.cur = f.cur.ContentTransition(ct)
+
+		case opCheckboxState:
+			key, ok1 := r.str()
+			state, ok2 := r.u8()
+			label, ok3 := r.str()
+			if !ok1 || !ok2 || !ok3 {
+				return
+			}
+			st := mygoui.CheckState(state)
+			f.cur = mygoui.CheckboxState(keyedCtx(c, key), &st, label)
+			if out != nil {
+				out.IntVal = int64(st)
+				out.BoolVal = u8Bool(st != mygoui.CheckState(state))
+			}
 		case opAfter:
 			ms, ok := r.i32()
 			if !ok {

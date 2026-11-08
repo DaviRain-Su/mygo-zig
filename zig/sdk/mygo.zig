@@ -7,6 +7,7 @@
 //! / Linux / Windows installers via `mygo build`.
 
 const std = @import("std");
+const abi = @import("abi.zig");
 pub const ui = @import("ui.zig");
 
 pub const HostDispatchFn = *const fn (
@@ -246,6 +247,8 @@ const ZigEvent = enum(usize) {
     documents = 41,
     network = 42,
     now_playing = 43,
+    ui_input = 44,
+    ui_hit_test = 45,
 };
 
 pub const CStr = extern struct {
@@ -353,6 +356,16 @@ pub var ui_row_count: usize = 0;
 
 pub var ui_paint_handlers: [128]ui.RawPaintHandler = undefined;
 pub var ui_paint_count: usize = 0;
+
+/// Element input handlers (observeInput / handleInput); returns 1 to take it.
+pub const RawUIInput = *const fn (info: *const abi.Input, userdata: usize) usize;
+pub var ui_input_handlers: [64]RawUIInput = undefined;
+pub var ui_input_count: usize = 0;
+
+/// Element hit tests; returns 1 when the pointer hits.
+pub const RawUIHit = *const fn (hit: *const abi.Hit, userdata: usize) usize;
+pub var ui_hit_handlers: [64]RawUIHit = undefined;
+pub var ui_hit_count: usize = 0;
 
 pub var ui_subview_handlers: [128]ui.RawViewHandler = undefined;
 pub var ui_subview_count: usize = 0;
@@ -893,6 +906,16 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     const rect: *const ui.CRect = @ptrFromInt(a2);
                     ui_paint_handlers[a0 - 1](a1, rect, a3);
                     return 0;
+                },
+                .ui_input => {
+                    if (a0 == 0 or a0 > ui_input_count) return 0;
+                    const info: *const abi.Input = @ptrFromInt(a1);
+                    return @intCast(ui_input_handlers[a0 - 1](info, a2));
+                },
+                .ui_hit_test => {
+                    if (a0 == 0 or a0 > ui_hit_count) return 0;
+                    const hit: *const abi.Hit = @ptrFromInt(a1);
+                    return @intCast(ui_hit_handlers[a0 - 1](hit, a2));
                 },
                 .ui_subview => {
                     if (a0 == 0 or a0 > ui_subview_count) return 0;

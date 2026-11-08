@@ -1785,4 +1785,175 @@ pub const Element = struct {
         self.ctx.writeU16(@intFromEnum(key));
         return self;
     }
+
+    /// Sees the input that comes to the element or inside it, without taking it.
+    pub fn observeInput(
+        self: Element,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, ui.InputEvent) void,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onInput(info: *const ui.CInput, ud: usize) usize {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, ui.inputEvent(info));
+                return 0;
+            }
+        };
+        if (S.cb_id == 0) S.cb_id = ui.registerInputHandler(&S.onInput);
+        self.ctx.writeOp(@intFromEnum(CoreOp.observe_input));
+        self.ctx.writeU64(@intCast(S.cb_id));
+        self.ctx.writeU64(@intCast(@intFromPtr(state)));
+        return self;
+    }
+
+    /// Takes the element's input as it comes; returning true consumes it.
+    pub fn handleInput(
+        self: Element,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, ui.InputEvent) bool,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onInput(info: *const ui.CInput, ud: usize) usize {
+                const s: StatePtr = @ptrFromInt(ud);
+                return if (handler(s, ui.inputEvent(info))) 1 else 0;
+            }
+        };
+        if (S.cb_id == 0) S.cb_id = ui.registerInputHandler(&S.onInput);
+        self.ctx.writeOp(@intFromEnum(CoreOp.handle_input));
+        self.ctx.writeU64(@intCast(S.cb_id));
+        self.ctx.writeU64(@intCast(@intFromPtr(state)));
+        return self;
+    }
+
+    /// Lets the element answer whether the pointer at px, py hits it.
+    pub fn hitTest(
+        self: Element,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, f32, f32, Rect) bool,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onHit(info: *const ui.Hit, ud: usize) usize {
+                const s: StatePtr = @ptrFromInt(ud);
+                const r = Rect{ .x = info.x, .y = info.y, .w = info.w, .h = info.h };
+                return if (handler(s, info.px, info.py, r)) 1 else 0;
+            }
+        };
+        if (S.cb_id == 0) S.cb_id = ui.registerHitHandler(&S.onHit);
+        self.ctx.writeOp(@intFromEnum(CoreOp.hit_test));
+        self.ctx.writeU64(@intCast(S.cb_id));
+        self.ctx.writeU64(@intCast(@intFromPtr(state)));
+        return self;
+    }
+
+    /// Rests the scroll container at a place (ui.Snap).
+    pub fn scrollSnap(self: Element, s: ui.Snap) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.scroll_snap));
+        self.ctx.writeU8(@intFromEnum(s));
+        return self;
+    }
+
+    /// Scrolls the containers around the element to show it.
+    pub fn scrollIntoView(self: Element, block: ui.ScrollAlign, inline_align: ui.ScrollAlign, smooth: bool) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.scroll_into_view));
+        self.ctx.writeU8(@intFromEnum(block));
+        self.ctx.writeU8(@intFromEnum(inline_align));
+        self.ctx.writeU8(@intFromBool(smooth));
+        return self;
+    }
+
+    /// The files dropped on the element this frame. Writes the names into buf.
+    pub fn droppedFiles(self: Element, buf: []u8, out: [][]const u8) usize {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_dropped_files));
+        var q = ui.CQuery{
+            .text_buf_ptr = if (buf.len > 0) @intFromPtr(buf.ptr) else 0,
+            .text_buf_cap = buf.len,
+        };
+        self.ctx.flushQueryInto(&q);
+        return ui.readStrList(buf[0..@min(q.text_len, buf.len)], out);
+    }
+
+    /// Whether files are dragged over the element.
+    pub fn fileDragOver(self: Element) bool {
+        return self.queryBool(.query_file_drag_over);
+    }
+
+    /// Fades an element by a mask gradient (angle, then stops).
+    pub fn maskLinearGradient(self: Element, angle: f32, oklab: bool, stops: []const ui.GradientStop) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.mask_linear_gradient));
+        self.ctx.writeF32(angle);
+        self.ctx.writeU8(@intFromBool(oklab));
+        self.writeStops(stops);
+        return self;
+    }
+
+    pub fn maskRadialGradient(self: Element, radius_dip: f32, center_pt: ui.Point, oklab: bool, stops: []const ui.GradientStop) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.mask_radial_gradient));
+        self.ctx.writeF32(radius_dip);
+        self.ctx.writeF32(center_pt.x);
+        self.ctx.writeF32(center_pt.y);
+        self.ctx.writeU8(@intFromBool(oklab));
+        self.writeStops(stops);
+        return self;
+    }
+
+    pub fn maskConicGradient(self: Element, angle: f32, center_pt: ui.Point, oklab: bool, stops: []const ui.GradientStop) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.mask_conic_gradient));
+        self.ctx.writeF32(angle);
+        self.ctx.writeF32(center_pt.x);
+        self.ctx.writeF32(center_pt.y);
+        self.ctx.writeU8(@intFromBool(oklab));
+        self.writeStops(stops);
+        return self;
+    }
+
+    fn writeStops(self: Element, stops: []const ui.GradientStop) void {
+        const n: u8 = @intCast(@min(stops.len, 16));
+        self.ctx.writeU8(n);
+        for (stops[0..n]) |s| {
+            self.ctx.writeU32(s.color.toU32());
+            self.ctx.writeF32(s.at);
+        }
+    }
+
+    /// Animates the element's layout and look as they change.
+    pub fn transition(self: Element, o: ui.TransitionOptions) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.transition));
+        var flags: u8 = 0;
+        if (o.position) flags |= 1;
+        if (o.size) flags |= 2;
+        if (o.colors) flags |= 4;
+        if (o.shadows) flags |= 8;
+        if (o.width) flags |= 16;
+        if (o.height) flags |= 32;
+        self.ctx.writeU8(flags);
+        self.ctx.writeU8(@intFromEnum(o.animation));
+        self.ctx.writeI32(o.duration_ms);
+        self.ctx.writeI32(o.delay_ms);
+        self.ctx.writeI32(o.exit_ms);
+        self.ctx.writeF32(o.bounce);
+        self.ctx.writeU8(@intFromBool(o.non_motion));
+        return self;
+    }
+
+    /// Animates the element's content as it changes.
+    pub fn contentTransition(self: Element, o: ui.ContentTransitionOptions) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.content_transition));
+        var flags: u8 = 0;
+        if (o.numeric) flags |= 1;
+        if (o.down) flags |= 2;
+        if (o.morph) flags |= 4;
+        self.ctx.writeU8(flags);
+        self.ctx.writeU8(@intFromEnum(o.animation));
+        self.ctx.writeI32(o.duration_ms);
+        self.ctx.writeI32(o.delay_ms);
+        self.ctx.writeF32(o.bounce);
+        self.ctx.writeU8(@intFromBool(o.non_motion));
+        return self;
+    }
 };

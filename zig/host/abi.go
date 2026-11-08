@@ -50,7 +50,41 @@ const (
 	ZigEventDocuments     uintptr = 41 // a0=cb_id a1=doc_id a2=kind a3=payload → return win_id for kind=1
 	ZigEventNetwork       uintptr = 42 // a0=cb_id a1=*CStr JSON NetworkStatus
 	ZigEventNowPlaying    uintptr = 43 // a0=cb_id a1=cmd a2=position_ns
+	ZigEventUIInput       uintptr = 44 // a0=cb_id a1=*CUIInput a2=userdata → 1 took it
+	ZigEventUIHitTest     uintptr = 45 // a0=cb_id a1=*CUIHit a2=userdata → 1 hit
 )
+
+// CUIInput is one InputEvent as the Zig side reads it. Layout must match
+// sdk/abi.zig's Input.
+type CUIInput struct {
+	Kind        uint32
+	Mods        uint32
+	Key         uint32
+	PhysicalKey uint32
+	Code        uint32
+	Button      uint32
+	Clicks      uint32
+	Caret       int32
+	Start       int32
+	End         int32
+	Flags       uint32 // 1 repeat, 2 canceled, 4 precise, 8 momentum
+	Pointer     uint32
+	X           float32
+	Y           float32
+	Pressure    float32
+	Scale       float32
+	DX          float32
+	DY          float32
+	TextPtr     uintptr
+	TextLen     uintptr
+}
+
+// CUIHit asks a Zig hit test whether the pointer at PX, PY hits the element,
+// whose frame is X, Y, W, H.
+type CUIHit struct {
+	X, Y, W, H float32
+	PX, PY     float32
+}
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
 const (
@@ -931,16 +965,16 @@ type CIconSpec struct {
 // Terminal lifecycle sub-ops for HostOpTerminal.
 const (
 	TermNew      uintptr = 1 // a1=*CTerminalNewSpec → id
-	TermClose     uintptr = 2 // a1=id
-	TermPaste     uintptr = 3 // a1=id a2=ptr a3=len
-	TermSend      uintptr = 4 // a1=id a2=ptr a3=len
-	TermUseTheme  uintptr = 5 // a1=id a2=kind(0 dark/1 light/2 ghostty) a3=name_ptr… via CStr at a3
-	TermResize    uintptr = 6 // a1=id a2=cols a3=rows
-	TermTitle     uintptr = 7 // a1=id a2=out a3=cap
-	TermDir       uintptr = 8
-	TermExitCode  uintptr = 9 // → code; running → maxUintptr-1 sentinel? use bit: high bit set if running
-	TermClear     uintptr = 10
-	TermSearch    uintptr = 11 // a1=id a2=ptr a3=len; empty ends
+	TermClose    uintptr = 2 // a1=id
+	TermPaste    uintptr = 3 // a1=id a2=ptr a3=len
+	TermSend     uintptr = 4 // a1=id a2=ptr a3=len
+	TermUseTheme uintptr = 5 // a1=id a2=kind(0 dark/1 light/2 ghostty) a3=name_ptr… via CStr at a3
+	TermResize   uintptr = 6 // a1=id a2=cols a3=rows
+	TermTitle    uintptr = 7 // a1=id a2=out a3=cap
+	TermDir      uintptr = 8
+	TermExitCode uintptr = 9 // → code; running → maxUintptr-1 sentinel? use bit: high bit set if running
+	TermClear    uintptr = 10
+	TermSearch   uintptr = 11 // a1=id a2=ptr a3=len; empty ends
 )
 
 // Terminal event kinds (ZigEventTerminal a2).
@@ -978,16 +1012,16 @@ type CSQLiteOpenSpec struct {
 }
 
 type CSQLiteExecSpec struct {
-	DBID              uintptr
-	SQLPtr, SQLLen    uintptr
-	ArgsPtr, ArgsLen  uintptr // JSON array
-	OutPtr, OutCap    uintptr
+	DBID             uintptr
+	SQLPtr, SQLLen   uintptr
+	ArgsPtr, ArgsLen uintptr // JSON array
+	OutPtr, OutCap   uintptr
 }
 
 type CSQLiteTxSpec struct {
-	DBID                 uintptr
-	StmtsPtr, StmtsLen   uintptr // JSON [{sql,args},...]
-	OutPtr, OutCap       uintptr
+	DBID               uintptr
+	StmtsPtr, StmtsLen uintptr // JSON [{sql,args},...]
+	OutPtr, OutCap     uintptr
 }
 
 // Watch sub-ops for HostOpWatch.
@@ -1023,10 +1057,10 @@ const (
 )
 
 type CPermAsyncSpec struct {
-	NamePtr, NameLen uintptr
-	AppPtr, AppLen   uintptr // Guide only
+	NamePtr, NameLen           uintptr
+	AppPtr, AppLen             uintptr // Guide only
 	NameLabelPtr, NameLabelLen uintptr
-	CbID             uintptr
+	CbID                       uintptr
 }
 
 const (
@@ -1034,12 +1068,12 @@ const (
 )
 
 type CFetchSpec struct {
-	URLPtr, URLLen       uintptr
-	MethodPtr, MethodLen uintptr
-	HeadersPtr, HeadersLen uintptr // JSON [[name,value],...]
-	BodyPtr, BodyLen     uintptr
+	URLPtr, URLLen           uintptr
+	MethodPtr, MethodLen     uintptr
+	HeadersPtr, HeadersLen   uintptr // JSON [[name,value],...]
+	BodyPtr, BodyLen         uintptr
 	RedirectPtr, RedirectLen uintptr // follow|error|manual; empty=follow
-	OutPtr, OutCap       uintptr
+	OutPtr, OutCap           uintptr
 }
 
 const (
@@ -1064,10 +1098,10 @@ type CWSConnectSpec struct {
 }
 
 const (
-	UpdaterCheck              uintptr = 1
-	UpdaterAutomaticChecksGet uintptr = 2 // → 1/0
-	UpdaterAutomaticChecksSet uintptr = 3 // a1=0/1
+	UpdaterCheck                 uintptr = 1
+	UpdaterAutomaticChecksGet    uintptr = 2 // → 1/0
+	UpdaterAutomaticChecksSet    uintptr = 3 // a1=0/1
 	UpdaterAutomaticDownloadsGet uintptr = 4
 	UpdaterAutomaticDownloadsSet uintptr = 5
-	UpdaterAvailableVersion   uintptr = 6 // a1=out a2=cap
+	UpdaterAvailableVersion      uintptr = 6 // a1=out a2=cap
 )

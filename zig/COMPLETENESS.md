@@ -126,3 +126,28 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
   `Desktop.setAppMenu` / `Desktop.setDockMenu` / `Tray.setMenu`.
 - Still Go-only: `OnTextKey` (its `TextKey` needs the live editor),
   `HandleTextInput` (IME client), `ObserveInput`/`HandleInput`, `HitTest`.
+
+## Phase 9 — input hooks, scroll, motion, masks
+
+- Input: `observeInput`, `handleInput`, `hitTest` over `ZigEventUIInput=44`
+  and `ZigEventUIHitTest=45`, with `sdk/abi.zig` mirroring `CUIInput`/`CUIHit`
+  and a new `ui.InputEvent` (kind, key, physical key, code, mods, text, caret,
+  pointer, pressure, scroll, zoom, selection).
+- Scroll: `scrollSnap`, `scrollIntoView(block, inline, smooth)`,
+  `droppedFiles(buf, out)`, `fileDragOver`.
+- Motion: `transition(TransitionOptions)` and
+  `contentTransition(ContentTransitionOptions)`; presets reuse `zigAnim`.
+- Masks: `maskLinearGradient`, `maskRadialGradient`, `maskConicGradient`.
+- Widget: `Context.checkboxState` (off / on / mixed).
+- `Key` gained `f1`..`f12`; `flushQueryInto` is public for generated helpers.
+
+Still Go-only, with reasons:
+- `OnTextKey` / `HandleTextInput`: their `TextKey` and `TextInputClient`
+  are handles into a live editor, not values.
+- `Transform`, `Masks(layers)`, `Effect`: struct trees and interfaces; the SDK
+  keeps the per-property equivalents (`translate`, `rotate`, `scale`, `skew`,
+  `perspective`, gradient masks).
+- `Timeline`, `AnimateWith`: `animateTo` covers the same curve presets.
+- `Audio`, `Page.SessionState`, `App.SetWindowStateStore`, `Plugin`,
+  `NewDocuments[T]`, `ui/graph`, `ui/richtext`, `plugins/loading`,
+  `plugins/sfsymbols`.

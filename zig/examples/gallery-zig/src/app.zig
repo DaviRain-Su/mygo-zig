@@ -207,6 +207,14 @@ const Gallery = struct {
     tray_clicks: u32 = 0,
     tray_menu_buf: [32]u8 = undefined,
     tray_menu_len: usize = 0,
+    input_kind: ui.InputKind = .key_down,
+    input_key: ui.Key = .unknown,
+    input_events: u32 = 0,
+    hit_text: []const u8 = "",
+    reveal: bool = false,
+    check_state: ui.CheckState = .mixed,
+    drop_names: [8][]const u8 = @splat(""),
+    drop_count: usize = 0,
     flyout_id: i32 = 0,
     main_win_id: i32 = 0,
         term_id: usize = 0,
@@ -471,7 +479,9 @@ const Gallery = struct {
         const t = c.theme();
         _ = c.text("Numbers · dates · color · search").fontSize(16).bold();
 
-        _ = c.searchField("search", self.search_buf[0..], &self.search_len).fillWidth().placeholder("Search…");
+        _ = c.searchField("search", self.search_buf[0..], &self.search_len).fillWidth().placeholder("Search…")
+            .observeInput(*Gallery, self, Gallery.onInput)
+            .handleInput(*Gallery, self, Gallery.onInputTake);
         _ = c.autocomplete("city", self.auto_buf[0..], &self.auto_len, &cities).fillWidth().label("City");
 
         {
@@ -509,7 +519,23 @@ const Gallery = struct {
             .fillWidth()
             .height(80)
             .placeholder("Notes…");
-    }
+    
+        // Element observeInput / hitTest / handleInput.
+        {
+            const row = c.row().fillWidth().gap(10).center().begin();
+            defer row.end();
+            _ = c.textf("input {s} {s} x{d}", .{
+                @tagName(self.input_kind),
+                @tagName(self.input_key),
+                self.input_events,
+            }).fontSize(12).textColor(t.text_muted).grow(1.0);
+            const probe = c.box().size(120, 36).background(t.surface).radius(8)
+                .hitTest(*Gallery, self, Gallery.hitProbe);
+            const pr = probe.begin();
+            defer pr.end();
+            _ = c.text(self.hit_text).fontSize(12).center();
+        }
+}
 
     fn viewLayout(self: *Gallery, c: *ui.Context) void {
         _ = c.text("Split · Sidebar · Collapsible · Accordion").fontSize(16).bold();
@@ -850,6 +876,31 @@ const Gallery = struct {
 
     fn onToastUndo(self: *Gallery) void {
         self.toast_undos += 1;
+    }
+
+    fn onInput(self: *Gallery, ev: ui.InputEvent) void {
+        self.input_kind = ev.kind;
+        self.input_key = ev.key;
+        self.input_events +%= 1;
+    }
+
+    fn onInputTake(self: *Gallery, ev: ui.InputEvent) bool {
+        // Consume F1 to show handleInput taking one, and nothing else.
+        if (ev.kind == .key_down and ev.key == .f1) {
+            self.input_events +%= 1;
+            return true;
+        }
+        return false;
+    }
+
+    fn hitProbe(self: *Gallery, px: f32, py: f32, r: ui.Rect) bool {
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        const dx = px - cx;
+        const dy = py - cy;
+        const hit = dx * dx + dy * dy <= (r.h / 2) * (r.h / 2);
+        if (hit) self.hit_text = "circle" else self.hit_text = "box";
+        return hit;
     }
 
     fn renderOutlineRow(self: *Gallery, row: ui.OutlineRow) void {
@@ -1418,6 +1469,61 @@ const Gallery = struct {
     fn viewMore(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
         _ = c.text("Toolbar · Toasts · Dialogs · Tray · Notify · RichText").fontSize(16).bold();
+
+        // Motion, masks, scroll-snap and file drops.
+        {
+            const row = c.row().fillWidth().gap(12).center().begin();
+            defer row.end();
+            _ = c.box().width(120).height(40).radius(8).background(t.accent)
+                .transition(.{ .duration_ms = 180, .size = true, .colors = true });
+            _ = c.textf("{d}", .{self.input_events}).fontSize(28).bold()
+                .contentTransition(.{ .numeric = true, .morph = true });
+            _ = c.box().width(120).height(40).radius(8)
+                .linearGradient(90, t.accent, t.success, false)
+                .maskLinearGradient(90, false, &.{
+                    .{ .color = ui.Color.rgba(0, 0, 0, 255), .at = 0 },
+                    .{ .color = ui.Color.rgba(0, 0, 0, 0), .at = 1 },
+                });
+            if (c.button("reveal", if (self.reveal) "Hide row 6" else "Reveal row 6").clicked()) {
+                self.reveal = !self.reveal;
+            }
+            _ = c.checkboxState("tri", &self.check_state, "Select all");
+        }
+
+        {
+            const drop = c.box().fillWidth().height(52).radius(8)
+                .border(1, t.border)
+                .background(t.surface);
+            self.drop_count = drop.droppedFiles(self.drop_buf[0..], &self.drop_names);
+            const over = drop.fileDragOver();
+            const body = drop.begin();
+            defer body.end();
+            if (self.drop_count > 0) {
+                _ = c.textf("{d} file(s): {s}", .{ self.drop_count, self.drop_names[0] })
+                    .fontSize(12).textColor(t.accent).center();
+            } else {
+                _ = c.text(if (over) "Drop files here" else "Drop files on this box").fontSize(12)
+                    .textColor(t.text_muted).center();
+            }
+        }
+
+        {
+            const sc = c.scroll("fade-rows").fillWidth().height(74).scrollSnap(.mandatory);
+            const body = sc.begin();
+            defer body.end();
+            const col = c.column().gap(6).begin();
+            defer col.end();
+            var i: usize = 0;
+            while (i < 8) : (i += 1) {
+                const item = c.box().fillWidth().height(30).radius(6).background(t.surface);
+                if (self.reveal and i == 6) {
+                    _ = item.scrollIntoView(.center, .nearest, true);
+                }
+                const b = item.begin();
+                defer b.end();
+                _ = c.textf("Row {d}", .{i}).fontSize(12);
+            }
+        }
 
                 _ = c.box().fillWidth().height(36).radius(8).linearGradient(90, t.accent, t.success, false);
 

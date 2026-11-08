@@ -77,6 +77,10 @@ returns values or takes callbacks:
 | Text | `textSelection` · `textAnchorCaret` |
 | Drag | `dragOffset` · `dragVelocity` · `dragEnded` · `dragMissed` |
 | Keys | `shortcut` · `overlayShortcut` · `keyShortcuts` |
+| Input | `observeInput` · `handleInput` · `hitTest` |
+| Scroll | `scrollSnap` · `scrollIntoView` · `droppedFiles` · `fileDragOver` |
+| Motion | `transition` · `contentTransition` |
+| Masks | `maskLinearGradient` · `maskRadialGradient` · `maskConicGradient` |
 
 ```zig
 const field = c.textInput("q", buf[0..], &len);
@@ -87,6 +91,18 @@ if (field.shortcut(.{ .super = true }, .k)) { ... }
 
 `Rect` queries fill `CQuery.num_val..num_val4`; optional results come back as
 `?ui.Point` / `?i32`.
+
+Input hooks take a comptime handler, as `draw` does:
+
+```zig
+_ = c.searchField("q", buf[0..], &len)
+    .observeInput(*App, &app, App.onInput)          // sees, takes nothing
+    .handleInput(*App, &app, App.onInputTake);      // true consumes the event
+
+fn onInput(app: *App, ev: ui.InputEvent) void {
+    if (ev.kind == .key_down and ev.key == .f1) app.help = !app.help;
+}
+```
 
 ### Menus
 
