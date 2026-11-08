@@ -188,6 +188,7 @@ const (
 	WinCtlReload               uintptr = 33
 	WinCtlGoBack               uintptr = 34
 	WinCtlGoForward            uintptr = 35
+	WinCtlEval                 uintptr = 36 // a2=*CEvalSpec → nbytes JSON
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -723,3 +724,8 @@ const (
 	LocaleLanguagesJSON    uintptr = 4
 	LocaleSetLanguagesJSON uintptr = 5 // a1=json array
 )
+
+type CEvalSpec struct {
+	CodePtr, CodeLen uintptr
+	OutPtr, OutCap   uintptr
+}

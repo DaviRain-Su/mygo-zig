@@ -772,6 +772,8 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 			w.Page().GoForward()
 		}
 		return 0
+	case WinCtlEval:
+		return evalInPage(w, a2)
 	}
 	return 0
 }
@@ -2655,4 +2657,28 @@ func hostLocale(sub, a1, a2, a3 uintptr) uintptr {
 		SetError(errors.New("zighost: unknown locale subop"))
 		return ^uintptr(0)
 	}
+}
+
+func evalInPage(w *mygo.Window, a2 uintptr) uintptr {
+	if w.Page() == nil {
+		SetError(errors.New("zighost: eval needs a page"))
+		return ^uintptr(0)
+	}
+	spec := PtrTo[CEvalSpec](a2)
+	if spec == nil {
+		SetError(errors.New("zighost: eval needs spec"))
+		return ^uintptr(0)
+	}
+	v, err := w.Page().Eval(CopyString(spec.CodePtr, spec.CodeLen))
+	if err != nil {
+		SetError(err)
+		return ^uintptr(0)
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		SetError(err)
+		return ^uintptr(0)
+	}
+	SetError(nil)
+	return writeBytesToOut(raw, spec.OutPtr, spec.OutCap)
 }

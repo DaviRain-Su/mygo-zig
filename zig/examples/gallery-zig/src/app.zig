@@ -1435,6 +1435,17 @@ const Gallery = struct {
                     self.path_len = n;
                 } else |_| {}
             }
+            if (c.button("eval-title", "Eval document.title").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    if (win.evalJSON(std.heap.page_allocator, "document.title")) |json| {
+                        defer std.heap.page_allocator.free(json);
+                        const n = @min(json.len, self.path_buf.len);
+                        @memcpy(self.path_buf[0..n], json[0..n]);
+                        self.path_len = n;
+                    } else |_| {}
+                }
+            }
             if (c.button("find-example", "Find Example in page win").clicked()) {
                 if (self.web_win_id != 0) {
                     const win = mygo.Window{ .id = self.web_win_id };

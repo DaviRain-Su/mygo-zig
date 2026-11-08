@@ -108,6 +108,7 @@ pub const WinCtl = enum(usize) {
     reload = 33,
     go_back = 34,
     go_forward = 35,
+    eval = 36,
 };
 
 const ZigEvent = enum(usize) {
@@ -1222,6 +1223,27 @@ pub const Window = struct {
 
     pub fn goForward(self: Window) void {
         _ = self.ctl(.go_forward, 0, 0);
+    }
+
+    /// Evaluate JS; returns JSON-encoded result (caller frees).
+    pub fn evalJSON(self: Window, allocator: std.mem.Allocator, code: []const u8) Error![]u8 {
+        const Spec = extern struct {
+            code_ptr: usize = 0,
+            code_len: usize = 0,
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [65536]u8 = undefined;
+        var spec = Spec{
+            .code_ptr = sliceAddr(code),
+            .code_len = code.len,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = self.ctl(.eval, @intFromPtr(&spec), 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
     }
 
     pub fn invalidate(self: Window) void {
