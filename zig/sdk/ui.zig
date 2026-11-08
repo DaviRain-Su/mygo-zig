@@ -1604,6 +1604,8 @@ pub const CFrameInfo = extern struct {
     title_bar_l: f32 = 0,
     title_bar_r: f32 = 0,
     theme: CTheme,
+    /// When the frame is built, as Context.nowMs says.
+    now_ms: i64 = 0,
 };
 
 pub const TitleBar = struct {
@@ -2459,6 +2461,8 @@ pub const Context = struct {
     buf: [16384]u8 = undefined,
     len: usize = 0,
     fmt_buf: [512]u8 = undefined,
+    /// now_ms is when this frame is built (Context.nowMs).
+    now_ms: i64 = 0,
     pub fn init(handle: usize, info: *const CFrameInfo) Context {
         return .{
             .frame_handle = handle,
@@ -2468,8 +2472,16 @@ pub const Context = struct {
             .window_active = info.window_active != 0,
             .vibrancy = info.vibrancy != 0,
             .title_bar = .{ .height = info.title_bar_h, .left = info.title_bar_l, .right = info.title_bar_r },
+            .now_ms = info.now_ms,
             .ui_theme = Theme.fromC(info.theme),
         };
+    }
+
+    /// nowMs is when this frame is built: the same value for every pass of
+    /// one frame, unlike a wall clock. Use it to animate, and to tell a new
+    /// frame from a rebuild.
+    pub fn nowMs(self: *const Context) i64 {
+        return self.now_ms;
     }
 
     /// True when the window shows a system vibrancy/material behind content.

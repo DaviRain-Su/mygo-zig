@@ -7,6 +7,7 @@
 //! / Linux / Windows installers via `mygo build`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 pub const abi = @import("abi.zig");
 pub const ui = @import("ui.zig");
 
@@ -5213,6 +5214,33 @@ pub fn setName(name: []const u8) void {
 
 pub fn quit() void {
     _ = dispatch(.quit, 0, 0, 0, 0);
+}
+
+/// printStdout writes bytes to the process's standard output: for CLI-ish
+/// apps, and for benchmarks that report on it.
+pub fn printStdout(bytes: []const u8) void {
+    if (bytes.len == 0) return;
+    switch (builtin.os.tag) {
+        .windows => {
+            const handle = std.os.windows.peb().ProcessParameters.hStdOutput;
+            var written: u32 = 0;
+            _ = std.os.windows.WriteFile(handle, bytes, bytes.len, &written, null) catch {};
+        },
+        else => {
+            var off: usize = 0;
+            while (off < bytes.len) {
+                const n = std.c.write(1, bytes.ptr + off, bytes.len - off);
+                if (n <= 0) break;
+                off += @intCast(n);
+            }
+        },
+    }
+}
+
+/// environment reads a variable, or returns null.
+pub fn environment(name: [:0]const u8) ?[:0]const u8 {
+    const raw = std.c.getenv(name.ptr) orelse return null;
+    return std.mem.span(raw);
 }
 
 pub fn lastError(buf: []u8) []const u8 {

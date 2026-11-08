@@ -25,7 +25,7 @@ import (
 
 // frameworks are measured in this order within each round, so that a machine
 // slowing down over a run weighs on them alike.
-var frameworks = []string{"mygo", "gpui", "gpui-fast", "egui"}
+var frameworks = []string{"mygo", "mygo-zig", "gpui", "gpui-fast", "egui"}
 
 // scenes that draw every frame, as opposed to the counter.
 var animated = []string{"list", "grid", "document"}
@@ -183,6 +183,15 @@ func main() {
 	}
 }
 
+// copyFile copies src to dst, for a dylib that rides beside its shim.
+func copyFile(src, dst string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o755)
+}
+
 func moduleRoot() (string, error) {
 	b, err := exec.Command("go", "env", "GOMOD").Output()
 	if err != nil {
@@ -196,11 +205,39 @@ func moduleRoot() (string, error) {
 func build(root, bin, f string) (string, error) {
 	path := filepath.Join(bin, f)
 	var cmd *exec.Cmd
-	if f == "mygo" {
+	switch f {
+	case "mygo":
 		cmd = exec.Command("go", "build", "-trimpath", "-tags", "mygo_noinspector",
 			"-ldflags", "-s -w -X github.com/egoist/mygo.production=1", "-o", path, "./benchmarks/mygo")
 		cmd.Dir = root
-	} else {
+	case "mygo-zig":
+		// The dylib first, then the Go shim, and the dylib beside it, where
+		// zighost looks for it.
+		dir := filepath.Join(root, "benchmarks", "mygo-zig")
+		zig := exec.Command("zig", "build", "-Doptimize=ReleaseSmall")
+		zig.Dir = dir
+		zig.Stdout, zig.Stderr = os.Stderr, os.Stderr
+		if err := zig.Run(); err != nil {
+			return "", err
+		}
+		cmd = exec.Command("go", "build", "-trimpath", "-tags", "mygo_noinspector",
+			"-ldflags", "-s -w -X github.com/egoist/mygo.production=1", "-o", path, "./benchmarks/mygo-zig")
+		cmd.Dir = root
+		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return "", err
+		}
+		lib := "libbenchzig.dylib"
+		if runtime.GOOS == "windows" {
+			lib = "benchzig.dll"
+		} else if runtime.GOOS != "darwin" {
+			lib = "libbenchzig.so"
+		}
+		if err := copyFile(filepath.Join(dir, "resources", lib), filepath.Join(bin, lib)); err != nil {
+			return "", err
+		}
+		return path, nil
+	default:
 		cmd = exec.Command("cargo", "build", "--release", "--locked")
 		cmd.Dir = filepath.Join(root, "benchmarks", f)
 	}
@@ -208,7 +245,7 @@ func build(root, bin, f string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		return "", err
 	}
-	if f != "mygo" {
+	if f != "mygo" && f != "mygo-zig" {
 		dir := filepath.Join(root, "benchmarks", f, "target", "release", "bench-"+f)
 		b, err := os.ReadFile(dir)
 		if err != nil {
@@ -232,7 +269,8 @@ func start(path, scene string, env ...string) (*process, error) {
 	// "DEBUG") spends some 70 ms building it in each app that sets a main menu,
 	// which the apps' users would not.
 	cmd := exec.Command(path, scene, "-_NS_4445425547", "NO")
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(os.Environ(), "BENCH_SCENE="+scene)
+	cmd.Env = append(cmd.Env, env...)
 	cmd.Stderr = os.Stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -386,6 +424,7 @@ func versions(root string) map[string]string {
 	v := map[string]string{
 		"go":    strings.TrimPrefix(strings.Fields(output(root, "go", "version"))[2], "go"),
 		"rustc": strings.Fields(output(root, "rustc", "--version"))[1],
+		"zig":   output(root, "zig", "version"),
 	}
 	if b, err := os.ReadFile(filepath.Join(root, "mygo.go")); err == nil {
 		if m := regexp.MustCompile(`const Version = "([^"]+)"`).FindSubmatch(b); m != nil {

@@ -1,6 +1,7 @@
 # Comparison with GPUI, GPUI Fast and egui
 
-The same small apps written with MyGo's native UI, [GPUI](https://www.gpui.rs),
+The same small apps written with MyGo's native UI — in Go, and in Zig through
+this fork's bindings — plus [GPUI](https://www.gpui.rs),
 [GPUI Fast](https://github.com/longbridge/gpui-fast) and
 [egui](https://github.com/emilk/egui) (through eframe, with its default wgpu
 renderer), each through the usual way of its framework. GPUI Fast's list
@@ -17,7 +18,9 @@ run: GitHub's runners are virtual machines, whose results would not compare.
 
 ## Scenes
 
-An app takes its scene as an argument. Every app shows the same text, from
+An app takes its scene as an argument, or `BENCH_SCENE` for the Zig app
+(`benchmarks/mygo-zig`, whose dylib the runner builds with `zig build` and puts
+beside its shim). Every app shows the same text, from
 the same generator (`words`, `cell_value`), in windows of the same size.
 
 | Scene      | Window  | What it does                                                                                   |

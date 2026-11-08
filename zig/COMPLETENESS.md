@@ -303,3 +303,18 @@ duration, position, seek, rate, volume, muting, looping, readiness and size.
 - Nothing else needed syncing: `ui/api_gen.go` did not change, so uigen's
   202 modifiers are unchanged, and the glass plugin's update was only its
   recompiled shader library.
+
+## Phase 18 — tests, an upstream ledger, and the Zig app in the comparison
+
+- `zig/sdk/tests.zig` (10 tests, run by CI): the ABI's sizes and offsets, the
+  menu JSON, the string-list wire, the InputEvent/TextKey decodings, Transform
+  and Effect. `zig/host/abi_test.go` and `zig/host/ui/frame_test.go` pin the
+  same numbers from Go.
+- `zig/UPSTREAM.md`: how an upstream range is reviewed, and what each review
+  so far needed.
+- `benchmarks/mygo-zig`: the comparison's scenes written with the Zig SDK,
+  measured by `benchmarks/run` beside the Go app. The runner builds the dylib
+  with `zig build` and puts it beside the shim.
+- Found and closed on the way: `Element.trackScroll` (op 424) was missing, and
+  `Context.nowMs()` (frame time in `CFrameInfo`), which the recorder needs to
+  tell a new frame from a rebuild.

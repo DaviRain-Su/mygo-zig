@@ -312,6 +312,8 @@ type cUIFrameInfo struct {
 	TitleBarL    float32
 	TitleBarR    float32
 	Theme        cUITheme
+	// NowMillis is when the frame is built, as Context.Now says.
+	NowMillis int64
 }
 
 type cUIListRowInfo struct {
@@ -924,6 +926,7 @@ func makeFrameInfo(wh *uiWindowHost, c *mygoui.Context, th cUITheme) cUIFrameInf
 		TitleBarL:    bar.Left,
 		TitleBarR:    bar.Right,
 		Theme:        th,
+		NowMillis:    c.Now().UnixMilli(),
 	}
 }
 

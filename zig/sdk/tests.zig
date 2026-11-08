@@ -219,3 +219,9 @@ test "Effect: margin and ids survive effectOf" {
     try expect(fx.cb_id > 0);
     try expectEqual(@intFromPtr(&state), fx.ud);
 }
+
+test "ABI: the frame info carries the frame's time" {
+    // cUIFrameInfo in zig/host/ui/ui.go; the Go test pins the same size.
+    try expectEqual(@as(usize, 104), @sizeOf(ui.CFrameInfo));
+    try expectEqual(@as(usize, 96), @offsetOf(ui.CFrameInfo, "now_ms"));
+}
