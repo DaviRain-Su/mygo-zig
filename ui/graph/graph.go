@@ -63,7 +63,7 @@ type Node struct {
 	// Locked prevents drag/resize/nudge (still selectable).
 	Locked bool
 	// Color, when non-zero alpha, tints the card background.
-	Color ui.Color
+	Color   ui.Color
 	Content func(c *ui.Context)
 }
 
@@ -112,11 +112,11 @@ type Board struct {
 	groupSeq   int
 	viewR      ui.Rect
 
-	marquee       bool
-	marqueeX0     float32
-	marqueeY0     float32
-	marqueeX1     float32
-	marqueeY1     float32
+	marquee         bool
+	marqueeX0       float32
+	marqueeY0       float32
+	marqueeX1       float32
+	marqueeY1       float32
 	marqueeAdditive bool
 
 	draggingGroup bool
@@ -125,13 +125,13 @@ type Board struct {
 
 	groupDragging bool // pointer-drag of a selected group frame
 
-	editingEdge   string // edge id being renamed
-	editingLabel  string
+	editingEdge    string // edge id being renamed
+	editingLabel   string
 	editingStarted bool
 
 	clip clipboard
 
-	resizingID string
+	resizingID                 string
 	resizeStartW, resizeStartH float32
 	resizeStartX, resizeStartY float32
 
@@ -644,7 +644,7 @@ func (b *Board) buildEdgeLabelEditor(c *ui.Context, vr ui.Rect, t *ui.Theme) {
 	vx, vy := b.Camera.ToView(vr, mx, my)
 	w := float32(120)
 	editor := ui.Box(c).Key("edge-label-editor").Absolute().
-		Left(vx - w/2).Top(vy - 14).Size(w, 28).
+		Left(vx-w/2).Top(vy-14).Size(w, 28).
 		Background(t.Surface).Border(1, t.Accent).Radius(6).Padding(2, 6)
 	editor.Children(func() {
 		in := ui.TextInput(c.Key("edge-label-input"), &b.editingLabel).Fill()

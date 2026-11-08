@@ -88,6 +88,7 @@ pub const HostOp = enum(usize) {
     register_bitmap = 241,
     register_canvas = 242,
     audio = 253,
+    graph = 255,
 };
 
 pub const WinCtl = enum(usize) {
@@ -253,6 +254,13 @@ const ZigEvent = enum(usize) {
     ui_hit_test = 45,
     audio_end = 46,
     ui_text_key = 47,
+    ui_text_client = 48,
+    graph_select = 49,
+    graph_connect = 50,
+    graph_move = 51,
+    graph_delete = 52,
+    graph_viewport = 53,
+    graph_node = 54,
 };
 
 pub const CStr = extern struct {
@@ -377,6 +385,41 @@ pub var ui_hit_count: usize = 0;
 pub const RawUITextKey = *const fn (info: *abi.TextKey, userdata: usize) usize;
 pub var ui_textkey_handlers: [64]RawUITextKey = undefined;
 pub var ui_textkey_count: usize = 0;
+
+/// Graph board callbacks: a JSON payload (and a state pointer per slot).
+pub const RawGraphBytes = *const fn (json: []const u8, userdata: usize) void;
+pub var graph_handlers: [128]RawGraphBytes = undefined;
+pub var graph_ud: [128]usize = undefined;
+pub var graph_count: usize = 0;
+
+/// Graph node body builders: a nested frame and the node.
+pub const RawGraphNode = *const fn (frame: usize, info: *const ui.Graph.CGraphNodeInfo, userdata: usize) void;
+pub var graph_node_handlers: [128]RawGraphNode = undefined;
+pub var graph_node_ud: [128]usize = undefined;
+pub var graph_node_count: usize = 0;
+
+/// registerGraphHandler adds a board callback, returning its id.
+pub fn registerGraphHandler(handler: RawGraphBytes, userdata: usize) usize {
+    if (graph_count >= graph_handlers.len) return 0;
+    graph_handlers[graph_count] = handler;
+    graph_ud[graph_count] = userdata;
+    graph_count += 1;
+    return graph_count;
+}
+
+/// registerGraphNode adds a node body builder, returning its id.
+pub fn registerGraphNode(handler: RawGraphNode, userdata: usize) usize {
+    if (graph_node_count >= graph_node_handlers.len) return 0;
+    graph_node_handlers[graph_node_count] = handler;
+    graph_node_ud[graph_node_count] = userdata;
+    graph_node_count += 1;
+    return graph_node_count;
+}
+
+/// Text-input client questions (HandleTextInput).
+pub const RawUITextClient = *const fn (req: *abi.TextClientReq, userdata: usize) void;
+pub var ui_textclient_handlers: [64]RawUITextClient = undefined;
+pub var ui_textclient_count: usize = 0;
 
 /// Player end-of-playback handlers.
 pub const RawAudioEnd = *const fn (player_id: usize, userdata: usize) void;
@@ -932,6 +975,24 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_hit_count) return 0;
                     const hit: *const abi.Hit = @ptrFromInt(a1);
                     return @intCast(ui_hit_handlers[a0 - 1](hit, a2));
+                },
+                .graph_select, .graph_connect, .graph_move, .graph_delete, .graph_viewport => {
+                    if (a0 == 0 or a0 > graph_count) return 0;
+                    const slice: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
+                    graph_handlers[a0 - 1](slice, graph_ud[a0 - 1]);
+                    return 0;
+                },
+                .graph_node => {
+                    if (a0 == 0 or a0 > graph_node_count) return 0;
+                    const info: *const ui.Graph.CGraphNodeInfo = @ptrFromInt(a2);
+                    graph_node_handlers[a0 - 1](a1, info, graph_node_ud[a0 - 1]);
+                    return 0;
+                },
+                .ui_text_client => {
+                    if (a0 == 0 or a0 > ui_textclient_count) return 0;
+                    const req: *abi.TextClientReq = @ptrFromInt(a1);
+                    ui_textclient_handlers[a0 - 1](req, a2);
+                    return 0;
                 },
                 .ui_text_key => {
                     if (a0 == 0 or a0 > ui_textkey_count) return 0;
@@ -3013,7 +3074,7 @@ fn writeMenuItem(allocator: std.mem.Allocator, out: *std.ArrayList(u8), item: Me
     try out.append(allocator, '}');
 }
 
-fn writeJsonString(allocator: std.mem.Allocator, out: *std.ArrayList(u8), s: []const u8) Error!void {
+pub fn writeJsonString(allocator: std.mem.Allocator, out: *std.ArrayList(u8), s: []const u8) Error!void {
     try out.append(allocator, '"');
     for (s) |ch| {
         switch (ch) {

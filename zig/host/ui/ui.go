@@ -247,6 +247,7 @@ const (
 	opTimelineLabel        uint16 = 418 // id, name, placements
 	opTimelineQuery        uint16 = 419 // id, kind → num/bool
 	opOnTextKey            uint16 = 420 // cb, userdata
+	opHandleTextInput      uint16 = 421 // cb, userdata
 )
 
 // PaintBuffer opcodes decoded by HostOpUIPaintFlush.
@@ -597,6 +598,48 @@ func WithPainter(p *mygoui.Painter, fn func(handle uintptr)) {
 		activePainters = activePainters[:len(activePainters)-1]
 	}()
 	fn(handle)
+}
+
+// CurrentFrame returns the handle of the frame being built, if any.
+func CurrentFrame() (uintptr, bool) {
+	if len(activeFrames) == 0 {
+		return 0, false
+	}
+	return uintptr(len(activeFrames)), true
+}
+
+// CFrameInfo is the frame info Zig sees (ui.CFrameInfo).
+type CFrameInfo = cUIFrameInfo
+
+// SubframeInfo returns the frame info a nested frame of parentHandle builds with.
+func SubframeInfo(parentHandle uintptr) (CFrameInfo, bool) {
+	idx := int(parentHandle) - 1
+	if idx < 0 || idx >= len(activeFrames) {
+		return CFrameInfo{}, false
+	}
+	f := activeFrames[idx]
+	if f == nil || f.ctx == nil {
+		return CFrameInfo{}, false
+	}
+	return makeFrameInfo(f.host, f.ctx, f.theme), true
+}
+
+// BindSubframe runs fn in a nested frame of parentHandle's window, so that a
+// widget building inside a frame (a graph node, a list row) can let Zig build
+// a body of its own. fn gets the handle to build with.
+func BindSubframe(parentHandle uintptr, fn func(c *mygoui.Context, handle uintptr)) bool {
+	idx := int(parentHandle) - 1
+	if idx < 0 || idx >= len(activeFrames) {
+		return false
+	}
+	f := activeFrames[idx]
+	if f == nil || f.ctx == nil {
+		return false
+	}
+	runFrame(f.ctx, f.host, f.theme, func(handle uintptr) {
+		fn(f.ctx, handle)
+	})
+	return true
 }
 
 func BindFrameModifier(frameHandle uintptr, mod func(e mygoui.Element) mygoui.Element) bool {
@@ -1337,6 +1380,109 @@ func (wh *uiWindowHost) textKeyBuf() []byte {
 		wh.textKeyOut = make([]byte, 256<<10)
 	}
 	return wh.textKeyOut
+}
+
+// zigTextClient asks a Zig text-input client about its document through
+// ui.TextInputClient, one round trip per question.
+type zigTextClient struct {
+	call func(req *host.CTextClientReq)
+	buf  []byte
+}
+
+func (z *zigTextClient) ask(req *host.CTextClientReq) {
+	z.call(req)
+}
+
+func (z *zigTextClient) text(req *host.CTextClientReq) string {
+	req.TextPtr = uintptr(unsafe.Pointer(unsafe.SliceData(z.buf)))
+	req.TextCap = uintptr(len(z.buf))
+	req.TextLen = 0
+	z.ask(req)
+	n := int(min(req.TextLen, uintptr(len(z.buf))))
+	if n < 0 {
+		n = 0
+	}
+	return string(z.buf[:n])
+}
+
+func zigRange(r mygoui.TextInputRange) (int32, int32) {
+	return int32(r.Start), int32(r.End)
+}
+
+func (z *zigTextClient) TextForRange(r mygoui.TextInputRange) (string, mygoui.TextInputRange) {
+	s, e := zigRange(r)
+	req := host.CTextClientReq{Sub: host.TextClientTextForRange, Start: s, End: e}
+	text := z.text(&req)
+	return text, mygoui.TextInputRange{Start: int(req.OutStart), End: int(req.OutEnd)}
+}
+
+func (z *zigTextClient) Selection() mygoui.TextInputSelection {
+	req := host.CTextClientReq{Sub: host.TextClientSelection}
+	z.ask(&req)
+	return mygoui.TextInputSelection{
+		Range:    mygoui.TextInputRange{Start: int(req.OutStart), End: int(req.OutEnd)},
+		Reversed: req.HasMarked != 0,
+	}
+}
+
+func (z *zigTextClient) MarkedRange() (mygoui.TextInputRange, bool) {
+	req := host.CTextClientReq{Sub: host.TextClientMarkedRange}
+	z.ask(&req)
+	if req.HasMarked == 0 {
+		return mygoui.TextInputRange{}, false
+	}
+	return mygoui.TextInputRange{Start: int(req.OutStart), End: int(req.OutEnd)}, true
+}
+
+func (z *zigTextClient) ReplaceText(r *mygoui.TextInputRange, text string) {
+	req := host.CTextClientReq{Sub: host.TextClientReplaceText, InPtr: uintptr(unsafe.Pointer(unsafe.StringData(text))), InLen: uintptr(len(text))}
+	if r != nil {
+		req.HasRange = 1
+		req.Start, req.End = zigRange(*r)
+	}
+	z.ask(&req)
+	runtime.KeepAlive(text)
+}
+
+func (z *zigTextClient) SetMarkedText(r *mygoui.TextInputRange, text string, selected mygoui.TextInputRange) {
+	req := host.CTextClientReq{
+		Sub:      host.TextClientSetMarked,
+		InPtr:    uintptr(unsafe.Pointer(unsafe.StringData(text))),
+		InLen:    uintptr(len(text)),
+		SelStart: int32(selected.Start),
+		SelEnd:   int32(selected.End),
+	}
+	if r != nil {
+		req.HasRange = 1
+		req.Start, req.End = zigRange(*r)
+	}
+	z.ask(&req)
+	runtime.KeepAlive(text)
+}
+
+func (z *zigTextClient) UnmarkText() {
+	req := host.CTextClientReq{Sub: host.TextClientUnmarkText}
+	z.ask(&req)
+}
+
+func (z *zigTextClient) BoundsForRange(r mygoui.TextInputRange) (mygoui.Rect, mygoui.TextInputRange, bool) {
+	s, e := zigRange(r)
+	req := host.CTextClientReq{Sub: host.TextClientBoundsFor, Start: s, End: e}
+	z.ask(&req)
+	actual := mygoui.TextInputRange{Start: int(req.OutStart), End: int(req.OutEnd)}
+	if req.Found == 0 {
+		return mygoui.Rect{}, actual, false
+	}
+	return mygoui.Rect{X: req.RectX, Y: req.RectY, W: req.RectW, H: req.RectH}, actual, true
+}
+
+func (z *zigTextClient) IndexForPoint(p mygoui.Point) (int, bool) {
+	req := host.CTextClientReq{Sub: host.TextClientIndexFor, X: p.X, Y: p.Y}
+	z.ask(&req)
+	if req.Found == 0 {
+		return 0, false
+	}
+	return int(req.OutStart), true
 }
 
 // zigEasing maps a preset: 1 linear, 2 ease in, 3 ease out, 4 ease in-out,
@@ -4119,6 +4265,19 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				return got != 0
 			})
 
+		case opHandleTextInput:
+			cbID, ok1 := r.u64()
+			ud, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh, cb, userdata := f.host, cbID, ud
+			f.cur = f.cur.HandleTextInput(&zigTextClient{
+				call: func(req *host.CTextClientReq) {
+					wh.callZig(host.ZigEventUITextClient, uintptr(cb), uintptr(unsafe.Pointer(req)), uintptr(userdata), 0)
+				},
+				buf: make([]byte, 64<<10),
+			})
 		case opAfter:
 			ms, ok := r.i32()
 			if !ok {

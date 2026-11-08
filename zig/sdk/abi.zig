@@ -48,3 +48,28 @@ pub const TextKey = extern struct {
     /// 0 for no change.
     out_len: usize = 0,
 };
+
+/// One question or edit for a text-input client (`ZigEventUITextClient`).
+pub const TextClientReq = extern struct {
+    sub: u32 = 0,
+    start: i32 = 0,
+    end: i32 = 0,
+    has_range: u32 = 0,
+    out_start: i32 = 0,
+    out_end: i32 = 0,
+    has_marked: u32 = 0,
+    found: u32 = 0,
+    x: f32 = 0,
+    y: f32 = 0,
+    rect_x: f32 = 0,
+    rect_y: f32 = 0,
+    rect_w: f32 = 0,
+    rect_h: f32 = 0,
+    sel_start: i32 = 0,
+    sel_end: i32 = 0,
+    text_ptr: usize = 0,
+    text_cap: usize = 0,
+    text_len: usize = 0,
+    in_ptr: usize = 0,
+    in_len: usize = 0,
+};

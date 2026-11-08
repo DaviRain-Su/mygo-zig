@@ -39,8 +39,8 @@ func (b *Board) Export() Document {
 			ID: n.ID, Title: n.Title,
 			X: n.X, Y: n.Y, W: n.W, H: n.H,
 			Locked: n.Locked,
-			Color: colorToU32(n.Color),
-			Ports: append([]Port(nil), n.Ports...),
+			Color:  colorToU32(n.Color),
+			Ports:  append([]Port(nil), n.Ports...),
 		}
 	}
 	groups := make([]Group, len(b.Groups))
@@ -75,8 +75,8 @@ func (b *Board) Load(d Document) {
 			ID: n.ID, Title: n.Title,
 			X: n.X, Y: n.Y, W: n.W, H: n.H,
 			Locked: n.Locked,
-			Color: colorFromU32(n.Color),
-			Ports: append([]Port(nil), n.Ports...),
+			Color:  colorFromU32(n.Color),
+			Ports:  append([]Port(nil), n.Ports...),
 		}
 	}
 	groups := make([]Group, len(d.Groups))

@@ -57,7 +57,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
 ### Opt-in rich text & charts
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game · graph
 
 ### 202 Element modifiers (generated)
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, `draggable`, …
@@ -108,6 +108,34 @@ fn onInput(app: *App, ev: ui.InputEvent) void {
     if (ev.kind == .key_down and ev.key == .f1) app.help = !app.help;
 }
 ```
+
+### Node canvas
+
+`ui/graph` is bound as an opt-in host: `_ "github.com/egoist/mygo/zig/host/graph"`.
+
+```zig
+var board = try ui.Graph.create(doc_json, .{ .minimap = true, .snap_grid = 16 });
+board.setContent(*App, &app, App.nodeBody);   // Zig draws each node's body
+board.onSelect(*App, &app, App.onSelect);
+
+_ = board.view(c, .{ .minimap = true, .snap_grid = 16 }).fill().grow(1.0);
+```
+
+`Board` also has `load` / `exportJSON` (the `ui/graph` document format),
+`addNode` (returns the id), `selection`, `delete` / `group` / `ungroup` /
+`layout` / `fit` / `undo` / `redo` / `copy` / `paste` / `lock` / `selectAll`,
+and `onConnect` / `onMove` / `onDelete` / `onViewport` (JSON payloads).
+
+### System text input (IME)
+
+```zig
+const client = ui.TextInputClient{ .ctx = &app, .vtable = &app.text };
+_ = c.box().handleTextInput(&client);
+```
+
+The vtable covers `textForRange`, `selection`, `markedRange`, `replaceText`,
+`setMarkedText`, `unmarkText`, `boundsForRange` and `indexForPoint`, with
+`ui.TextInputRange` counting UTF-16 code units.
 
 ### Timeline
 

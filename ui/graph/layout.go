@@ -11,7 +11,7 @@ type LayoutOptions struct {
 	// RankSep is the horizontal gap between layers (default 80).
 	RankSep float32
 	// NodeSep is the vertical gap between nodes in a layer (default 24).
-	NodeSep float32
+	NodeSep          float32
 	OriginX, OriginY float32
 }
 
@@ -131,7 +131,6 @@ func (b *Board) FitCamera(view ui.Rect, padding float32) {
 	b.emitViewport()
 }
 
-
 // FitSelection frames the current selection (or all content if empty).
 func (b *Board) FitSelection(view ui.Rect, padding float32) {
 	nodes := b.selectedNodes()
@@ -178,4 +177,11 @@ func (b *Board) FitSelection(view ui.Rect, padding float32) {
 	b.Camera.X = bounds.X + bounds.W/2
 	b.Camera.Y = bounds.Y + bounds.H/2
 	b.emitViewport()
+}
+
+// FitContent frames the whole board in the view built last.
+func (b *Board) FitContent() {
+	if b.viewR.W > 0 {
+		b.FitCamera(b.viewR, 48)
+	}
 }

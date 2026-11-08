@@ -859,6 +859,15 @@ const handWrittenQueries = `
         self.ctx.writeU64(@intCast(@intFromPtr(state)));
         return self;
     }
+
+    /// Connects the element to the system's text-input services (IME).
+    pub fn handleTextInput(self: Element, client: ?*ui.TextInputClient) Element {
+        const cb = if (client != null) ui.registerTextClientHandler() else 0;
+        self.ctx.writeOp(@intFromEnum(CoreOp.handle_text_input));
+        self.ctx.writeU64(@intCast(cb));
+        self.ctx.writeU64(if (client) |c| @intFromPtr(c) else 0);
+        return self;
+    }
 `
 
 func writeGoDecoder(methods []methodSpec) {

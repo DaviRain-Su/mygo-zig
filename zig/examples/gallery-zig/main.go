@@ -14,6 +14,7 @@ import (
 	_ "github.com/egoist/mygo/zig/host/glass"
 	_ "github.com/egoist/mygo/zig/host/gamepad"
 	_ "github.com/egoist/mygo/zig/host/webview"
+	_ "github.com/egoist/mygo/zig/host/graph"
 	_ "github.com/egoist/mygo/zig/host/ui"
 )
 

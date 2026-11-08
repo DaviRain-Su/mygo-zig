@@ -54,6 +54,13 @@ const (
 	ZigEventUIHitTest     uintptr = 45 // a0=cb_id a1=*CUIHit a2=userdata → 1 hit
 	ZigEventAudioEnd      uintptr = 46 // a0=cb_id a1=player_id
 	ZigEventUITextKey     uintptr = 47 // a0=cb_id a1=*CTextKey a2=userdata → 1 handled
+	ZigEventUITextClient  uintptr = 48 // a0=cb_id a1=*CTextClientReq a2=userdata
+	ZigEventGraphSelect   uintptr = 49 // a0=cb_id a1=JSON ids a2=len
+	ZigEventGraphConnect  uintptr = 50 // a0=cb_id a1=JSON edge a2=len
+	ZigEventGraphMove     uintptr = 51 // a0=cb_id a1=JSON {id,x,y} a2=len
+	ZigEventGraphDelete   uintptr = 52 // a0=cb_id a1=JSON {edges,nodes} a2=len
+	ZigEventGraphViewport uintptr = 53 // a0=cb_id a1=JSON camera a2=len
+	ZigEventGraphNode     uintptr = 54 // a0=cb_id a1=frame a2=*CGraphNodeInfo
 )
 
 // CUIInput is one InputEvent as the Zig side reads it. Layout must match
@@ -118,6 +125,45 @@ type CTextKey struct {
 	OutCap  uintptr
 	// OutLen is what the Zig handler wrote into OutPtr, 0 for no change.
 	OutLen uintptr
+}
+
+// Text-input client sub-ops (ZigEventUITextClient).
+const (
+	TextClientTextForRange uint32 = 1
+	TextClientSelection    uint32 = 2
+	TextClientMarkedRange  uint32 = 3
+	TextClientReplaceText  uint32 = 4
+	TextClientSetMarked    uint32 = 5
+	TextClientUnmarkText   uint32 = 6
+	TextClientBoundsFor    uint32 = 7
+	TextClientIndexFor     uint32 = 8
+)
+
+// CTextClientReq is one question to a Zig text-input client, or one edit.
+// Layout must match sdk/abi.zig's TextClientReq.
+type CTextClientReq struct {
+	Sub       uint32
+	Start     int32
+	End       int32
+	HasRange  uint32 // a replacement range is given
+	OutStart  int32
+	OutEnd    int32
+	HasMarked uint32
+	Found     uint32
+	X         float32
+	Y         float32
+	RectX     float32
+	RectY     float32
+	RectW     float32
+	RectH     float32
+	// SelStart, SelEnd are SetMarkedText's selected range within the text.
+	SelStart int32
+	SelEnd   int32
+	TextPtr  uintptr
+	TextCap  uintptr
+	TextLen  uintptr
+	InPtr    uintptr
+	InLen    uintptr
 }
 
 // CUIHit asks a Zig hit test whether the pointer at PX, PY hits the element,
@@ -197,6 +243,7 @@ const (
 	HostOpNetwork        uintptr = 251 // a0=subop Network.Status/OnChanged
 	HostOpNowPlaying     uintptr = 252 // a0=subop NowPlaying
 	HostOpAudio          uintptr = 253 // a0=subop (audio.Sound / audio.Player)
+	HostOpGraph          uintptr = 255 // a0=subop (ui/graph boards)
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -470,6 +517,9 @@ var GameDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 var GamepadDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 var WebViewDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 var DocumentsDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+
+// GraphDispatch is populated by `zig/host/graph` when imported.
+var GraphDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr

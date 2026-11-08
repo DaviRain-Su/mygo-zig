@@ -55,7 +55,7 @@ func (b *Board) groupBoundsDepth(g Group, depth int) (ui.Rect, bool) {
 		return ui.Rect{}, false
 	}
 	var (
-		ok                    bool
+		ok                     bool
 		minX, minY, maxX, maxY float32
 	)
 	include := func(r ui.Rect) {
@@ -285,4 +285,19 @@ func (b *Board) scrubGroupsAfterNodeDelete(nodeIDs []string) {
 	b.Groups = slices.DeleteFunc(b.Groups, func(g Group) bool {
 		return len(g.Members) == 0
 	})
+}
+
+// RemoveSelection deletes the selected nodes, edges and groups.
+func (b *Board) RemoveSelection() bool { return b.deleteSelection() }
+
+// SelectAll selects every node and edge.
+func (b *Board) SelectAll() {
+	ids := make([]string, 0, len(b.Nodes)+len(b.Edges))
+	for _, n := range b.Nodes {
+		ids = append(ids, n.ID)
+	}
+	for _, e := range b.Edges {
+		ids = append(ids, "edge:"+e.ID)
+	}
+	b.setSelection(ids)
 }

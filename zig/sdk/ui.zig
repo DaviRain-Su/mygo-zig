@@ -466,6 +466,7 @@ pub const CoreOp = enum(u16) {
     timeline_label = 418,
     timeline_query = 419,
     on_text_key = 420,
+    handle_text_input = 421,
 };
 
 /// A layer of a mask: the alpha of a gradient across the element's box.
@@ -639,6 +640,293 @@ fn writePlacements(c: *Context, at: []const Placement) void {
     }
 }
 
+/// A node canvas (`ui/graph`): an infinite board of nodes, ports and edges.
+///
+/// Import the Go host with `_ "github.com/egoist/mygo/zig/host/graph"`.
+pub const Graph = struct {
+    const Sub = enum(usize) {
+        create = 1,
+        load = 2,
+        export_json = 3,
+        add_node = 4,
+        selection = 5,
+        action = 6,
+        view = 7,
+        set_content = 8,
+        destroy = 9,
+        on_select = 10,
+        on_connect = 11,
+        on_move = 12,
+        on_delete = 13,
+        on_viewport = 14,
+    };
+
+    pub const Action = enum(usize) {
+        delete = 1,
+        group = 2,
+        ungroup = 3,
+        layout = 4,
+        fit = 5,
+        undo = 6,
+        redo = 7,
+        copy = 8,
+        paste = 9,
+        lock = 10,
+        select_all = 11,
+    };
+
+    pub const Tool = enum(u8) { select = 0, pan = 1, connect = 2 };
+    pub const EdgeStyle = enum(u8) { bezier = 0, orthogonal = 1 };
+
+    pub const Options = struct {
+        minimap: bool = true,
+        edge_style: EdgeStyle = .bezier,
+        tool: Tool = .select,
+        snap_grid: f32 = 0,
+    };
+
+    pub const NodeOptions = struct {
+        id: []const u8 = "",
+        title: []const u8 = "",
+        x: f32 = 0,
+        y: f32 = 0,
+        w: f32 = 160,
+        h: f32 = 90,
+        ports: []const Port = &.{},
+    };
+
+    pub const Port = struct {
+        id: []const u8 = "",
+        side: Side = .right,
+        at: f32 = 0.5,
+    };
+
+    pub const Side = enum(u8) { left, right, top, bottom };
+
+    const CGraphSpec = extern struct {
+        json_ptr: usize = 0,
+        json_len: usize = 0,
+        flags: u32 = 0,
+        tool: u8 = 0,
+        _pad: [3]u8 = .{ 0, 0, 0 },
+        snap_grid: f32 = 0,
+    };
+
+    const COut = extern struct {
+        ptr: usize = 0,
+        cap: usize = 0,
+    };
+
+    const CGraphAdd = extern struct {
+        json_ptr: usize = 0,
+        json_len: usize = 0,
+        out_ptr: usize = 0,
+        out_cap: usize = 0,
+    };
+
+    pub const CGraphNodeInfo = extern struct {
+        id_ptr: usize = 0,
+        id_len: usize = 0,
+        info: *const CFrameInfo = undefined,
+    };
+
+    fn viewFlags(o: Options) u32 {
+        var f: u32 = 0;
+        if (o.minimap) f |= 1;
+        if (o.edge_style == .orthogonal) f |= 2;
+        return f;
+    }
+
+    /// A board kept by the host; its id is stable until destroy.
+    pub const Board = struct {
+        id: usize,
+
+        pub fn valid(self: Board) bool {
+            return self.id != 0;
+        }
+
+        /// load replaces the document from JSON (see ui/graph Document).
+        pub fn load(self: Board, json: []const u8) mygo.Error!void {
+            if (mygo.dispatch(.graph, @intFromEnum(Sub.load), self.id, mygo.sliceAddr(json), json.len) == std.math.maxInt(usize))
+                return mygo.Error.MyGoError;
+        }
+
+        /// exportJSON writes the document as JSON. The caller frees it.
+        pub fn exportJSON(self: Board, allocator: std.mem.Allocator) mygo.Error![]u8 {
+            var buf: [1 << 20]u8 = undefined;
+            var out = COut{ .ptr = @intFromPtr(&buf), .cap = buf.len };
+            const got = mygo.dispatch(.graph, @intFromEnum(Sub.export_json), self.id, @intFromPtr(&out), 0);
+            if (got == std.math.maxInt(usize)) return mygo.Error.MyGoError;
+            return allocator.dupe(u8, buf[0..@min(got, buf.len)]);
+        }
+
+        /// addNode adds a node and returns its id in id_buf.
+        pub fn addNode(self: Board, o: NodeOptions, id_buf: []u8) mygo.Error![]const u8 {
+            var json: std.ArrayList(u8) = .empty;
+            defer json.deinit(std.heap.page_allocator);
+            try writeNodeJSON(std.heap.page_allocator, &json, o);
+            var add = CGraphAdd{
+                .json_ptr = mygo.sliceAddr(json.items),
+                .json_len = json.items.len,
+                .out_ptr = if (id_buf.len > 0) @intFromPtr(id_buf.ptr) else 0,
+                .out_cap = id_buf.len,
+            };
+            const n = mygo.dispatch(.graph, @intFromEnum(Sub.add_node), self.id, @intFromPtr(&add), 0);
+            if (n == std.math.maxInt(usize)) return mygo.Error.MyGoError;
+            return id_buf[0..@min(n, id_buf.len)];
+        }
+
+        /// selection writes the selected ids into buf and returns their count.
+        pub fn selection(self: Board, buf: []u8, out: [][]const u8) usize {
+            var o = COut{ .ptr = if (buf.len > 0) @intFromPtr(buf.ptr) else 0, .cap = buf.len };
+            const n = mygo.dispatch(.graph, @intFromEnum(Sub.selection), self.id, @intFromPtr(&o), 0);
+            if (n == std.math.maxInt(usize)) return 0;
+            return readStrList(buf, out);
+        }
+
+        pub fn action(self: Board, a: Action) bool {
+            return mygo.dispatch(.graph, @intFromEnum(Sub.action), self.id, @intFromEnum(a), 0) != 0;
+        }
+
+        pub fn delete(self: Board) bool {
+            return self.action(.delete);
+        }
+        pub fn group(self: Board) bool {
+            return self.action(.group);
+        }
+        pub fn ungroup(self: Board) bool {
+            return self.action(.ungroup);
+        }
+        pub fn layout(self: Board) bool {
+            return self.action(.layout);
+        }
+        pub fn fit(self: Board) bool {
+            return self.action(.fit);
+        }
+        pub fn undo(self: Board) bool {
+            return self.action(.undo);
+        }
+        pub fn redo(self: Board) bool {
+            return self.action(.redo);
+        }
+        pub fn copy(self: Board) bool {
+            return self.action(.copy);
+        }
+        pub fn paste(self: Board) bool {
+            return self.action(.paste);
+        }
+        pub fn lock(self: Board) bool {
+            return self.action(.lock);
+        }
+        pub fn selectAll(self: Board) bool {
+            return self.action(.select_all);
+        }
+
+        fn onBytes(self: Board, sub: Sub, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+            const S = struct {
+                fn onJSON(json: []const u8, ud: usize) void {
+                    const s: StatePtr = @ptrFromInt(ud);
+                    handler(s, json);
+                }
+            };
+            const cb = mygo.registerGraphHandler(&S.onJSON, @intFromPtr(state));
+            _ = mygo.dispatch(.graph, @intFromEnum(sub), self.id, cb, 0);
+        }
+
+        pub fn onSelect(self: Board, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+            self.onBytes(.on_select, StatePtr, state, handler);
+        }
+        pub fn onConnect(self: Board, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+            self.onBytes(.on_connect, StatePtr, state, handler);
+        }
+        pub fn onMove(self: Board, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+            self.onBytes(.on_move, StatePtr, state, handler);
+        }
+        pub fn onDelete(self: Board, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+            self.onBytes(.on_delete, StatePtr, state, handler);
+        }
+        pub fn onViewport(self: Board, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+            self.onBytes(.on_viewport, StatePtr, state, handler);
+        }
+
+        /// setContent lets Zig build each node's body.
+        pub fn setContent(
+            self: Board,
+            comptime StatePtr: type,
+            state: StatePtr,
+            comptime handler: fn (StatePtr, *Context, []const u8) void,
+        ) void {
+            const S = struct {
+                fn onNode(frame: usize, info: *const CGraphNodeInfo, ud: usize) void {
+                    const s: StatePtr = @ptrFromInt(ud);
+                    const id: []const u8 = if (info.id_len > 0) @as([*]const u8, @ptrFromInt(info.id_ptr))[0..info.id_len] else "";
+                    var ctx = Context.init(frame, info.info);
+                    handler(s, &ctx, id);
+                }
+            };
+            const cb = mygo.registerGraphNode(&S.onNode, @intFromPtr(state));
+            _ = mygo.dispatch(.graph, @intFromEnum(Sub.set_content), self.id, cb, 0);
+        }
+
+        pub fn destroy(self: *Board) void {
+            if (self.id == 0) return;
+            _ = mygo.dispatch(.graph, @intFromEnum(Sub.destroy), self.id, 0, 0);
+            self.id = 0;
+        }
+
+        /// view builds the board inside the calling frame.
+        pub fn view(self: Board, c: *Context, o: Options) Element {
+            var spec = CGraphSpec{ .flags = viewFlags(o), .tool = @intFromEnum(o.tool), .snap_grid = o.snap_grid };
+            _ = mygo.dispatch(.graph, @intFromEnum(Sub.view), c.frame_handle, self.id, @intFromPtr(&spec));
+            return .{ .ctx = c };
+        }
+    };
+
+    /// create makes a board, loading JSON when given.
+    pub fn create(json: []const u8, o: Options) mygo.Error!Board {
+        var spec = CGraphSpec{ .json_ptr = mygo.sliceAddr(json), .json_len = json.len, .flags = viewFlags(o), .tool = @intFromEnum(o.tool), .snap_grid = o.snap_grid };
+        const id = mygo.dispatch(.graph, @intFromEnum(Sub.create), @intFromPtr(&spec), 0, 0);
+        if (id == 0 or id == std.math.maxInt(usize)) return mygo.Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    fn writeNodeJSON(allocator: std.mem.Allocator, out: *std.ArrayList(u8), o: NodeOptions) mygo.Error!void {
+        try out.appendSlice(allocator, "{\"id\":");
+        try mygo.writeJsonString(allocator, out, o.id);
+        try out.appendSlice(allocator, ",\"title\":");
+        try mygo.writeJsonString(allocator, out, o.title);
+        try out.appendSlice(allocator, ",\"x\":");
+        try appendNum(allocator, out, o.x);
+        try out.appendSlice(allocator, ",\"y\":");
+        try appendNum(allocator, out, o.y);
+        try out.appendSlice(allocator, ",\"w\":");
+        try appendNum(allocator, out, o.w);
+        try out.appendSlice(allocator, ",\"h\":");
+        try appendNum(allocator, out, o.h);
+        if (o.ports.len > 0) {
+            try out.appendSlice(allocator, ",\"ports\":[");
+            for (o.ports, 0..) |p, i| {
+                if (i > 0) try out.append(allocator, ',');
+                try out.appendSlice(allocator, "{\"id\":");
+                try mygo.writeJsonString(allocator, out, p.id);
+                try out.appendSlice(allocator, ",\"side\":");
+                try appendNum(allocator, out, @floatFromInt(@intFromEnum(p.side)));
+                try out.appendSlice(allocator, ",\"at\":");
+                try appendNum(allocator, out, p.at);
+                try out.append(allocator, '}');
+            }
+            try out.append(allocator, ']');
+        }
+        try out.append(allocator, '}');
+    }
+
+    fn appendNum(allocator: std.mem.Allocator, out: *std.ArrayList(u8), v: f32) mygo.Error!void {
+        var buf: [32]u8 = undefined;
+        const s = std.fmt.bufPrint(&buf, "{d}", .{v}) catch unreachable;
+        try out.appendSlice(allocator, s);
+    }
+};
+
 /// One key a text input takes, as OnTextKey sees it.
 pub const TextKey = struct {
     key: Key = .unknown,
@@ -657,6 +945,134 @@ pub const TextKey = struct {
 };
 
 pub const CTextKey = abi.TextKey;
+
+/// A half-open range of UTF-16 code units, as text services count.
+pub const TextInputRange = extern struct {
+    start: i32 = 0,
+    end: i32 = 0,
+};
+
+/// The primary selection: Reversed puts its caret at range.start.
+pub const TextInputSelection = extern struct {
+    range: TextInputRange = .{},
+    reversed: u8 = 0,
+    _pad: [3]u8 = .{ 0, 0, 0 },
+};
+
+pub const TextForRangeResult = struct {
+    text: []const u8 = "",
+    range: TextInputRange = .{},
+};
+
+pub const BoundsForRangeResult = struct {
+    rect: Rect,
+    range: TextInputRange = .{},
+};
+
+/// An application-owned text-input target for the system's input methods:
+/// it owns the text, selection, marked range and geometry.
+pub const TextInputClient = struct {
+    ctx: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        textForRange: *const fn (ctx: *anyopaque, range: TextInputRange, buf: []u8) TextForRangeResult,
+        selection: *const fn (ctx: *anyopaque) TextInputSelection,
+        markedRange: *const fn (ctx: *anyopaque) ?TextInputRange,
+        replaceText: *const fn (ctx: *anyopaque, range: ?TextInputRange, text: []const u8) void,
+        setMarkedText: *const fn (ctx: *anyopaque, range: ?TextInputRange, text: []const u8, selected: TextInputRange) void,
+        unmarkText: *const fn (ctx: *anyopaque) void,
+        boundsForRange: *const fn (ctx: *anyopaque, range: TextInputRange) ?BoundsForRangeResult,
+        indexForPoint: *const fn (ctx: *anyopaque, x: f32, y: f32) ?i32,
+    };
+
+    fn dispatch(self: *TextInputClient, req: *abi.TextClientReq) void {
+        switch (@as(u32, req.sub)) {
+            1 => {
+                var scratch: [64 << 10]u8 = undefined;
+                const res = self.vtable.textForRange(self.ctx, .{ .start = req.start, .end = req.end }, &scratch);
+                const cap: usize = if (req.text_cap > 0 and req.text_ptr != 0) req.text_cap else 0;
+                const n = @min(res.text.len, cap);
+                if (n > 0) @memcpy(@as([*]u8, @ptrFromInt(req.text_ptr))[0..n], res.text[0..n]);
+                req.text_len = n;
+                req.out_start = res.range.start;
+                req.out_end = res.range.end;
+            },
+            2 => {
+                const sel = self.vtable.selection(self.ctx);
+                req.out_start = sel.range.start;
+                req.out_end = sel.range.end;
+                req.has_marked = sel.reversed;
+            },
+            3 => {
+                if (self.vtable.markedRange(self.ctx)) |m| {
+                    req.has_marked = 1;
+                    req.out_start = m.start;
+                    req.out_end = m.end;
+                } else {
+                    req.has_marked = 0;
+                }
+            },
+            4 => {
+                const range: ?TextInputRange = if (req.has_range != 0) .{ .start = req.start, .end = req.end } else null;
+                const text: []const u8 = if (req.in_len > 0 and req.in_ptr != 0)
+                    @as([*]const u8, @ptrFromInt(req.in_ptr))[0..req.in_len]
+                else
+                    "";
+                self.vtable.replaceText(self.ctx, range, text);
+            },
+            5 => {
+                const range: ?TextInputRange = if (req.has_range != 0) .{ .start = req.start, .end = req.end } else null;
+                const text: []const u8 = if (req.in_len > 0 and req.in_ptr != 0)
+                    @as([*]const u8, @ptrFromInt(req.in_ptr))[0..req.in_len]
+                else
+                    "";
+                self.vtable.setMarkedText(self.ctx, range, text, .{ .start = req.sel_start, .end = req.sel_end });
+            },
+            6 => self.vtable.unmarkText(self.ctx),
+            7 => {
+                if (self.vtable.boundsForRange(self.ctx, .{ .start = req.start, .end = req.end })) |b| {
+                    req.found = 1;
+                    req.rect_x = b.rect.x;
+                    req.rect_y = b.rect.y;
+                    req.rect_w = b.rect.w;
+                    req.rect_h = b.rect.h;
+                    req.out_start = b.range.start;
+                    req.out_end = b.range.end;
+                } else {
+                    req.found = 0;
+                }
+            },
+            8 => {
+                if (self.vtable.indexForPoint(self.ctx, req.x, req.y)) |i| {
+                    req.found = 1;
+                    req.out_start = i;
+                } else {
+                    req.found = 0;
+                }
+            },
+            else => {},
+        }
+    }
+};
+
+var text_client_registered = false;
+
+fn textClientTrampoline(req: *abi.TextClientReq, ud: usize) void {
+    const client: *TextInputClient = @ptrFromInt(ud);
+    client.dispatch(req);
+}
+
+/// registerTextClientHandler returns the shared client handler's id.
+pub fn registerTextClientHandler() usize {
+    if (!text_client_registered) {
+        if (mygo.ui_textclient_count >= mygo.ui_textclient_handlers.len) return 0;
+        mygo.ui_textclient_handlers[mygo.ui_textclient_count] = &textClientTrampoline;
+        mygo.ui_textclient_count += 1;
+        text_client_registered = true;
+    }
+    return mygo.ui_textclient_count;
+}
 
 /// textKey reads a host text key. The text is valid while the handler runs.
 pub fn textKey(c: *abi.TextKey) TextKey {

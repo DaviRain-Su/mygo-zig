@@ -24,7 +24,7 @@ const dock_menu_items = [_]mygo.MenuItem{
     .{ .id = "dock-about", .label = "About Gallery Zig", .tooltip = "Version 0.1.0" },
 };
 
-const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor", "Term" };
+const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Graph", "Charts", "Markdown", "Editor", "Term" };
 const edit_submenu = [_]ui.MenuEntry{
     ui.MenuEntry.ofLabel("Cut"),
     ui.MenuEntry.ofLabel("Copy"),
@@ -76,6 +76,16 @@ const table_cols = [_]ui.TableColumn{
     .{ .title = "Score", .width = 72, .@"align" = .end },
     .{ .title = "Status", .width = 0 },
 };
+
+const graph_doc =
+    \\{"camera":{"x":220,"y":140,"zoom":1},"edgeStyle":0,"snapGrid":16,
+    \\ "nodes":[
+    \\  {"id":"note","title":"Note","x":-140,"y":-50,"w":170,"h":100,"ports":[{"id":"out","side":1,"at":0.5}]},
+    \\  {"id":"card","title":"Excerpt","x":120,"y":10,"w":190,"h":110,"ports":[{"id":"in","side":0,"at":0.5},{"id":"out","side":1,"at":0.5}]},
+    \\  {"id":"sink","title":"Sink","x":400,"y":-20,"w":150,"h":80,"ports":[{"id":"in","side":0,"at":0.5}]}
+    \\ ],
+    \\ "edges":[{"id":"e1","source":"note","sourcePort":"out","target":"card","targetPort":"in","label":"cites"}]}
+;
 
 const sample_md =
     \\# MyGo × Zig
@@ -256,6 +266,10 @@ const Gallery = struct {
     beep: mygo.Audio.Sound = .{ .id = 0 },
     beep_ms: u64 = 0,
     timeline_run: u64 = 0,
+    board: ui.Graph.Board = .{ .id = 0 },
+    graph_sel: [4][]const u8 = @splat(""),
+    graph_sel_count: usize = 0,
+    graph_sel_buf: [512]u8 = @splat(0),
     tk_buf: [64]u8 = @splat(0),
     tk_len: usize = 0,
     drop_names: [8][]const u8 = @splat(""),
@@ -1247,6 +1261,62 @@ const Gallery = struct {
             self.pumpStream(c);
             _ = c.video("stream", .contain).fillWidth().height(140);
         }
+    }
+
+    fn viewGraph(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        if (self.board.id == 0) {
+            self.board = ui.Graph.create(graph_doc, .{ .minimap = true, .snap_grid = 16 }) catch .{ .id = 0 };
+            if (self.board.id != 0) {
+                self.board.setContent(*Gallery, self, Gallery.graphNodeBody);
+                self.board.onSelect(*Gallery, self, Gallery.graphSelect);
+            }
+        }
+        {
+            const row = c.row().fillWidth().gap(8).center().begin();
+            defer row.end();
+            if (c.button("g-add", "+ Node").clicked()) {
+                var idb: [32]u8 = undefined;
+                _ = self.board.addNode(.{
+                    .title = "Card",
+                    .x = 40,
+                    .y = 120,
+                    .w = 160,
+                    .h = 90,
+                    .ports = &.{
+                        .{ .id = "in", .side = .left },
+                        .{ .id = "out", .side = .right },
+                    },
+                }, idb[0..]) catch {};
+            }
+            if (c.button("g-layout", "Layout").clicked()) _ = self.board.layout();
+            if (c.button("g-undo", "Undo").clicked()) _ = self.board.undo();
+            if (c.button("g-redo", "Redo").clicked()) _ = self.board.redo();
+            if (c.button("g-group", "Group").clicked()) _ = self.board.group();
+            if (c.button("g-fit", "Fit").clicked()) _ = self.board.fit();
+            if (c.button("g-save", "Copy JSON").clicked()) {
+                if (self.board.exportJSON(std.heap.page_allocator)) |json| {
+                    defer std.heap.page_allocator.free(json);
+                    mygo.Clipboard.writeText(json);
+                } else |_| {}
+            }
+            _ = c.textf("selected {d}", .{self.graph_sel_count}).fontSize(12).textColor(t.text_muted).grow(1.0);
+        }
+        _ = self.board.view(c, .{ .minimap = true, .snap_grid = 16 }).fill().grow(1.0);
+    }
+
+    fn graphNodeBody(self: *Gallery, c: *ui.Context, id: []const u8) void {
+        _ = self;
+        const t = c.theme();
+        const box = c.column().gap(3).begin();
+        defer box.end();
+        _ = c.text(id).fontSize(12).bold();
+        _ = c.text("Zig body").fontSize(11).textColor(t.text_muted);
+    }
+
+    fn graphSelect(self: *Gallery, json: []const u8) void {
+        _ = json;
+        self.graph_sel_count = self.board.selection(self.graph_sel_buf[0..], &self.graph_sel);
     }
 
     fn viewCharts(self: *Gallery, c: *ui.Context) void {
@@ -2524,9 +2594,10 @@ const Gallery = struct {
             4 => self.viewTree(c),
             5 => self.viewMore(c),
             6 => self.viewNav(c),
-            7 => self.viewCharts(c),
-            8 => self.viewMarkdown(c),
-            9 => self.viewEditor(c),
+            7 => self.viewGraph(c),
+            8 => self.viewCharts(c),
+            9 => self.viewMarkdown(c),
+            10 => self.viewEditor(c),
             else => self.viewTerm(c),
         }
     }

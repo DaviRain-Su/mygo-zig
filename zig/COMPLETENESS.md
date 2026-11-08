@@ -187,3 +187,22 @@ Not done, with the reason:
 - `ui/richtext` / `ui/graph` hosts: these are document models (9k lines of
   rich text; a board with its own history), so a host is a port of their
   APIs, not a binding.
+
+## Phase 12 — IME client and the node canvas
+
+- `HandleTextInput`: `ui.TextInputClient` is a vtable of eight calls
+  (`textForRange`, `selection`, `markedRange`, `replaceText`,
+  `setMarkedText`, `unmarkText`, `boundsForRange`, `indexForPoint`,
+  `ZigEventUITextClient=48`). The host proxies `ui.TextInputClient` one round
+  trip per question; `zig/host/ui` tests the marshalling with a fake Zig side.
+- `zig/host/graph` (opt-in, `HostOpGraph=255`) binds `ui/graph`:
+  create / load / exportJSON / addNode / selection / actions
+  (delete, group, ungroup, layout, fit, undo, redo, copy, paste, lock,
+  select all) / destroy, the five callbacks (`select`, `connect`, `move`,
+  `delete`, `viewport`, events 49..53) and node bodies
+  (`ZigEventGraphNode=54`) built in nested frames.
+- `zig/host/ui` gained `CurrentFrame`, `BindSubframe` and `SubframeInfo`, so a
+  Go widget can let Zig build parts of it.
+- `ui/graph` gained `RemoveSelection`, `SelectAll` and `FitContent`.
+- The gallery has a Graph tab: a board from JSON, Zig node bodies, layout,
+  undo/redo, grouping and JSON export.
