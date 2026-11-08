@@ -44,6 +44,7 @@ pub const HostOp = enum(usize) {
     power = 27,
     app_events = 28,
     protocol = 29,
+    desktop = 30,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -345,6 +346,18 @@ fn registerBytesHandler(h: RawBytesHandler) usize {
     return bytes_count;
 }
 
+const RawMenuHandler = *const fn (win_id: i32, id: []const u8, userdata: usize) void;
+var menu_handlers: [16]RawMenuHandler = undefined;
+var menu_count: usize = 0;
+var menu_handler_userdata: [16]usize = undefined;
+
+fn registerMenuHandler(h: RawMenuHandler, userdata: usize) usize {
+    menu_handlers[menu_count] = h;
+    menu_handler_userdata[menu_count] = userdata;
+    menu_count += 1;
+    return menu_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -382,7 +395,13 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     const prevent = win_handlers[a0 - 1](@intCast(@as(isize, @bitCast(a1))), slice);
                     return if (prevent) 1 else 0;
                 },
-                .menu => return 0,
+                .menu => {
+                    if (a0 == 0 or a0 > menu_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const id: []const u8 = if (a2 != 0 and a3 > 0) @as([*]const u8, @ptrFromInt(a2))[0..a3] else "";
+                    menu_handlers[a0 - 1](win_id, id, menu_handler_userdata[a0 - 1]);
+                    return 0;
+                },
                 .bytes => {
                     if (a0 == 0 or a0 > bytes_count) return 0;
                     const slice: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
@@ -1228,6 +1247,58 @@ pub const Notification = struct {
 
 
 
+
+
+pub const Desktop = struct {
+    /// Set Windows jump-list tasks. Pass JSON array of task objects. "[]" clears.
+    pub fn setJumpListTasksJSON(json: []const u8) Error!void {
+        if (dispatch(.desktop, 1, sliceAddr(json), json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn addRecentDocument(path: []const u8) Error!void {
+        if (dispatch(.desktop, 2, sliceAddr(path), path.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn clearRecentDocuments() Error!void {
+        if (dispatch(.desktop, 3, 0, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    /// Dock menu as JSON array (same shape as Tray.setMenuJSON). Empty clears.
+    pub fn setDockMenuJSON(comptime StatePtr: type, state: StatePtr, json: []const u8, comptime handler: fn (StatePtr, []const u8) void) Error!void {
+        const S = struct {
+            fn onMenu(_: i32, id: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, id);
+            }
+        };
+        const cb = registerMenuHandler(&S.onMenu, @intFromPtr(state));
+        if (dispatch(.desktop, 4, sliceAddr(json), json.len, cb) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn setDockIcon(png: []const u8) Error!void {
+        if (dispatch(.desktop, 5, sliceAddr(png), png.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn hideDock() void {
+        _ = dispatch(.desktop, 6, 0, 0, 0);
+    }
+
+    pub fn showDock() void {
+        _ = dispatch(.desktop, 7, 0, 0, 0);
+    }
+
+    /// Application menu bar JSON (same shape as Tray menus).
+    pub fn setAppMenuJSON(comptime StatePtr: type, state: StatePtr, json: []const u8, comptime handler: fn (StatePtr, []const u8) void) Error!void {
+        const S = struct {
+            fn onMenu(_: i32, id: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, id);
+            }
+        };
+        const cb = registerMenuHandler(&S.onMenu, @intFromPtr(state));
+        if (dispatch(.app_set_menu, sliceAddr(json), json.len, cb, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+};
 
 pub const Protocol = struct {
     const CResp = extern struct {

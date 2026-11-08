@@ -570,6 +570,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpProtocol:
 		return hostProtocol(a0, a1, a2, a3)
 
+	case HostOpDesktop:
+		return hostDesktop(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1876,4 +1879,101 @@ func flatHeaders(h http.Header) map[string]string {
 		}
 	}
 	return out
+}
+
+func hostDesktop(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case DesktopJumpListSet:
+		var tasks []mygo.JumpListTask
+		if a2 > 0 {
+			if err := json.Unmarshal(CopyBytes(a1, a2), &tasks); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+		}
+		if err := mygo.App.JumpList.SetTasks(tasks); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case DesktopRecentAdd:
+		if err := mygo.App.AddRecentDocument(CopyString(a1, a2)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case DesktopRecentClear:
+		if err := mygo.App.ClearRecentDocuments(); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case DesktopDockSetMenu:
+		return setDockMenu(CopyBytes(a1, a2), a3)
+	case DesktopDockSetIcon:
+		if err := mygo.App.Dock.SetIcon(CopyBytes(a1, a2)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case DesktopDockHide:
+		mygo.App.Dock.Hide()
+		return 0
+	case DesktopDockShow:
+		mygo.App.Dock.Show()
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown desktop subop"))
+		return ^uintptr(0)
+	}
+}
+
+func setDockMenu(raw []byte, cbID uintptr) uintptr {
+	var spec []menuSpecItem
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &spec); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+	}
+	var convert func(items []menuSpecItem) []*mygo.MenuItem
+	convert = func(items []menuSpecItem) []*mygo.MenuItem {
+		out := make([]*mygo.MenuItem, len(items))
+		for i, it := range items {
+			mi := &mygo.MenuItem{
+				ID: it.ID, Label: it.Label, Type: mygo.MenuItemType(it.Type),
+				Role: mygo.MenuRole(it.Role), Accelerator: it.Accelerator,
+				Disabled: it.Disabled, Hidden: it.Hidden, Checked: it.Checked,
+				Submenu: convert(it.Submenu),
+			}
+			if cbID != 0 && mi.Role == "" && len(mi.Submenu) == 0 && mi.Type != mygo.MenuItemSeparator {
+				idCopy := mi.ID
+				if idCopy == "" {
+					idCopy = mi.Label
+				}
+				mi.Click = func(_ *mygo.MenuItem, win *mygo.Window) {
+					var wid uintptr
+					if win != nil {
+						wid = uintptr(win.ID())
+					}
+					idBytes := []byte(idCopy)
+					ptr, n := SliceAddr(idBytes)
+					activeCall(ZigEventMenu, cbID, wid, ptr, n)
+				}
+			}
+			out[i] = mi
+		}
+		return out
+	}
+	if len(spec) == 0 {
+		mygo.App.Dock.SetMenu(nil)
+	} else {
+		mygo.App.Dock.SetMenu(mygo.NewMenu(convert(spec)))
+	}
+	SetError(nil)
+	return 0
 }

@@ -617,6 +617,13 @@ const Gallery = struct {
 
 
 
+
+    fn onDockMenu(self: *Gallery, id: []const u8) void {
+        const n = @min(id.len, self.menu_id_buf.len);
+        @memcpy(self.menu_id_buf[0..n], id[0..n]);
+        self.menu_id_len = n;
+    }
+
     fn onProtocol(self: *Gallery, req_id: usize, req: mygo.ProtocolRequest) void {
         _ = self;
         if (std.mem.indexOf(u8, req.url, "/hello") != null) {
@@ -1345,6 +1352,15 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("dock-hide", "Hide Dock icon").clicked()) {
+                mygo.Desktop.hideDock();
+            }
+            if (c.button("dock-show", "Show Dock icon").clicked()) {
+                mygo.Desktop.showDock();
+            }
+            if (c.button("recent-clear", "Clear recent docs").clicked()) {
+                mygo.Desktop.clearRecentDocuments() catch {};
+            }
             if (c.button("badge-set", "Badge 3").clicked()) {
                 mygo.Lifecycle.setBadge("3");
             }
@@ -1766,6 +1782,14 @@ fn init() !void {
 
 fn onReady() void {
     mygo.Protocol.handle(*Gallery, &app_state, "galleryzig", Gallery.onProtocol) catch {};
+    const dock_menu =
+        \\[{"id":"dock-new","label":"New Gallery Window"},{"id":"dock-about","label":"About Gallery Zig"}]
+    ;
+    mygo.Desktop.setDockMenuJSON(*Gallery, &app_state, dock_menu, Gallery.onDockMenu) catch {};
+    const jump_tasks =
+        \\[{"title":"Open Gallery","args":["galleryzig://localhost/hello"]}]
+    ;
+    mygo.Desktop.setJumpListTasksJSON(jump_tasks) catch {};
     app_state.ensureTray();
     app_state.notif_supported = mygo.Notification.supported();
     app_state.notif_click_cb = mygo.Notification.registerClickHandler(*Gallery, &app_state, Gallery.onNotifClick);

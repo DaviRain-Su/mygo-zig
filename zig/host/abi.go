@@ -61,6 +61,7 @@ const (
 	HostOpPower         uintptr = 27 // a0=subop
 	HostOpAppEvents     uintptr = 28 // a0=subop
 	HostOpProtocol      uintptr = 29 // a0=subop
+	HostOpDesktop       uintptr = 30 // a0=subop — dock/jumplist/recent
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -544,3 +545,14 @@ type CProtocolResp struct {
 	HeadersPtr, HeadersLen uintptr // JSON object
 	BodyPtr, BodyLen       uintptr
 }
+
+// Desktop sub-ops for HostOpDesktop.
+const (
+	DesktopJumpListSet uintptr = 1 // a1=json_ptr a2=json_len (array of tasks)
+	DesktopRecentAdd   uintptr = 2 // a1=path_ptr a2=path_len
+	DesktopRecentClear uintptr = 3
+	DesktopDockSetMenu uintptr = 4 // a1=json_ptr a2=json_len a3=cb_id
+	DesktopDockSetIcon uintptr = 5 // a1=png_ptr a2=png_len
+	DesktopDockHide    uintptr = 6
+	DesktopDockShow    uintptr = 7
+)
