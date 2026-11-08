@@ -35,3 +35,16 @@ pub const Hit = extern struct {
     px: f32 = 0,
     py: f32 = 0,
 };
+
+/// One ui.TextKey as the host marshals it: the key, the text, and a buffer
+/// the handler writes the replacement text into.
+pub const TextKey = extern struct {
+    key: u32 = 0,
+    mods: u32 = 0,
+    text_ptr: usize = 0,
+    text_len: usize = 0,
+    out_ptr: usize = 0,
+    out_cap: usize = 0,
+    /// 0 for no change.
+    out_len: usize = 0,
+};

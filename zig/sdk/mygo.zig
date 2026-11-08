@@ -252,6 +252,7 @@ const ZigEvent = enum(usize) {
     ui_input = 44,
     ui_hit_test = 45,
     audio_end = 46,
+    ui_text_key = 47,
 };
 
 pub const CStr = extern struct {
@@ -371,6 +372,11 @@ pub var ui_input_count: usize = 0;
 pub const RawUIHit = *const fn (hit: *const abi.Hit, userdata: usize) usize;
 pub var ui_hit_handlers: [64]RawUIHit = undefined;
 pub var ui_hit_count: usize = 0;
+
+/// Text input key handlers (OnTextKey); returns 1 to take the key.
+pub const RawUITextKey = *const fn (info: *abi.TextKey, userdata: usize) usize;
+pub var ui_textkey_handlers: [64]RawUITextKey = undefined;
+pub var ui_textkey_count: usize = 0;
 
 /// Player end-of-playback handlers.
 pub const RawAudioEnd = *const fn (player_id: usize, userdata: usize) void;
@@ -926,6 +932,11 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > ui_hit_count) return 0;
                     const hit: *const abi.Hit = @ptrFromInt(a1);
                     return @intCast(ui_hit_handlers[a0 - 1](hit, a2));
+                },
+                .ui_text_key => {
+                    if (a0 == 0 or a0 > ui_textkey_count) return 0;
+                    const info: *abi.TextKey = @ptrFromInt(a1);
+                    return @intCast(ui_textkey_handlers[a0 - 1](info, a2));
                 },
                 .audio_end => {
                     if (a0 == 0 or a0 > audio_end_count) return 0;

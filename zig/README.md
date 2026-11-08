@@ -83,6 +83,9 @@ returns values or takes callbacks:
 | Motion | `transition` · `contentTransition` |
 | Masks | `maskLinearGradient` · `maskRadialGradient` · `maskConicGradient` |
 | Transform | `transform(ui.Transform{}.translate(x, y).rotate(deg)…)` |
+| Masks | `masks(&.{ ui.Mask{ … } })` — gradient layers with composite + box |
+| Timeline | `timeline(key, opts)` → `tween` / `label` / `durationMs` / `timeMs` / `progress` / `settled` / `arrived` |
+| Text | `onTextKey(*T, state, handler)` — replace the text a key takes |
 
 ```zig
 const field = c.textInput("q", buf[0..], &len);
@@ -103,6 +106,41 @@ _ = c.searchField("q", buf[0..], &len)
 
 fn onInput(app: *App, ev: ui.InputEvent) void {
     if (ev.kind == .key_down and ev.key == .f1) app.help = !app.help;
+}
+```
+
+### Timeline
+
+```zig
+const tl = card.timeline("intro", .{ .run = app.opened });
+const x = tl.tween(.{ .from = -200, .to = 0, .duration_ms = 400 }, &.{});
+_ = card.translate(x, 0);
+```
+
+Placements: `.{ .after_previous = 80 }`, `.{ .with_previous = 0 }`, `.{ .at_ms = 200 }`,
+`.{ .at_label = .{ .name = "rows", .offset_ms = 40 } }`.
+
+### Masks
+
+```zig
+_ = c.box().masks(&.{
+    .{ .image = .{ .linear = .{ .angle = 90, .stops = &.{
+        .{ .color = ui.Color.rgb(0, 0, 0), .at = 0 },
+        .{ .color = ui.Color.rgba(0, 0, 0, 0), .at = 1 },
+    } } } },
+    .{ .image = .{ .radial = .{ .radius = 80, .stops = stops } },
+       .composite = .intersect, .box = .padding },
+});
+```
+
+### Text input keys
+
+```zig
+_ = c.textInput("q", buf[0..], &len).onTextKey(*App, &app, App.onKey);
+
+fn onKey(app: *App, k: *ui.TextKey) bool {
+    if (k.key == .f2) { k.replace("…"); return true; }
+    return false;
 }
 ```
 

@@ -255,6 +255,9 @@ const Gallery = struct {
     check_state: ui.CheckState = .mixed,
     beep: mygo.Audio.Sound = .{ .id = 0 },
     beep_ms: u64 = 0,
+    timeline_run: u64 = 0,
+    tk_buf: [64]u8 = @splat(0),
+    tk_len: usize = 0,
     drop_names: [8][]const u8 = @splat(""),
     drop_count: usize = 0,
     flyout_id: i32 = 0,
@@ -937,6 +940,16 @@ const Gallery = struct {
         _ = player.setVolume(0.4);
     }
 
+    fn onTextKey(self: *Gallery, k: *ui.TextKey) bool {
+        _ = self;
+        if (k.key != .f2) return false;
+        var buf: [128]u8 = undefined;
+        const n = @min(k.text.len, buf.len);
+        for (k.text[0..n], 0..) |ch, i| buf[i] = std.ascii.toUpper(ch);
+        k.replace(buf[0..n]);
+        return true;
+    }
+
     fn onInputTake(self: *Gallery, ev: ui.InputEvent) bool {
         // Consume F1 to show handleInput taking one, and nothing else.
         if (ev.kind == .key_down and ev.key == .f1) {
@@ -1545,6 +1558,34 @@ const Gallery = struct {
             if (self.beep_ms > 0) {
                 _ = c.textf("audio {d}ms", .{self.beep_ms}).fontSize(11).textColor(t.text_muted);
             }
+        }
+
+        {
+            const row = c.row().fillWidth().gap(12).center().begin();
+            defer row.end();
+            const tl = (ui.Element{ .ctx = c }).timeline("intro", .{ .run = self.timeline_run });
+            const x = tl.tween(.{ .from = -120, .to = 0, .duration_ms = 350 }, &.{});
+            const card = c.box().width(120).height(44).radius(8).background(t.accent);
+            _ = card.translate(x, 0.0);
+            _ = card.masks(&.{
+                .{ .image = .{ .linear = .{ .angle = 90, .stops = &.{
+                    .{ .color = ui.Color.rgba(0, 0, 0, 255), .at = 0 },
+                    .{ .color = ui.Color.rgba(0, 0, 0, 40), .at = 1 },
+                } } } },
+                .{ .image = .{ .radial = .{ .radius = 70, .center = .{ .x = 60, .y = 22 }, .stops = &.{
+                    .{ .color = ui.Color.rgba(0, 0, 0, 255), .at = 0 },
+                    .{ .color = ui.Color.rgba(0, 0, 0, 0), .at = 1 },
+                } } }, .composite = .intersect, .box = .padding },
+            });
+            const inner = card.begin();
+            defer inner.end();
+            _ = c.text("timeline").fontSize(12).center().textColor(t.accent_text);
+
+            if (c.button("replay", "Replay").clicked()) self.timeline_run +%= 1;
+            _ = c.textInput("tk", self.tk_buf[0..], &self.tk_len)
+                .width(140)
+                .placeholder("F2 uppercases")
+                .onTextKey(*Gallery, self, Gallery.onTextKey);
         }
 
         {

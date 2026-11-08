@@ -2004,4 +2004,90 @@ pub const Element = struct {
         }
         return self;
     }
+
+    /// Masks the element and what is inside it by layers of masks.
+    pub fn masks(self: Element, layers: []const ui.Mask) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.masks));
+        const n: u8 = @intCast(@min(layers.len, 8));
+        self.ctx.writeU8(n);
+        for (layers[0..n]) |layer| {
+            switch (layer.image) {
+                .linear => |g| {
+                    self.ctx.writeU8(0);
+                    self.ctx.writeU8(@intFromEnum(layer.composite));
+                    self.ctx.writeU8(@intFromEnum(layer.box));
+                    self.ctx.writeF32(g.angle);
+                    self.ctx.writeU8(@intFromBool(g.oklab));
+                    self.writeStops(g.stops);
+                },
+                .radial => |g| {
+                    self.ctx.writeU8(1);
+                    self.ctx.writeU8(@intFromEnum(layer.composite));
+                    self.ctx.writeU8(@intFromEnum(layer.box));
+                    self.ctx.writeF32(g.radius);
+                    self.ctx.writeF32(g.center.x);
+                    self.ctx.writeF32(g.center.y);
+                    self.ctx.writeU8(@intFromBool(g.oklab));
+                    self.writeStops(g.stops);
+                },
+                .conic => |g| {
+                    self.ctx.writeU8(2);
+                    self.ctx.writeU8(@intFromEnum(layer.composite));
+                    self.ctx.writeU8(@intFromEnum(layer.box));
+                    self.ctx.writeF32(g.angle);
+                    self.ctx.writeF32(g.center.x);
+                    self.ctx.writeF32(g.center.y);
+                    self.ctx.writeU8(@intFromBool(g.oklab));
+                    self.writeStops(g.stops);
+                },
+            }
+        }
+        return self;
+    }
+
+    /// The timeline the element keeps under key, playing it as o says.
+    pub fn timeline(self: Element, key: []const u8, o: ui.TimelineOptions) ui.Timeline {
+        var flags: u8 = 0;
+        if (o.alternate) flags |= 1;
+        if (o.paused) flags |= 2;
+        if (o.reverse) flags |= 4;
+        if (o.non_motion) flags |= 8;
+        if (o.seek_ms != null) flags |= 16;
+        if (o.progress != null) flags |= 32;
+        self.ctx.writeOp(@intFromEnum(CoreOp.timeline));
+        self.ctx.writeStr(key);
+        self.ctx.writeU8(flags);
+        self.ctx.writeU64(o.run);
+        self.ctx.writeI32(o.repeat);
+        self.ctx.writeI32(o.delay_ms);
+        self.ctx.writeI32(o.repeat_delay_ms);
+        self.ctx.writeI32(o.seek_ms orelse 0);
+        self.ctx.writeF32(o.progress orelse 0);
+        const q = self.ctx.flushQuery();
+        return .{ .ctx = self.ctx, .id = q.int_val };
+    }
+
+    /// Sees each key the element's text input takes, and may replace its text.
+    pub fn onTextKey(
+        self: Element,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, *ui.TextKey) bool,
+    ) Element {
+        const S = struct {
+            var cb_id: usize = 0;
+            fn onKey(info: *ui.CTextKey, ud: usize) usize {
+                const s: StatePtr = @ptrFromInt(ud);
+                var k = ui.textKey(info);
+                const handled = handler(s, &k);
+                info.out_len = k.out_len;
+                return if (handled) 1 else 0;
+            }
+        };
+        if (S.cb_id == 0) S.cb_id = ui.registerTextKeyHandler(&S.onKey);
+        self.ctx.writeOp(@intFromEnum(CoreOp.on_text_key));
+        self.ctx.writeU64(@intCast(S.cb_id));
+        self.ctx.writeU64(@intCast(@intFromPtr(state)));
+        return self;
+    }
 };

@@ -244,6 +244,14 @@ pub fn registerInputHandler(handler: mygo.RawUIInput) usize {
     return mygo.ui_input_count;
 }
 
+/// registerTextKeyHandler adds an OnTextKey handler, returning its id.
+pub fn registerTextKeyHandler(handler: mygo.RawUITextKey) usize {
+    if (mygo.ui_textkey_count >= mygo.ui_textkey_handlers.len) return 0;
+    mygo.ui_textkey_handlers[mygo.ui_textkey_count] = handler;
+    mygo.ui_textkey_count += 1;
+    return mygo.ui_textkey_count;
+}
+
 /// registerHitHandler adds an element hit test, returning its id.
 pub fn registerHitHandler(handler: mygo.RawUIHit) usize {
     if (mygo.ui_hit_count >= mygo.ui_hit_handlers.len) return 0;
@@ -452,7 +460,221 @@ pub const CoreOp = enum(u16) {
     content_transition = 408,
     checkbox_state = 409,
     transform = 410,
+    masks = 415,
+    timeline = 416,
+    timeline_tween = 417,
+    timeline_label = 418,
+    timeline_query = 419,
+    on_text_key = 420,
 };
+
+/// A layer of a mask: the alpha of a gradient across the element's box.
+pub const Mask = struct {
+    pub const Image = union(enum) {
+        linear: LinearGradient,
+        radial: RadialGradient,
+        conic: ConicGradient,
+    };
+
+    image: Image,
+    composite: MaskComposite = .add,
+    box: MaskBox = .border,
+};
+
+pub const MaskComposite = enum(u8) {
+    add = 0,
+    subtract = 1,
+    intersect = 2,
+    exclude = 3,
+    _,
+};
+
+pub const MaskBox = enum(u8) {
+    border = 0,
+    padding = 1,
+    content = 2,
+    _,
+};
+
+pub const LinearGradient = struct {
+    angle: f32 = 0,
+    oklab: bool = false,
+    stops: []const GradientStop = &.{},
+};
+
+pub const RadialGradient = struct {
+    radius: f32 = 0,
+    center: Point = .{},
+    oklab: bool = false,
+    stops: []const GradientStop = &.{},
+};
+
+pub const ConicGradient = struct {
+    angle: f32 = 0,
+    center: Point = .{},
+    oklab: bool = false,
+    stops: []const GradientStop = &.{},
+};
+
+/// Where a Timeline tween starts, as CSS's animation-delay placements.
+pub const Placement = union(enum) {
+    after_previous: i32,
+    with_previous: i32,
+    at_ms: i32,
+    at_label: struct { name: []const u8, offset_ms: i32 },
+};
+
+pub const Tween = struct {
+    from: f32,
+    to: f32,
+    duration_ms: i32 = 0,
+    /// 0 default, 1 linear, 2 ease in, 3 ease out, 4 ease in-out.
+    ease: u8 = 0,
+};
+
+/// How a timeline plays (`ui.TimelineOptions`).
+pub const TimelineOptions = struct {
+    run: u64 = 0,
+    repeat: i32 = 0,
+    alternate: bool = false,
+    paused: bool = false,
+    reverse: bool = false,
+    non_motion: bool = false,
+    delay_ms: i32 = 0,
+    repeat_delay_ms: i32 = 0,
+    seek_ms: ?i32 = null,
+    progress: ?f32 = null,
+};
+
+/// A timeline an element keeps under a key, playing its tweens on one playhead.
+pub const Timeline = struct {
+    ctx: *Context,
+    id: i64,
+
+    pub fn valid(self: Timeline) bool {
+        return self.id > 0;
+    }
+
+    pub fn tween(self: Timeline, tw: Tween, at: []const Placement) f32 {
+        if (!self.valid()) return tw.to;
+        self.ctx.writeOp(@intFromEnum(CoreOp.timeline_tween));
+        self.ctx.writeI64(self.id);
+        self.ctx.writeF32(tw.from);
+        self.ctx.writeF32(tw.to);
+        self.ctx.writeI32(tw.duration_ms);
+        self.ctx.writeU8(tw.ease);
+        writePlacements(self.ctx, at);
+        return @floatCast(self.ctx.flushQuery().num_val);
+    }
+
+    pub fn label(self: Timeline, name: []const u8, at: []const Placement) void {
+        if (!self.valid()) return;
+        self.ctx.writeOp(@intFromEnum(CoreOp.timeline_label));
+        self.ctx.writeI64(self.id);
+        self.ctx.writeStr(name);
+        writePlacements(self.ctx, at);
+        _ = self.ctx.flushQuery();
+    }
+
+    pub fn durationMs(self: Timeline) f32 {
+        return self.query(0);
+    }
+
+    pub fn timeMs(self: Timeline) f32 {
+        return self.query(1);
+    }
+
+    pub fn progress(self: Timeline) f32 {
+        return self.query(2);
+    }
+
+    pub fn settled(self: Timeline) bool {
+        return self.queryBool(3);
+    }
+
+    pub fn arrived(self: Timeline) bool {
+        return self.queryBool(4);
+    }
+
+    fn query(self: Timeline, kind: u8) f32 {
+        if (!self.valid()) return 0;
+        self.ctx.writeOp(@intFromEnum(CoreOp.timeline_query));
+        self.ctx.writeI64(self.id);
+        self.ctx.writeU8(kind);
+        return @floatCast(self.ctx.flushQuery().num_val);
+    }
+
+    fn queryBool(self: Timeline, kind: u8) bool {
+        if (!self.valid()) return false;
+        self.ctx.writeOp(@intFromEnum(CoreOp.timeline_query));
+        self.ctx.writeI64(self.id);
+        self.ctx.writeU8(kind);
+        return self.ctx.flushQuery().bool_val != 0;
+    }
+};
+
+fn writePlacements(c: *Context, at: []const Placement) void {
+    const n: u8 = @intCast(@min(at.len, 8));
+    c.writeU8(n);
+    for (at[0..n]) |p| {
+        switch (p) {
+            .after_previous => |ms| {
+                c.writeU8(0);
+                c.writeI32(ms);
+            },
+            .with_previous => |ms| {
+                c.writeU8(1);
+                c.writeI32(ms);
+            },
+            .at_ms => |ms| {
+                c.writeU8(2);
+                c.writeI32(ms);
+            },
+            .at_label => |l| {
+                c.writeU8(3);
+                c.writeI32(l.offset_ms);
+                c.writeStr(l.name);
+            },
+        }
+    }
+}
+
+/// One key a text input takes, as OnTextKey sees it.
+pub const TextKey = struct {
+    key: Key = .unknown,
+    mods: Modifiers = .{},
+    /// The input's text as the key comes.
+    text: []const u8 = "",
+    out: []u8 = &.{},
+    out_len: usize = 0,
+
+    /// replace sets the text the input takes in place of the key.
+    pub fn replace(self: *TextKey, s: []const u8) void {
+        const n = @min(s.len, self.out.len);
+        @memcpy(self.out[0..n], s[0..n]);
+        self.out_len = n;
+    }
+};
+
+pub const CTextKey = abi.TextKey;
+
+/// textKey reads a host text key. The text is valid while the handler runs.
+pub fn textKey(c: *abi.TextKey) TextKey {
+    const text: []const u8 = if (c.text_len > 0 and c.text_ptr != 0)
+        @as([*]const u8, @ptrFromInt(c.text_ptr))[0..c.text_len]
+    else
+        "";
+    const out: []u8 = if (c.out_cap > 0 and c.out_ptr != 0)
+        @as([*]u8, @ptrFromInt(c.out_ptr))[0..c.out_cap]
+    else
+        &.{};
+    return .{
+        .key = @enumFromInt(@as(u16, @truncate(c.key))),
+        .mods = @bitCast(@as(u8, @truncate(c.mods))),
+        .text = text,
+        .out = out,
+    };
+}
 
 /// A composed 2D/3D transform, as Element.transform applies it.
 pub const Transform = struct {
@@ -1584,6 +1806,12 @@ pub const Context = struct {
 
     pub fn writeI32(self: *Context, v: i32) void {
         self.writeU32(@bitCast(v));
+    }
+
+    pub fn writeI64(self: *Context, v: i64) void {
+        self.ensureSpace(8);
+        std.mem.writeInt(i64, self.buf[self.len..][0..8], v, .little);
+        self.len += 8;
     }
 
     pub fn writeU64(self: *Context, v: u64) void {

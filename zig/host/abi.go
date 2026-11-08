@@ -53,6 +53,7 @@ const (
 	ZigEventUIInput       uintptr = 44 // a0=cb_id a1=*CUIInput a2=userdata → 1 took it
 	ZigEventUIHitTest     uintptr = 45 // a0=cb_id a1=*CUIHit a2=userdata → 1 hit
 	ZigEventAudioEnd      uintptr = 46 // a0=cb_id a1=player_id
+	ZigEventUITextKey     uintptr = 47 // a0=cb_id a1=*CTextKey a2=userdata → 1 handled
 )
 
 // CUIInput is one InputEvent as the Zig side reads it. Layout must match
@@ -105,6 +106,19 @@ const (
 	AudioPlayerSetLoopRange uintptr = 21 // a2=start ms a3=end ms
 	AudioPlayerOnEnd        uintptr = 22 // a2=cb_id
 )
+
+// CTextKey is one ui.TextKey as the Zig side reads it: the key, and the
+// text, with a buffer for the text it replaces it with.
+type CTextKey struct {
+	Key     uint32
+	Mods    uint32
+	TextPtr uintptr
+	TextLen uintptr
+	OutPtr  uintptr
+	OutCap  uintptr
+	// OutLen is what the Zig handler wrote into OutPtr, 0 for no change.
+	OutLen uintptr
+}
 
 // CUIHit asks a Zig hit test whether the pointer at PX, PY hits the element,
 // whose frame is X, Y, W, H.

@@ -163,3 +163,27 @@ Still Go-only, with reasons:
   `Player` with play/pause/stop/close/playing/volume/pan/speed/loop/seek/
   position/duration/loop-range/onEnd (`HostOpAudio=253`, `ZigEventAudioEnd=46`).
   Decoders come from the Go shim's blank imports (audio/vorbis, audio/mp3).
+
+## Phase 11 — masks, timelines, text keys
+
+- `Element.masks(layers)` with gradient layers (`linear`, `radial`, `conic`),
+  `MaskComposite` (add/subtract/intersect/exclude) and `MaskBox`
+  (border/padding/content), op 415.
+- `Element.timeline(key, TimelineOptions)` returns a `ui.Timeline` handle:
+  `tween(Tween, placements)`, `label`, `durationMs`, `timeMs`, `progress`,
+  `settled`, `arrived` (ops 416..419). Placements: after/with previous, at
+  time, at label. The host keeps the pointers in a registry, so the handle
+  is stable across frames.
+- `Element.onTextKey(StatePtr, state, handler)` (op 420,
+  `ZigEventUITextKey=47`): the handler sees key, mods and the input's text,
+  and `TextKey.replace` writes the replacement into a host scratch buffer.
+- The gallery exercises all three: a timeline-driven card with a two-layer
+  mask, and a text input that uppercases on F2.
+
+Not done, with the reason:
+- `HandleTextInput` (the system IME client): feasible the same way, but it
+  needs an IME test harness to be trustworthy (composition, marked ranges,
+  surrogate pairs), which the repo does not have.
+- `ui/richtext` / `ui/graph` hosts: these are document models (9k lines of
+  rich text; a board with its own history), so a host is a port of their
+  APIs, not a binding.

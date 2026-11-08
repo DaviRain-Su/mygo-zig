@@ -241,6 +241,12 @@ const (
 	opContentTransition    uint16 = 408 // flags, preset, dur, delay, bounce, nonMotion
 	opCheckboxState        uint16 = 409 // key, state, label
 	opTransform            uint16 = 410 // u8 n, then (u8 kind, args)*
+	opMasks                uint16 = 415 // u8 n, then layers
+	opTimeline             uint16 = 416 // key, flags, run, repeat, delay, repeatDelay, seek, progress → id
+	opTimelineTween        uint16 = 417 // id, from, to, dur, ease, placements → value
+	opTimelineLabel        uint16 = 418 // id, name, placements
+	opTimelineQuery        uint16 = 419 // id, kind → num/bool
+	opOnTextKey            uint16 = 420 // cb, userdata
 )
 
 // PaintBuffer opcodes decoded by HostOpUIPaintFlush.
@@ -415,6 +421,8 @@ type uiWindowHost struct {
 	webviews map[string]*mygo.WebView
 	wvURLs   map[string]string
 	videos   map[string]*mygoui.VideoPlayer
+
+	textKeyOut []byte
 }
 
 var assetCache sync.Map // hash key → *SVG | ImageSource
@@ -1291,6 +1299,99 @@ func applyMenu(m *mygoui.Menu, nodes []zigMenuNode, chosenID *string) {
 			})
 		}
 	}
+}
+
+var (
+	timelineMu  sync.Mutex
+	timelineSeq uintptr
+	timelines   = map[uintptr]*mygoui.Timeline{}
+	timelineIDs = map[*mygoui.Timeline]uintptr{}
+)
+
+// timelineID gives tl a stable id for the Zig side.
+func timelineID(tl *mygoui.Timeline) uintptr {
+	if tl == nil {
+		return 0
+	}
+	timelineMu.Lock()
+	defer timelineMu.Unlock()
+	if id, ok := timelineIDs[tl]; ok {
+		return id
+	}
+	timelineSeq++
+	id := timelineSeq
+	timelines[id] = tl
+	timelineIDs[tl] = id
+	return id
+}
+
+func timelineByID(id uintptr) *mygoui.Timeline {
+	timelineMu.Lock()
+	defer timelineMu.Unlock()
+	return timelines[id]
+}
+
+// textKeyBuf is the scratch buffer a Zig OnTextKey handler replaces the text in.
+func (wh *uiWindowHost) textKeyBuf() []byte {
+	if wh.textKeyOut == nil {
+		wh.textKeyOut = make([]byte, 256<<10)
+	}
+	return wh.textKeyOut
+}
+
+// zigEasing maps a preset: 1 linear, 2 ease in, 3 ease out, 4 ease in-out,
+// 5 cubic bezier (the four floats follow), 0 the default.
+func zigEasing(preset uint8) mygoui.Easing {
+	switch preset {
+	case 1:
+		return mygoui.Linear
+	case 2:
+		return mygoui.EaseIn
+	case 3:
+		return mygoui.EaseOut
+	case 4:
+		return mygoui.EaseInOut
+	}
+	return nil
+}
+
+// readPlacements reads the placement wire: u8 count, then (u8 kind, args).
+// kind 0 after previous (ms), 1 with previous (ms), 2 at time (ms),
+// 3 at label (name, offset ms), 4 with label (name, offset ms).
+func readPlacements(r *tapeReader) ([]mygoui.Placement, bool) {
+	n, ok := r.u8()
+	if !ok {
+		return nil, false
+	}
+	out := make([]mygoui.Placement, 0, int(n))
+	for range int(n) {
+		kind, ok := r.u8()
+		if !ok {
+			return nil, false
+		}
+		ms, okMS := r.i32()
+		if !okMS {
+			return nil, false
+		}
+		off := time.Duration(ms) * time.Millisecond
+		switch kind {
+		case 0:
+			out = append(out, mygoui.AfterPrevious(off))
+		case 1:
+			out = append(out, mygoui.WithPrevious(off))
+		case 2:
+			out = append(out, mygoui.AtTime(off))
+		case 3:
+			name, okN := r.str()
+			if !okN {
+				return nil, false
+			}
+			out = append(out, mygoui.AtLabel(name, off))
+		default:
+			return nil, false
+		}
+	}
+	return out, true
 }
 
 // zigInput marshals an InputEvent for a Zig handler.
@@ -3830,6 +3931,194 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				}
 			}
 			f.cur = f.cur.Transform(tr)
+		case opMasks:
+			n, ok := r.u8()
+			if !ok {
+				return
+			}
+			layers := make([]mygoui.Mask, 0, int(n))
+			for range int(n) {
+				kind, ok1 := r.u8()
+				composite, ok2 := r.u8()
+				box, ok3 := r.u8()
+				if !ok1 || !ok2 || !ok3 {
+					return
+				}
+				layer := mygoui.Mask{
+					Composite: mygoui.MaskComposite(composite),
+					Box:       mygoui.MaskBox(box),
+				}
+				switch kind {
+				case 0:
+					angle, okA := r.f32()
+					oklab, okO := r.u8()
+					if !okA || !okO {
+						return
+					}
+					stops, okS := readGradientStops(&r)
+					if !okS {
+						return
+					}
+					layer.Image = mygoui.LinearGradient{Angle: angle, Oklab: oklab != 0, Stops: stops}
+				case 1:
+					radius, okR := r.f32()
+					cx, okX := r.f32()
+					cy, okY := r.f32()
+					oklab, okO := r.u8()
+					if !okR || !okX || !okY || !okO {
+						return
+					}
+					stops, okS := readGradientStops(&r)
+					if !okS {
+						return
+					}
+					layer.Image = mygoui.RadialGradient{
+						Radius: radius, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+					}
+				case 2:
+					angle, okA := r.f32()
+					cx, okX := r.f32()
+					cy, okY := r.f32()
+					oklab, okO := r.u8()
+					if !okA || !okX || !okY || !okO {
+						return
+					}
+					stops, okS := readGradientStops(&r)
+					if !okS {
+						return
+					}
+					layer.Image = mygoui.ConicGradient{
+						Angle: angle, Center: mygoui.Point{X: cx, Y: cy}, Oklab: oklab != 0, Stops: stops,
+					}
+				default:
+					return
+				}
+				layers = append(layers, layer)
+			}
+			if len(layers) > 0 {
+				f.cur = f.cur.Masks(layers...)
+			}
+		case opTimeline:
+			key, ok1 := r.str()
+			flags, ok2 := r.u8()
+			run, ok3 := r.u64()
+			repeat, ok4 := r.i32()
+			delay, ok5 := r.i32()
+			repeatDelay, ok6 := r.i32()
+			seekMS, ok7 := r.i32()
+			progress, ok8 := r.f32()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || !ok8 {
+				return
+			}
+			opts := mygoui.TimelineOptions{
+				Run:         run,
+				Repeat:      int(repeat),
+				Alternate:   flags&1 != 0,
+				Paused:      flags&2 != 0,
+				Reverse:     flags&4 != 0,
+				NonMotion:   flags&8 != 0,
+				Delay:       time.Duration(delay) * time.Millisecond,
+				RepeatDelay: time.Duration(repeatDelay) * time.Millisecond,
+			}
+			if flags&16 != 0 {
+				d := time.Duration(seekMS) * time.Millisecond
+				opts.Seek = &d
+			}
+			if flags&32 != 0 {
+				p := progress
+				opts.Progress = &p
+			}
+			tl := f.cur.Timeline(key, opts)
+			if out != nil {
+				out.IntVal = int64(timelineID(tl))
+			}
+		case opTimelineTween:
+			id, ok1 := r.u64()
+			from, ok2 := r.f32()
+			to, ok3 := r.f32()
+			dur, ok4 := r.i32()
+			ease, ok5 := r.u8()
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			placements, okP := readPlacements(&r)
+			if !okP {
+				return
+			}
+			tl := timelineByID(uintptr(id))
+			var v float32
+			if tl != nil {
+				tw := mygoui.Tween{From: from, To: to, Duration: time.Duration(dur) * time.Millisecond}
+				e := zigEasing(ease)
+				if e != nil {
+					tw.Ease = e
+				}
+				v = tl.Tween(tw, placements...)
+			}
+			if out != nil {
+				out.NumVal = float64(v)
+			}
+		case opTimelineLabel:
+			id, ok1 := r.u64()
+			name, ok2 := r.str()
+			if !ok1 || !ok2 {
+				return
+			}
+			placements, okP := readPlacements(&r)
+			if !okP {
+				return
+			}
+			if tl := timelineByID(uintptr(id)); tl != nil {
+				tl.Label(name, placements...)
+			}
+		case opTimelineQuery:
+			id, ok1 := r.u64()
+			kind, ok2 := r.u8()
+			if !ok1 || !ok2 {
+				return
+			}
+			tl := timelineByID(uintptr(id))
+			if tl == nil || out == nil {
+				return
+			}
+			switch kind {
+			case 0:
+				out.NumVal = float64(tl.Duration() / time.Millisecond)
+			case 1:
+				out.NumVal = float64(tl.Time() / time.Millisecond)
+			case 2:
+				out.NumVal = float64(tl.Progress())
+			case 3:
+				out.BoolVal = u8Bool(tl.Settled())
+			case 4:
+				out.BoolVal = u8Bool(tl.Arrived())
+			}
+		case opOnTextKey:
+			cbID, ok1 := r.u64()
+			ud, ok2 := r.u64()
+			if !ok1 || !ok2 {
+				return
+			}
+			wh := f.host
+			f.cur = f.cur.OnTextKey(func(k mygoui.TextKey) bool {
+				text := []byte(k.Text())
+				out := wh.textKeyBuf()
+				spec := host.CTextKey{
+					Key:     uint32(k.Key),
+					Mods:    uint32(k.Mods),
+					TextPtr: uintptr(unsafe.Pointer(unsafe.SliceData(text))),
+					TextLen: uintptr(len(text)),
+					OutPtr:  uintptr(unsafe.Pointer(unsafe.SliceData(out))),
+					OutCap:  uintptr(len(out)),
+				}
+				got := wh.callZig(host.ZigEventUITextKey, uintptr(cbID), uintptr(unsafe.Pointer(&spec)), uintptr(ud), 0)
+				runtime.KeepAlive(text)
+				if spec.OutLen > 0 && spec.OutLen <= uintptr(len(out)) {
+					k.SetText(string(out[:spec.OutLen]))
+				}
+				return got != 0
+			})
+
 		case opAfter:
 			ms, ok := r.i32()
 			if !ok {
