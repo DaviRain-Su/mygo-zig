@@ -31,6 +31,8 @@ const (
 	ZigEventPower         uintptr = 22 // a0=cb_id a1=*CStr event
 	ZigEventApp           uintptr = 23 // a0=cb_id a1=kind a2=*CStr|flag a3
 	ZigEventProtocol      uintptr = 24 // a0=cb_id a1=req_id a2=*CProtocolReq
+	ZigEventAuth          uintptr = 25 // a0=cb_id a1=win_id a2=*CAuthReq a3=req_id
+	ZigEventCert          uintptr = 26 // a0=cb_id a1=win_id a2=*CCertErr; return !=0 allow
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -164,6 +166,9 @@ const (
 	WinCtlSetVibrancyTint      uintptr = 18 // a2=tint ptr, a3=len
 	WinCtlSetProgressBar       uintptr = 19 // a2=*CProgressSpec
 	WinCtlSetContentProtection uintptr = 20 // a2=1/0
+	WinCtlSetAuthHandler       uintptr = 21 // a2=cb_id (0 clears)
+	WinCtlAuthRespond          uintptr = 22 // a2=*CAuthResp
+	WinCtlSetCertHandler       uintptr = 23 // a2=cb_id (0 clears)
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -569,4 +574,27 @@ type CSecretSpec struct {
 	ServicePtr, ServiceLen uintptr // empty → app id
 	KeyPtr, KeyLen         uintptr
 	ValuePtr, ValueLen     uintptr // Set only
+}
+
+type CAuthReq struct {
+	HostPtr, HostLen     uintptr
+	Port                 int32
+	_                    [4]byte
+	RealmPtr, RealmLen   uintptr
+	SchemePtr, SchemeLen uintptr
+	IsProxy              uint8
+	_2                   [7]byte
+}
+
+type CAuthResp struct {
+	ReqID            uintptr
+	UserPtr, UserLen uintptr
+	PassPtr, PassLen uintptr
+}
+
+type CCertErr struct {
+	URLPtr, URLLen     uintptr
+	HostPtr, HostLen   uintptr
+	ErrorPtr, ErrorLen uintptr
+	CertPtr, CertLen   uintptr
 }

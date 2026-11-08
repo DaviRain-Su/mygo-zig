@@ -90,6 +90,9 @@ pub const WinCtl = enum(usize) {
     set_vibrancy_tint = 18,
     set_progress_bar = 19,
     set_content_protection = 20,
+    set_auth_handler = 21,
+    auth_respond = 22,
+    set_cert_handler = 23,
 };
 
 const ZigEvent = enum(usize) {
@@ -117,6 +120,8 @@ const ZigEvent = enum(usize) {
     power = 22,
     app = 23,
     protocol = 24,
+    auth = 25,
+    cert = 26,
 };
 
 pub const CStr = extern struct {
@@ -359,6 +364,50 @@ fn registerMenuHandler(h: RawMenuHandler, userdata: usize) usize {
     return menu_count;
 }
 
+pub const AuthRequest = struct {
+    host: []const u8,
+    port: i32,
+    realm: []const u8,
+    scheme: []const u8,
+    is_proxy: bool,
+};
+
+pub const AuthResponse = struct {
+    username: []const u8 = "",
+    password: []const u8 = "",
+};
+
+pub const CertificateError = struct {
+    url: []const u8,
+    host: []const u8,
+    err: []const u8,
+    certificate: []const u8,
+};
+
+const RawAuthHandler = *const fn (win_id: i32, req_id: usize, req: AuthRequest, userdata: usize) void;
+var auth_handlers: [8]RawAuthHandler = undefined;
+var auth_count: usize = 0;
+var auth_handler_userdata: [8]usize = undefined;
+
+fn registerAuthHandler(h: RawAuthHandler, userdata: usize) usize {
+    auth_handlers[auth_count] = h;
+    auth_handler_userdata[auth_count] = userdata;
+    auth_count += 1;
+    return auth_count;
+}
+
+const RawCertHandler = *const fn (win_id: i32, err: CertificateError, userdata: usize) bool;
+var cert_handlers: [8]RawCertHandler = undefined;
+var cert_count: usize = 0;
+var cert_handler_userdata: [8]usize = undefined;
+
+fn registerCertHandler(h: RawCertHandler, userdata: usize) usize {
+    cert_handlers[cert_count] = h;
+    cert_handler_userdata[cert_count] = userdata;
+    cert_count += 1;
+    return cert_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -549,6 +598,52 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     protocol_handlers[a0 - 1](req_id, req, protocol_handler_userdata[a0 - 1]);
                     return 0;
                 },
+                .auth => {
+                    if (a0 == 0 or a0 > auth_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const creq: *const extern struct {
+                        host_ptr: usize = 0,
+                        host_len: usize = 0,
+                        port: i32 = 0,
+                        _pad: [4]u8 = @splat(0),
+                        realm_ptr: usize = 0,
+                        realm_len: usize = 0,
+                        scheme_ptr: usize = 0,
+                        scheme_len: usize = 0,
+                        is_proxy: u8 = 0,
+                        _pad2: [7]u8 = @splat(0),
+                    } = @ptrFromInt(a2);
+                    const req = AuthRequest{
+                        .host = if (creq.host_ptr != 0 and creq.host_len != 0) @as([*]const u8, @ptrFromInt(creq.host_ptr))[0..creq.host_len] else "",
+                        .port = creq.port,
+                        .realm = if (creq.realm_ptr != 0 and creq.realm_len != 0) @as([*]const u8, @ptrFromInt(creq.realm_ptr))[0..creq.realm_len] else "",
+                        .scheme = if (creq.scheme_ptr != 0 and creq.scheme_len != 0) @as([*]const u8, @ptrFromInt(creq.scheme_ptr))[0..creq.scheme_len] else "",
+                        .is_proxy = creq.is_proxy != 0,
+                    };
+                    auth_handlers[a0 - 1](win_id, a3, req, auth_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .cert => {
+                    if (a0 == 0 or a0 > cert_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const creq: *const extern struct {
+                        url_ptr: usize = 0,
+                        url_len: usize = 0,
+                        host_ptr: usize = 0,
+                        host_len: usize = 0,
+                        error_ptr: usize = 0,
+                        error_len: usize = 0,
+                        cert_ptr: usize = 0,
+                        cert_len: usize = 0,
+                    } = @ptrFromInt(a2);
+                    const err = CertificateError{
+                        .url = if (creq.url_ptr != 0 and creq.url_len != 0) @as([*]const u8, @ptrFromInt(creq.url_ptr))[0..creq.url_len] else "",
+                        .host = if (creq.host_ptr != 0 and creq.host_len != 0) @as([*]const u8, @ptrFromInt(creq.host_ptr))[0..creq.host_len] else "",
+                        .err = if (creq.error_ptr != 0 and creq.error_len != 0) @as([*]const u8, @ptrFromInt(creq.error_ptr))[0..creq.error_len] else "",
+                        .certificate = if (creq.cert_ptr != 0 and creq.cert_len != 0) @as([*]const u8, @ptrFromInt(creq.cert_ptr))[0..creq.cert_len] else "",
+                    };
+                    return if (cert_handlers[a0 - 1](win_id, err, cert_handler_userdata[a0 - 1])) 1 else 0;
+                },
             }
         }
     };
@@ -734,6 +829,56 @@ pub const Window = struct {
 
     pub fn setContentProtection(self: Window, on: bool) void {
         _ = self.ctl(.set_content_protection, @intFromBool(on), 0);
+    }
+
+    /// Register HTTP auth handler. Must call `Window.authRespond` before returning.
+    pub fn setAuthHandler(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, usize, AuthRequest) void) void {
+        const S = struct {
+            fn onAuth(_: i32, req_id: usize, req: AuthRequest, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, req_id, req);
+            }
+        };
+        const cb = registerAuthHandler(&S.onAuth, @intFromPtr(state));
+        _ = self.ctl(.set_auth_handler, cb, 0);
+    }
+
+    pub fn clearAuthHandler(self: Window) void {
+        _ = self.ctl(.set_auth_handler, 0, 0);
+    }
+
+    pub fn authRespond(self: Window, req_id: usize, username: []const u8, password: []const u8) void {
+        const Spec = extern struct {
+            req_id: usize = 0,
+            user_ptr: usize = 0,
+            user_len: usize = 0,
+            pass_ptr: usize = 0,
+            pass_len: usize = 0,
+        };
+        var spec = Spec{
+            .req_id = req_id,
+            .user_ptr = sliceAddr(username),
+            .user_len = username.len,
+            .pass_ptr = sliceAddr(password),
+            .pass_len = password.len,
+        };
+        _ = self.ctl(.auth_respond, @intFromPtr(&spec), 0);
+    }
+
+    /// Certificate error handler; return true to allow the load.
+    pub fn setCertificateErrorHandler(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, CertificateError) bool) void {
+        const S = struct {
+            fn onCert(_: i32, err: CertificateError, ud: usize) bool {
+                const s: StatePtr = @ptrFromInt(ud);
+                return handler(s, err);
+            }
+        };
+        const cb = registerCertHandler(&S.onCert, @intFromPtr(state));
+        _ = self.ctl(.set_cert_handler, cb, 0);
+    }
+
+    pub fn clearCertificateErrorHandler(self: Window) void {
+        _ = self.ctl(.set_cert_handler, 0, 0);
     }
 
     pub fn invalidate(self: Window) void {

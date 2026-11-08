@@ -717,6 +717,12 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		})
 	case WinCtlSetContentProtection:
 		w.SetContentProtection(a2 != 0)
+	case WinCtlSetAuthHandler:
+		setWindowAuthHandler(w, a2)
+	case WinCtlAuthRespond:
+		return authRespond(a2)
+	case WinCtlSetCertHandler:
+		setWindowCertHandler(w, a2)
 	}
 	return 0
 }
@@ -2033,4 +2039,96 @@ func hostSecrets(sub, a1, a2, a3 uintptr) uintptr {
 		SetError(errors.New("zighost: unknown secrets subop"))
 		return ^uintptr(0)
 	}
+}
+
+var (
+	authReqsMu  sync.Mutex
+	authReqs    = map[uintptr]chan mygo.AuthResponse{}
+	nextAuthReq atomic.Uintptr
+)
+
+func setWindowAuthHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil {
+		return
+	}
+	if cbID == 0 {
+		w.Page().SetAuthHandler(nil)
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().SetAuthHandler(func(req mygo.AuthRequest) mygo.AuthResponse {
+		reqID := nextAuthReq.Add(1)
+		ch := make(chan mygo.AuthResponse, 1)
+		authReqsMu.Lock()
+		authReqs[reqID] = ch
+		authReqsMu.Unlock()
+		defer func() {
+			authReqsMu.Lock()
+			delete(authReqs, reqID)
+			authReqsMu.Unlock()
+		}()
+
+		hostB := []byte(req.Host)
+		realmB := []byte(req.Realm)
+		schemeB := []byte(req.Scheme)
+		creq := CAuthReq{Port: int32(req.Port)}
+		if req.IsProxy {
+			creq.IsProxy = 1
+		}
+		creq.HostPtr, creq.HostLen = SliceAddr(hostB)
+		creq.RealmPtr, creq.RealmLen = SliceAddr(realmB)
+		creq.SchemePtr, creq.SchemeLen = SliceAddr(schemeB)
+		// Auth runs on the main thread already; call Zig synchronously so
+		// respond can fill the channel before we return.
+		activeCall(ZigEventAuth, cbID, winID, uintptrSlicePtr(&creq), reqID)
+		select {
+		case r := <-ch:
+			return r
+		default:
+			return mygo.AuthResponse{}
+		}
+	})
+}
+
+func authRespond(a2 uintptr) uintptr {
+	spec := PtrTo[CAuthResp](a2)
+	if spec == nil {
+		return ^uintptr(0)
+	}
+	authReqsMu.Lock()
+	ch := authReqs[spec.ReqID]
+	authReqsMu.Unlock()
+	if ch == nil {
+		return 0
+	}
+	select {
+	case ch <- mygo.AuthResponse{
+		Username: CopyString(spec.UserPtr, spec.UserLen),
+		Password: CopyString(spec.PassPtr, spec.PassLen),
+	}:
+	default:
+	}
+	return 0
+}
+
+func setWindowCertHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil {
+		return
+	}
+	if cbID == 0 {
+		w.Page().SetCertificateErrorHandler(nil)
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().SetCertificateErrorHandler(func(e mygo.CertificateError) bool {
+		urlB := []byte(e.URL)
+		hostB := []byte(e.Host)
+		errB := []byte(e.Error)
+		creq := CCertErr{}
+		creq.URLPtr, creq.URLLen = SliceAddr(urlB)
+		creq.HostPtr, creq.HostLen = SliceAddr(hostB)
+		creq.ErrorPtr, creq.ErrorLen = SliceAddr(errB)
+		creq.CertPtr, creq.CertLen = SliceAddr(e.Certificate)
+		return activeCall(ZigEventCert, cbID, winID, uintptrSlicePtr(&creq), 0) != 0
+	})
 }

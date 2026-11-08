@@ -618,6 +618,25 @@ const Gallery = struct {
 
 
 
+
+    fn onAuthChallenge(self: *Gallery, req_id: usize, req: mygo.AuthRequest) void {
+        const n = @min(req.host.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], req.host[0..n]);
+        self.path_len = n;
+        // Cancel by default (empty credentials) — demo only records the host.
+        if (self.main_win_id != 0) {
+            const win = mygo.Window{ .id = self.main_win_id };
+            win.authRespond(req_id, "", "");
+        }
+    }
+
+    fn onCertError(self: *Gallery, err: mygo.CertificateError) bool {
+        const n = @min(err.host.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], err.host[0..n]);
+        self.path_len = n;
+        return false; // never auto-trust
+    }
+
     fn onDockMenu(self: *Gallery, id: []const u8) void {
         const n = @min(id.len, self.menu_id_buf.len);
         @memcpy(self.menu_id_buf[0..n], id[0..n]);
@@ -1843,6 +1862,8 @@ fn onReady() void {
         return;
     };
     app_state.main_win_id = win.id;
+    win.setAuthHandler(*Gallery, &app_state, Gallery.onAuthChallenge);
+    win.setCertificateErrorHandler(*Gallery, &app_state, Gallery.onCertError);
 }
 
 comptime {
