@@ -33,6 +33,7 @@ const (
 	ZigEventProtocol      uintptr = 24 // a0=cb_id a1=req_id a2=*CProtocolReq
 	ZigEventAuth          uintptr = 25 // a0=cb_id a1=win_id a2=*CAuthReq a3=req_id
 	ZigEventCert          uintptr = 26 // a0=cb_id a1=win_id a2=*CCertErr; return !=0 allow
+	ZigEventDownload      uintptr = 27 // a0=cb_id a1=win_id a2=kind(1 will/2 done) a3=*CDownload
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -65,6 +66,7 @@ const (
 	HostOpProtocol      uintptr = 29 // a0=subop
 	HostOpDesktop       uintptr = 30 // a0=subop — dock/jumplist/recent
 	HostOpSecrets       uintptr = 31 // a0=subop
+	HostOpCookies       uintptr = 32 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -169,6 +171,8 @@ const (
 	WinCtlSetAuthHandler       uintptr = 21 // a2=cb_id (0 clears)
 	WinCtlAuthRespond          uintptr = 22 // a2=*CAuthResp
 	WinCtlSetCertHandler       uintptr = 23 // a2=cb_id (0 clears)
+	WinCtlOnDownload           uintptr = 24 // a2=cb_id (0 clears)
+	WinCtlDownloadRespond      uintptr = 25 // a2=*CDownloadResp
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -597,4 +601,32 @@ type CCertErr struct {
 	HostPtr, HostLen   uintptr
 	ErrorPtr, ErrorLen uintptr
 	CertPtr, CertLen   uintptr
+}
+
+// Cookies sub-ops for HostOpCookies.
+const (
+	CookiesList   uintptr = 1 // a1=*CCookiesListSpec → nbytes written
+	CookiesSet    uintptr = 2 // a1=cookie_json
+	CookiesDelete uintptr = 3
+	CookiesClear  uintptr = 4
+)
+
+type CCookiesListSpec struct {
+	FilterPtr, FilterLen uintptr
+	OutPtr, OutCap       uintptr
+}
+
+type CDownloadEvent struct {
+	ReqID                      uintptr
+	URLPtr, URLLen             uintptr
+	SuggestedPtr, SuggestedLen uintptr
+	PathPtr, PathLen           uintptr
+	ErrPtr, ErrLen             uintptr
+}
+
+type CDownloadResp struct {
+	ReqID            uintptr
+	Prevent          uint8
+	_                [7]byte
+	PathPtr, PathLen uintptr
 }

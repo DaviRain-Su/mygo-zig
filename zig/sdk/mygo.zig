@@ -46,6 +46,7 @@ pub const HostOp = enum(usize) {
     protocol = 29,
     desktop = 30,
     secrets = 31,
+    cookies = 32,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -93,6 +94,8 @@ pub const WinCtl = enum(usize) {
     set_auth_handler = 21,
     auth_respond = 22,
     set_cert_handler = 23,
+    on_download = 24,
+    download_respond = 25,
 };
 
 const ZigEvent = enum(usize) {
@@ -122,6 +125,7 @@ const ZigEvent = enum(usize) {
     protocol = 24,
     auth = 25,
     cert = 26,
+    download = 27,
 };
 
 pub const CStr = extern struct {
@@ -408,6 +412,26 @@ fn registerCertHandler(h: RawCertHandler, userdata: usize) usize {
     return cert_count;
 }
 
+pub const DownloadEvent = struct {
+    req_id: usize = 0,
+    url: []const u8 = "",
+    suggested: []const u8 = "",
+    path: []const u8 = "",
+    err: []const u8 = "",
+};
+
+const RawDownloadHandler = *const fn (win_id: i32, kind: u8, ev: DownloadEvent, userdata: usize) void;
+var download_handlers: [8]RawDownloadHandler = undefined;
+var download_count: usize = 0;
+var download_handler_userdata: [8]usize = undefined;
+
+fn registerDownloadHandler(h: RawDownloadHandler, userdata: usize) usize {
+    download_handlers[download_count] = h;
+    download_handler_userdata[download_count] = userdata;
+    download_count += 1;
+    return download_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -644,6 +668,31 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     };
                     return if (cert_handlers[a0 - 1](win_id, err, cert_handler_userdata[a0 - 1])) 1 else 0;
                 },
+                .download => {
+                    if (a0 == 0 or a0 > download_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const dl_kind: u8 = @intCast(a2);
+                    const creq: *const extern struct {
+                        req_id: usize = 0,
+                        url_ptr: usize = 0,
+                        url_len: usize = 0,
+                        suggested_ptr: usize = 0,
+                        suggested_len: usize = 0,
+                        path_ptr: usize = 0,
+                        path_len: usize = 0,
+                        err_ptr: usize = 0,
+                        err_len: usize = 0,
+                    } = @ptrFromInt(a3);
+                    const ev = DownloadEvent{
+                        .req_id = creq.req_id,
+                        .url = if (creq.url_ptr != 0 and creq.url_len != 0) @as([*]const u8, @ptrFromInt(creq.url_ptr))[0..creq.url_len] else "",
+                        .suggested = if (creq.suggested_ptr != 0 and creq.suggested_len != 0) @as([*]const u8, @ptrFromInt(creq.suggested_ptr))[0..creq.suggested_len] else "",
+                        .path = if (creq.path_ptr != 0 and creq.path_len != 0) @as([*]const u8, @ptrFromInt(creq.path_ptr))[0..creq.path_len] else "",
+                        .err = if (creq.err_ptr != 0 and creq.err_len != 0) @as([*]const u8, @ptrFromInt(creq.err_ptr))[0..creq.err_len] else "",
+                    };
+                    download_handlers[a0 - 1](win_id, dl_kind, ev, download_handler_userdata[a0 - 1]);
+                    return 0;
+                },
             }
         }
     };
@@ -879,6 +928,35 @@ pub const Window = struct {
 
     pub fn clearCertificateErrorHandler(self: Window) void {
         _ = self.ctl(.set_cert_handler, 0, 0);
+    }
+
+    /// kind 1 = will download (must call downloadRespond); kind 2 = done.
+    pub fn onDownload(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, u8, DownloadEvent) void) void {
+        const S = struct {
+            fn onDl(_: i32, kind: u8, ev: DownloadEvent, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, kind, ev);
+            }
+        };
+        const cb = registerDownloadHandler(&S.onDl, @intFromPtr(state));
+        _ = self.ctl(.on_download, cb, 0);
+    }
+
+    pub fn downloadRespond(self: Window, req_id: usize, prevent: bool, path: []const u8) void {
+        const Spec = extern struct {
+            req_id: usize = 0,
+            prevent: u8 = 0,
+            _pad: [7]u8 = @splat(0),
+            path_ptr: usize = 0,
+            path_len: usize = 0,
+        };
+        var spec = Spec{
+            .req_id = req_id,
+            .prevent = if (prevent) 1 else 0,
+            .path_ptr = sliceAddr(path),
+            .path_len = path.len,
+        };
+        _ = self.ctl(.download_respond, @intFromPtr(&spec), 0);
     }
 
     pub fn invalidate(self: Window) void {
@@ -1395,6 +1473,41 @@ pub const Notification = struct {
 
 
 
+
+
+pub const Cookies = struct {
+    pub fn listJSON(allocator: std.mem.Allocator, filter_json: []const u8) Error![]u8 {
+        const Spec = extern struct {
+            filter_ptr: usize = 0,
+            filter_len: usize = 0,
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [65536]u8 = undefined;
+        var spec = Spec{
+            .filter_ptr = sliceAddr(filter_json),
+            .filter_len = filter_json.len,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.cookies, 1, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn setJSON(cookie_json: []const u8) Error!void {
+        if (dispatch(.cookies, 2, sliceAddr(cookie_json), cookie_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn deleteJSON(cookie_json: []const u8) Error!void {
+        if (dispatch(.cookies, 3, sliceAddr(cookie_json), cookie_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn clear() Error!void {
+        if (dispatch(.cookies, 4, 0, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+};
 
 pub const Secrets = struct {
     const CSpec = extern struct {

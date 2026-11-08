@@ -576,6 +576,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpSecrets:
 		return hostSecrets(a0, a1, a2, a3)
 
+	case HostOpCookies:
+		return hostCookies(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -723,6 +726,10 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		return authRespond(a2)
 	case WinCtlSetCertHandler:
 		setWindowCertHandler(w, a2)
+	case WinCtlOnDownload:
+		setWindowDownloadHandler(w, a2)
+	case WinCtlDownloadRespond:
+		return downloadRespond(a2)
 	}
 	return 0
 }
@@ -2131,4 +2138,177 @@ func setWindowCertHandler(w *mygo.Window, cbID uintptr) {
 		creq.CertPtr, creq.CertLen = SliceAddr(e.Certificate)
 		return activeCall(ZigEventCert, cbID, winID, uintptrSlicePtr(&creq), 0) != 0
 	})
+}
+
+var (
+	downloadReqsMu  sync.Mutex
+	downloadReqs    = map[uintptr]chan downloadReply{}
+	nextDownloadReq atomic.Uintptr
+)
+
+type downloadReply struct {
+	prevent bool
+	path    string
+}
+
+func hostCookies(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case CookiesList:
+		spec := PtrTo[CCookiesListSpec](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: cookies list needs spec"))
+			return ^uintptr(0)
+		}
+		var filter mygo.CookieFilter
+		if spec.FilterLen > 0 {
+			if err := json.Unmarshal(CopyBytes(spec.FilterPtr, spec.FilterLen), &filter); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+		}
+		list, err := mygo.Cookies.List(filter)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		type cJSON struct {
+			Name     string `json:"name"`
+			Value    string `json:"value"`
+			Domain   string `json:"domain"`
+			Path     string `json:"path"`
+			Expires  int64  `json:"expires"`
+			Secure   bool   `json:"secure"`
+			HTTPOnly bool   `json:"httpOnly"`
+			SameSite string `json:"sameSite"`
+		}
+		out := make([]cJSON, len(list))
+		for i, c := range list {
+			var exp int64
+			if !c.Expires.IsZero() {
+				exp = c.Expires.Unix()
+			}
+			out[i] = cJSON{c.Name, c.Value, c.Domain, c.Path, exp, c.Secure, c.HTTPOnly, string(c.SameSite)}
+		}
+		raw, err := json.Marshal(out)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(raw, spec.OutPtr, spec.OutCap)
+	case CookiesSet, CookiesDelete:
+		var c mygo.Cookie
+		type inJSON struct {
+			Name     string `json:"name"`
+			Value    string `json:"value"`
+			Domain   string `json:"domain"`
+			Path     string `json:"path"`
+			Expires  int64  `json:"expires"`
+			Secure   bool   `json:"secure"`
+			HTTPOnly bool   `json:"httpOnly"`
+			SameSite string `json:"sameSite"`
+		}
+		var in inJSON
+		if err := json.Unmarshal(CopyBytes(a1, a2), &in); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		c = mygo.Cookie{
+			Name: in.Name, Value: in.Value, Domain: in.Domain, Path: in.Path,
+			Secure: in.Secure, HTTPOnly: in.HTTPOnly, SameSite: mygo.CookieSameSite(in.SameSite),
+		}
+		if in.Expires != 0 {
+			c.Expires = time.Unix(in.Expires, 0)
+		}
+		var err error
+		if sub == CookiesSet {
+			err = mygo.Cookies.Set(c)
+		} else {
+			err = mygo.Cookies.Delete(c)
+		}
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case CookiesClear:
+		if err := mygo.Cookies.Clear(); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown cookies subop"))
+		return ^uintptr(0)
+	}
+}
+
+func setWindowDownloadHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil {
+		return
+	}
+	if cbID == 0 {
+		// cannot easily clear listeners without off handles; set no-op prevent
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().OnWillDownload(func(e *mygo.DownloadEvent) {
+		reqID := nextDownloadReq.Add(1)
+		ch := make(chan downloadReply, 1)
+		downloadReqsMu.Lock()
+		downloadReqs[reqID] = ch
+		downloadReqsMu.Unlock()
+		defer func() {
+			downloadReqsMu.Lock()
+			delete(downloadReqs, reqID)
+			downloadReqsMu.Unlock()
+		}()
+		ev := CDownloadEvent{ReqID: reqID}
+		urlB, sugB, pathB := []byte(e.URL), []byte(e.SuggestedName), []byte(e.Path)
+		ev.URLPtr, ev.URLLen = SliceAddr(urlB)
+		ev.SuggestedPtr, ev.SuggestedLen = SliceAddr(sugB)
+		ev.PathPtr, ev.PathLen = SliceAddr(pathB)
+		activeCall(ZigEventDownload, cbID, winID, 1, uintptrSlicePtr(&ev))
+		select {
+		case r := <-ch:
+			if r.prevent {
+				e.PreventDefault()
+			}
+			if r.path != "" {
+				e.Path = r.path
+			}
+		default:
+		}
+	})
+	w.Page().OnDownloadDone(func(d *mygo.Download) {
+		ev := CDownloadEvent{}
+		urlB, pathB := []byte(d.URL), []byte(d.Path)
+		ev.URLPtr, ev.URLLen = SliceAddr(urlB)
+		ev.PathPtr, ev.PathLen = SliceAddr(pathB)
+		if d.Err != nil {
+			errB := []byte(d.Err.Error())
+			ev.ErrPtr, ev.ErrLen = SliceAddr(errB)
+		}
+		activeCall(ZigEventDownload, cbID, winID, 2, uintptrSlicePtr(&ev))
+	})
+}
+
+func downloadRespond(a2 uintptr) uintptr {
+	spec := PtrTo[CDownloadResp](a2)
+	if spec == nil {
+		return ^uintptr(0)
+	}
+	downloadReqsMu.Lock()
+	ch := downloadReqs[spec.ReqID]
+	downloadReqsMu.Unlock()
+	if ch == nil {
+		return 0
+	}
+	select {
+	case ch <- downloadReply{prevent: spec.Prevent != 0, path: CopyString(spec.PathPtr, spec.PathLen)}:
+	default:
+	}
+	return 0
 }

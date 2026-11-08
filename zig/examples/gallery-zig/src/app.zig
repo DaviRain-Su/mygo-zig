@@ -619,6 +619,26 @@ const Gallery = struct {
 
 
 
+
+    fn onDownload(self: *Gallery, kind: u8, ev: mygo.DownloadEvent) void {
+        if (kind == 1) {
+            // Accept default path.
+            if (self.main_win_id != 0) {
+                const win = mygo.Window{ .id = self.main_win_id };
+                win.downloadRespond(ev.req_id, false, ev.path);
+            }
+            const n = @min(ev.suggested.len, self.path_buf.len);
+            @memcpy(self.path_buf[0..n], ev.suggested[0..n]);
+            self.path_len = n;
+            return;
+        }
+        // done
+        const src = if (ev.err.len > 0) ev.err else ev.path;
+        const n = @min(src.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], src[0..n]);
+        self.path_len = n;
+    }
+
     fn onAuthChallenge(self: *Gallery, req_id: usize, req: mygo.AuthRequest) void {
         const n = @min(req.host.len, self.path_buf.len);
         @memcpy(self.path_buf[0..n], req.host[0..n]);
@@ -1371,6 +1391,14 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("cookie-list", "List cookies").clicked()) {
+                if (mygo.Cookies.listJSON(std.heap.page_allocator, "{}")) |json| {
+                    defer std.heap.page_allocator.free(json);
+                    const n = @min(json.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..n], json[0..n]);
+                    self.path_len = n;
+                } else |_| {}
+            }
             if (c.button("secret-set", "Secret set demo").clicked()) {
                 mygo.Secrets.set("", "gallery-zig-demo", "hello-from-zig") catch {};
             }
@@ -1864,6 +1892,7 @@ fn onReady() void {
     app_state.main_win_id = win.id;
     win.setAuthHandler(*Gallery, &app_state, Gallery.onAuthChallenge);
     win.setCertificateErrorHandler(*Gallery, &app_state, Gallery.onCertError);
+    win.onDownload(*Gallery, &app_state, Gallery.onDownload);
 }
 
 comptime {
