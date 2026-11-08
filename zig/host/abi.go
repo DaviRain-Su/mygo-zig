@@ -29,6 +29,7 @@ const (
 	ZigEventHotkey        uintptr = 20 // a0=cb_id a1=hotkey_id
 	ZigEventTheme         uintptr = 21 // a0=cb_id
 	ZigEventPower         uintptr = 22 // a0=cb_id a1=*CStr event
+	ZigEventApp           uintptr = 23 // a0=cb_id a1=kind a2=*CStr|flag a3
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -57,6 +58,7 @@ const (
 	HostOpHotkey        uintptr = 25 // a0=subop
 	HostOpTheme         uintptr = 26 // a0=subop
 	HostOpPower         uintptr = 27 // a0=subop
+	HostOpAppEvents     uintptr = 28 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -488,3 +490,24 @@ const (
 	PowerRelease     uintptr = 4 // a1=token
 	PowerOnEvent     uintptr = 5 // a1=cb_id (all power events)
 )
+
+// App event sub-ops for HostOpAppEvents.
+const (
+	AppEvOnActivate            uintptr = 1 // a1=cb_id — kind=1, a2=hasVisibleWindows 0/1; return !=0 → n/a
+	AppEvOnDidBecomeActive     uintptr = 2
+	AppEvOnDidResignActive     uintptr = 3
+	AppEvOnBeforeQuit          uintptr = 4  // kind=4; return !=0 → PreventDefault
+	AppEvOnWillQuit            uintptr = 5  // kind=5; return !=0 → PreventDefault
+	AppEvOnOpenURL             uintptr = 6  // kind=6, a2=*CStr url
+	AppEvOnOpenFile            uintptr = 7  // kind=7, a2=*CStr path
+	AppEvOnSecondInstance      uintptr = 8  // kind=8, a2=*CStr JSON {args,wd}
+	AppEvRequestSingleInstance uintptr = 9  // → 1 if first instance
+	AppEvShowAbout             uintptr = 10 // a1=*CAboutSpec
+)
+
+type CAboutSpec struct {
+	NamePtr, NameLen           uintptr
+	VersionPtr, VersionLen     uintptr
+	CopyrightPtr, CopyrightLen uintptr
+	CreditsPtr, CreditsLen     uintptr
+}

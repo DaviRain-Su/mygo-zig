@@ -211,6 +211,9 @@ const Gallery = struct {
     power_event_buf: [32]u8 = undefined,
     power_event_len: usize = 0,
     awake_token: usize = 0,
+    app_active: bool = true,
+    open_url_buf: [128]u8 = undefined,
+    open_url_len: usize = 0,
     dock_progress: f64 = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
@@ -610,6 +613,21 @@ const Gallery = struct {
 
 
 
+
+
+    fn onDidBecomeActive(self: *Gallery) void {
+        self.app_active = true;
+    }
+
+    fn onDidResignActive(self: *Gallery) void {
+        self.app_active = false;
+    }
+
+    fn onOpenURL(self: *Gallery, url: []const u8) void {
+        const n = @min(url.len, self.open_url_buf.len);
+        @memcpy(self.open_url_buf[0..n], url[0..n]);
+        self.open_url_len = n;
+    }
 
     fn onThemeUpdated(self: *Gallery) void {
         self.theme_dark = mygo.Appearance.isDark();
@@ -1303,6 +1321,14 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("about-show", "About…").clicked()) {
+                mygo.Lifecycle.showAbout(.{ .name = "Gallery Zig", .version = "0.1.0", .credits = "Zig binding demo" });
+            }
+            _ = c.textf("app active={s} openURL={s}", .{
+                if (self.app_active) "yes" else "no",
+                if (self.open_url_len > 0) self.open_url_buf[0..self.open_url_len] else "-",
+            }).fontSize(11).textColor(t.text_muted);
+
             if (c.button("theme-toggle", if (self.theme_dark) "Force light" else "Force dark").clicked()) {
                 if (self.theme_dark) {
                     mygo.Appearance.setSource("light");
@@ -1715,6 +1741,9 @@ fn onReady() void {
     app_state.idle_ms = mygo.Power.idleMs();
     mygo.Appearance.onUpdated(*Gallery, &app_state, Gallery.onThemeUpdated);
     mygo.Power.onEvent(*Gallery, &app_state, Gallery.onPowerEvent);
+    mygo.Lifecycle.onDidBecomeActive(*Gallery, &app_state, Gallery.onDidBecomeActive);
+    mygo.Lifecycle.onDidResignActive(*Gallery, &app_state, Gallery.onDidResignActive);
+    mygo.Lifecycle.onOpenURL(*Gallery, &app_state, Gallery.onOpenURL);
     const win = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,

@@ -563,6 +563,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpPower:
 		return hostPower(a0, a1, a2, a3)
 
+	case HostOpAppEvents:
+		return hostAppEvents(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1622,6 +1625,95 @@ func hostPower(sub, a1, a2, a3 uintptr) uintptr {
 		return 0
 	default:
 		SetError(errors.New("zighost: unknown power subop"))
+		return ^uintptr(0)
+	}
+}
+
+func hostAppEvents(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case AppEvOnActivate:
+		cbID := a1
+		mygo.App.OnActivate(func(hasVisibleWindows bool) {
+			var flag uintptr
+			if hasVisibleWindows {
+				flag = 1
+			}
+			activeCall(ZigEventApp, cbID, 1, flag, 0)
+		})
+		return 0
+	case AppEvOnDidBecomeActive:
+		cbID := a1
+		mygo.App.OnDidBecomeActive(func() { activeCall(ZigEventApp, cbID, 2, 0, 0) })
+		return 0
+	case AppEvOnDidResignActive:
+		cbID := a1
+		mygo.App.OnDidResignActive(func() { activeCall(ZigEventApp, cbID, 3, 0, 0) })
+		return 0
+	case AppEvOnBeforeQuit:
+		cbID := a1
+		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+			if activeCall(ZigEventApp, cbID, 4, 0, 0) != 0 {
+				e.PreventDefault()
+			}
+		})
+		return 0
+	case AppEvOnWillQuit:
+		cbID := a1
+		mygo.App.OnWillQuit(func(e *mygo.QuitEvent) {
+			if activeCall(ZigEventApp, cbID, 5, 0, 0) != 0 {
+				e.PreventDefault()
+			}
+		})
+		return 0
+	case AppEvOnOpenURL:
+		cbID := a1
+		mygo.App.OnOpenURL(func(url string) {
+			cs := CStr{}
+			ptr, ln := SliceAddr([]byte(url))
+			cs.Data, cs.Len = ptr, ln
+			activeCall(ZigEventApp, cbID, 6, uintptrSlicePtr(&cs), 0)
+		})
+		return 0
+	case AppEvOnOpenFile:
+		cbID := a1
+		mygo.App.OnOpenFile(func(path string) {
+			cs := CStr{}
+			ptr, ln := SliceAddr([]byte(path))
+			cs.Data, cs.Len = ptr, ln
+			activeCall(ZigEventApp, cbID, 7, uintptrSlicePtr(&cs), 0)
+		})
+		return 0
+	case AppEvOnSecondInstance:
+		cbID := a1
+		mygo.App.OnSecondInstance(func(args []string, wd string) {
+			raw, _ := json.Marshal(struct {
+				Args []string `json:"args"`
+				WD   string   `json:"wd"`
+			}{args, wd})
+			cs := CStr{}
+			ptr, ln := SliceAddr(raw)
+			cs.Data, cs.Len = ptr, ln
+			activeCall(ZigEventApp, cbID, 8, uintptrSlicePtr(&cs), 0)
+		})
+		return 0
+	case AppEvRequestSingleInstance:
+		if mygo.App.RequestSingleInstanceLock() {
+			return 1
+		}
+		return 0
+	case AppEvShowAbout:
+		spec := PtrTo[CAboutSpec](a1)
+		opts := mygo.AboutPanelOptions{}
+		if spec != nil {
+			opts.ApplicationName = CopyString(spec.NamePtr, spec.NameLen)
+			opts.ApplicationVersion = CopyString(spec.VersionPtr, spec.VersionLen)
+			opts.Copyright = CopyString(spec.CopyrightPtr, spec.CopyrightLen)
+			opts.Credits = CopyString(spec.CreditsPtr, spec.CreditsLen)
+		}
+		mygo.App.ShowAboutPanel(opts)
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown app event subop"))
 		return ^uintptr(0)
 	}
 }

@@ -42,6 +42,7 @@ pub const HostOp = enum(usize) {
     hotkey = 25,
     theme = 26,
     power = 27,
+    app_events = 28,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -111,6 +112,7 @@ const ZigEvent = enum(usize) {
     hotkey = 20,
     theme = 21,
     power = 22,
+    app = 23,
 };
 
 pub const CStr = extern struct {
@@ -303,6 +305,20 @@ fn registerPowerHandler(h: RawPowerHandler, userdata: usize) usize {
     return power_count;
 }
 
+/// kind: 1 activate(flag) 2 become 3 resign 4 beforeQuit 5 willQuit 6 openURL 7 openFile 8 secondInstance
+/// Return nonzero from beforeQuit/willQuit handlers to prevent default.
+const RawAppHandler = *const fn (kind: u8, a2: usize, a3: usize, userdata: usize) usize;
+var app_handlers: [16]RawAppHandler = undefined;
+var app_count: usize = 0;
+var app_handler_userdata: [16]usize = undefined;
+
+fn registerAppHandler(h: RawAppHandler, userdata: usize) usize {
+    app_handlers[app_count] = h;
+    app_handler_userdata[app_count] = userdata;
+    app_count += 1;
+    return app_count;
+}
+
 fn registerBytesHandler(h: RawBytesHandler) usize {
     bytes_handlers[bytes_count] = h;
     bytes_count += 1;
@@ -459,6 +475,11 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     } else "";
                     power_handlers[a0 - 1](ev, power_handler_userdata[a0 - 1]);
                     return 0;
+                },
+                .app => {
+                    if (a0 == 0 or a0 > app_count) return 0;
+                    const app_kind: u8 = @intCast(a1);
+                    return @intCast(app_handlers[a0 - 1](app_kind, a2, a3, app_handler_userdata[a0 - 1]));
                 },
             }
         }
@@ -1157,6 +1178,153 @@ pub const Notification = struct {
 };
 
 
+
+
+pub const Lifecycle = struct {
+    fn cstrSlice(ptr: usize) []const u8 {
+        if (ptr == 0) return "";
+        const cs: *const CStr = @ptrFromInt(ptr);
+        return cs.toSlice();
+    }
+
+    pub fn onActivate(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, bool) void) void {
+        const S = struct {
+            fn onApp(kind: u8, a2: usize, _: usize, ud: usize) usize {
+                if (kind != 1) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, a2 != 0);
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 1, cb, 0, 0);
+    }
+
+    pub fn onDidBecomeActive(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 2) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 2, cb, 0, 0);
+    }
+
+    pub fn onDidResignActive(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 3) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 3, cb, 0, 0);
+    }
+
+    /// Handler returns true to cancel quit.
+    pub fn onBeforeQuit(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) bool) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 4) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                return if (handler(s)) 1 else 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 4, cb, 0, 0);
+    }
+
+    pub fn onWillQuit(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) bool) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 5) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                return if (handler(s)) 1 else 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 5, cb, 0, 0);
+    }
+
+    pub fn onOpenURL(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onApp(kind: u8, a2: usize, _: usize, ud: usize) usize {
+                if (kind != 6) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, cstrSlice(a2));
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 6, cb, 0, 0);
+    }
+
+    pub fn onOpenFile(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onApp(kind: u8, a2: usize, _: usize, ud: usize) usize {
+                if (kind != 7) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, cstrSlice(a2));
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 7, cb, 0, 0);
+    }
+
+    /// Payload is JSON `{args:[],wd:""}`.
+    pub fn onSecondInstance(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onApp(kind: u8, a2: usize, _: usize, ud: usize) usize {
+                if (kind != 8) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, cstrSlice(a2));
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 8, cb, 0, 0);
+    }
+
+    /// Returns true if this is the first instance.
+    pub fn requestSingleInstanceLock() bool {
+        return dispatch(.app_events, 9, 0, 0, 0) != 0;
+    }
+
+    pub fn showAbout(opts: struct {
+        name: []const u8 = "",
+        version: []const u8 = "",
+        copyright: []const u8 = "",
+        credits: []const u8 = "",
+    }) void {
+        const Spec = extern struct {
+            name_ptr: usize = 0,
+            name_len: usize = 0,
+            version_ptr: usize = 0,
+            version_len: usize = 0,
+            copyright_ptr: usize = 0,
+            copyright_len: usize = 0,
+            credits_ptr: usize = 0,
+            credits_len: usize = 0,
+        };
+        var spec = Spec{
+            .name_ptr = sliceAddr(opts.name),
+            .name_len = opts.name.len,
+            .version_ptr = sliceAddr(opts.version),
+            .version_len = opts.version.len,
+            .copyright_ptr = sliceAddr(opts.copyright),
+            .copyright_len = opts.copyright.len,
+            .credits_ptr = sliceAddr(opts.credits),
+            .credits_len = opts.credits.len,
+        };
+        _ = dispatch(.app_events, 10, @intFromPtr(&spec), 0, 0);
+    }
+};
 
 pub const Appearance = struct {
     pub fn isDark() bool {
