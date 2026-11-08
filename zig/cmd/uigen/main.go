@@ -637,6 +637,22 @@ func writeZigElement(methods []methodSpec) {
         }
         return self;
     }
+
+    /// Liquid Glass material (blank-import zig/host/glass).
+    pub fn glass(self: Element, opts: ui.GlassOptions) Element {
+        _ = self.ctx.glass(opts);
+        return self;
+    }
+
+    pub fn glassBlur(self: Element, opts: ui.BlurOptions) Element {
+        _ = self.ctx.glassBlur(opts);
+        return self;
+    }
+
+    pub fn scrollEdge(self: Element, hard: bool, at_bottom: bool, bg: u32) Element {
+        _ = self.ctx.scrollEdge(hard, at_bottom, bg);
+        return self;
+    }
 `)
 
 	for _, m := range methods {
