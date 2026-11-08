@@ -19,7 +19,7 @@ Zig app  →  zig/sdk (mygo.zig, ui.zig)  →  zig/host (purego)  →  MyGo core
 
 | Layer | What |
 |-------|------|
-| **Core SDK** | Windows, pages, shell, clipboard, lifecycle, Native UI widgets |
+| **Core SDK** | Windows, pages, shell, clipboard, lifecycle, Native UI widgets, IME, audio, effects, timelines |
 | **Opt-in host** | blank-import packages under `zig/host/*` — pay only for what you use |
 | **Plugins** | Official `plugins/*`; Zig binds them as opt-in hosts (terminal, sqlite, …) |
 
@@ -79,7 +79,10 @@ opcode map and status matrix.
 | `zig/host/automation` | blank-import `plugins/automation` |
 | `zig/host/gamepad` | `mygo.Gamepad` poll |
 | `zig/host/webview` | first-class `mygo.WebView` + `c.webViewHandle` |
-| `zig/host/documents` | full bytes `Documents` (Window via Zig callback); see `zig/examples/documents-zig` |
+| `zig/host/documents` | byte-level `Documents`; `mygo.DocumentsOf(T)` adds typed content |
+| `zig/host/graph` | `ui.Graph`: node canvas, boards, Zig-built node bodies |
+| `zig/host/richtext` | `ui.RichText`: rich text with Markdown/HTML/JSON and undo |
+| `zig/host/video` | native video (`ui/video`) and APNG, with the system's media framework |
 
 `Fetch` / `WebSocket` exist because Zig's ecosystem HTTP and WebSocket
 clients are often incomplete for desktop apps (proxies, forbidden headers,
@@ -90,7 +93,8 @@ dialer.
 
 - `zig/examples/hello-zig` — webview hello
 - `zig/examples/counter-native-zig` — Native UI counter
-- `zig/examples/gallery-zig` — widget + plugin tour
+- `zig/examples/gallery-zig` — widget + plugin tour, 13 tabs
+- `zig/examples/documents-zig` — `DocumentsOf(Note)`, typed documents
 
 ## Syncing upstream
 

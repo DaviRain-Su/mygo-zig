@@ -1,14 +1,58 @@
-# Writing MyGo Apps in Zig (`zig/` — `CGO_ENABLED=0` Purego Architecture)
+# MyZig — writing MyGo apps in Zig
 
-Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`package ui`)** apps—written in **Zig**, built on a **100% `CGO_ENABLED=0` `purego` host**:
+This fork of [MyGo](https://github.com/egoist/mygo) makes **Zig a first-class
+authoring language**. You write the app in Zig; a small Go shim boots it.
 
-- **Zero `cgo` (`CGO_ENABLED=0`)** across macOS, Linux, and Windows (`amd64` & `arm64`).
-- **Single `purego.NewCallback` (`hostDispatch`)** and **single Zig symbol (`mygo_zig_entry`)** for the entire framework.
-- **Zero overhead on pure-Go MyGo apps** (`+0 bytes` on `examples/hello` and `examples/counter-native`).
-- **Pay-only-for-what-you-use**: WebView Zig apps (`zig/host` alone) build without linking `package ui`; Native GPU UI, Markdown and the code editor are separate opt-in imports.
-- **Full `mygo` CLI integration**: `mygo generate` (typed `src/mygo.ts` from Zig `comptime` reflection) and `mygo build` (`.app` / `.dmg` / `.deb` / NSIS).
+```zig
+const mygo = @import("mygo");
 
-> Maintained on the [`DaviRain-Su/myzig`](https://github.com/DaviRain-Su/myzig) fork. Upstream keeps apps Go-authored (`egoist/mygo#1451`); `#1430` `package ffi` is the supported Go→native direction.
+fn view(app: *App, c: *ui.Context) void {
+    const root = c.column().fill().center().gap(12).begin();
+    defer root.end();
+    _ = c.text("Hello from Zig").fontSize(32).bold();
+    if (c.primaryButton("go", "Count").clicked()) app.n += 1;
+}
+
+comptime {
+    mygo.exportApp(.{ .ready = onReady });
+}
+```
+
+```go
+// main.go — the whole Go side
+func main() { host.Main("myapp") }
+```
+
+## How it works
+
+- **No cgo.** The Go side calls into the Zig `cdylib` through `purego`, and
+  Zig calls back through one exported symbol, `mygo_zig_entry`. Everything
+  builds with `CGO_ENABLED=0` on macOS, Linux and Windows, `amd64` and
+  `arm64`.
+- **One wire.** Native UI is a `CommandBuffer` of widgets and modifiers that
+  Zig records into a buffer; the host replays it into `package ui`, which
+  draws it on the GPU. WebView windows use the same host.
+- **Pay for what you use.** `zig/host` alone is a WebView app and links none
+  of `package ui`; each heavy surface (rich text, charts, terminal, SQLite,
+  video, graph…) is its own opt-in package. Pure-Go MyGo apps are unchanged:
+  `examples/hello` and `examples/counter-native` stay at +0 bytes.
+
+## What you can write
+
+| | |
+|---|---|
+| **Windows** | webview or native UI, menus, tray, flyouts, dialogs, notifications, vibrancy, window state |
+| **Native UI** | 297 Element methods: layout, 40+ widgets, tables, lists, text editing, IME, drag and drop, motion, timelines, masks, transforms, effects, a node canvas, rich text, video |
+| **Platform** | clipboard (rich MIME), secrets, cookies, sessions, locale, content rules, protocols, deep links, hotkeys, screen, power, shell, dock/jump list, single instance |
+| **Data** | typed documents (`DocumentsOf(T)`), HTTP, WebSocket, SQLite, watch, updater, audio |
+| **Runtime** | typed IPC and events, a generated TypeScript client for pages, the `mygo` CLI for packaging |
+
+> The rest of this file is the Zig reference: every API, the ABI, the opt-in
+> packages, and what stays Go. Upstream keeps apps Go-authored
+> ([`egoist/mygo#1451`](https://github.com/egoist/mygo/issues/1451));
+> [#1430](https://github.com/egoist/mygo/pull/1430) is the supported Go→native
+> direction. Maintained on
+> [`DaviRain-Su/myzig`](https://github.com/DaviRain-Su/myzig).
 
 ## Directory layout
 
@@ -33,14 +77,17 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 | `host/automation/` | Opt-in MYGO_AUTOMATION (inspector builds) |
 | `host/gamepad/` | Opt-in controller poll |
 | `host/webview/` | First-class WebView handles |
-| `host/documents/` | Bytes document controller |
+| `host/documents/` | Byte-level document controller (`sdk` adds `DocumentsOf(T)`) |
+| `host/graph/` | Opt-in `ui/graph` node canvas (boards, callbacks, node bodies) |
+| `host/richtext/` | Opt-in `ui/richtext` rich text (Markdown/HTML/JSON, undo) |
+| `host/video/` | Opt-in `ui/video` native playback + APNG |
 | `sdk/mygo.zig` | Idiomatic Zig SDK (`exportApp`, `bind`, `declareEvent`, `Window`, …) |
-| `sdk/ui.zig` | Zero-alloc CommandBuffer client + rich controls |
-| `sdk/element_gen.zig` | Generated style / layout / query modifiers |
+| `sdk/ui.zig` | Zero-alloc CommandBuffer client, controls, IME, graph, rich text, effects |
+| `sdk/element_gen.zig` | 202 generated modifiers + 95 hand-written queries and hooks |
 | `examples/hello-zig/` | WebView + generated `src/mygo.ts` |
 | `examples/counter-native-zig/` | GPU UI: numeric transition, Painter wave, 100k-row List |
-| `examples/gallery-zig/` | Full widget tour (Controls / Inputs / Layout / Data / Markdown / Editor) |
-| `examples/documents-zig/` | Bytes Documents demo (open/save/revert) |
+| `examples/gallery-zig/` | Widget tour, 13 tabs (Controls … Graph, Rich, Term) |
+| `examples/documents-zig/` | `DocumentsOf(Note)` demo (typed open/save/revert) |
 
 ## Native UI surface (Zig)
 
@@ -48,7 +95,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 `column` · `row` · `box` · `grid` · `scroll` · `scrollHorizontal` · `scrollBoth` · `spacer` · `divider` · `split` / `splitVertical` / `splitPercent` / `splitVerticalPercent` · `collapsible` · `accordion` / `accordionItem` · `sidebar` · `tabs` · `segmented` · `breadcrumbs` · `fieldset` · `field` · `form` · `toolbar` · `overlay` · `tree` / `treeItem` · `themed` · `router` / `routeView` / `routeMatch` / `routeParam` / `backButton` / `forwardButton`
 
 ### Controls
-`button` / `primaryButton` · `checkbox` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` / `popoverMenuButton` · `contextMenu` / `popoverMenu` (nested `MenuEntry` + submenus) · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction` · `richText` (+ object spans / `drawObjects`) · `webView` · `video` / `registerVideoGIF` / `registerVideoFrames` / `openVideoStream`+`pushVideoFrame` · `toastViewport` / `toastItem` · `drag` / `drop` / `dragOver` · `dragData` / `dropData` / `dataDragOver` · `dragMIME` / `dragMIMELazy` / `dropMIME` · `addToast`/`closeToast` (string Data + userdata + toast id) · motion (`after`/`animateTo`/`animatePose`/…) · `role` · `linearGradient` · `registerBitmap`/`bitmap` · `registerFont` · `registerCanvas` · `conicGradient`/`radialGradient`/`linearGradStops`
+`button` / `primaryButton` · `checkbox` / `checkboxState` / `checkboxGroup` · `toggle` / `toggleGroup` · `switchControl` · `radio` / `radioGroup` · `slider` / `stepSlider` / `rangeSlider` · `stepper` · `numberInput` · `decimalInput` · `rating` · `textInput` / `textArea` / `editableText` / `searchField` / `autocomplete` / `tokenField` / `findBar` · `selectIndex` · `combobox` · `menuButton` / `popoverMenuButton` · `contextMenu` / `popoverMenu` (nested `MenuEntry` + submenus) · `badge` · `link` · `progress` / `meter` · `spinner` · `avatar` · `icon` · `image` · `alertDialog` · `modal` · `popover` · `toast` / `toastAction` · `richText` (+ object spans / `drawObjects`) · `webView` · `video` / `registerVideoGIF` / `registerVideoFrames` / `openVideoStream`+`pushVideoFrame` · `toastViewport` / `toastItem` · `drag` / `drop` / `dragOver` · `dragData` / `dropData` / `dataDragOver` · `dragMIME` / `dragMIMELazy` / `dropMIME` · `addToast`/`closeToast` (string Data + userdata + toast id) · `videoSeek`/`videoSetRate`/`videoSetVolume`/`videoSetMuted`/`videoSetLoop` + position/duration/size · motion (`after`/`animateTo`/`animatePose`/…) · `role` · `linearGradient` · `registerBitmap`/`bitmap` · `registerFont` · `registerCanvas` · `conicGradient`/`radialGradient`/`linearGradStops`
 
 ### Dates & color
 `dateInput` · `timeInput` · `calendar` · `colorPicker` · `colorWell`
@@ -56,10 +103,16 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 ### Data
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
-### Opt-in rich text & charts
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game · graph · richtext
+### Opt-in surfaces
+`markdown` / `markdownStream` (`zig/host/markdown`) · `codeEditor` / `diffView`
+(`zig/host/editor`) · `lineChart` / `barChart` / `areaChart` / `pieChart`
+(`zig/host/chart`) · `terminalView` / `mygo.Terminal` (`zig/host/terminal`) ·
+`ui.Graph` (`zig/host/graph`) · `ui.RichText` (`zig/host/richtext`) · native
+video and APNG (`zig/host/video`) · `mygo.SQLite` · `mygo.Watch` ·
+`mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` ·
+glass · game · gamepad · automation · webview · documents
 
-### 202 Element modifiers (generated)
+### Element modifiers (202 generated, 297 total)
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, `draggable`, …
 
 ### Element queries and hooks (hand-written)
@@ -355,113 +408,87 @@ go run ./zig/cmd/scaffold myapp          # → zig/examples/myapp-zig
 go run ./zig/cmd/scaffold -dir ./apps/x demo
 ```
 
-### Solving the remaining edges
+### Status
 
-| Gap | Zig solution |
-|-----|--------------|
-| Custom / streaming video | `openVideoStream` → `pushVideoFrame` → `video` (HostOps 232–234). Decode in Zig (or another process) and push RGBA; host never calls Zig from the decode goroutine. |
-| Toast `Data any` | Cross-FFI: UTF-8 `data` string + opaque `userdata` (`usize`). Host stores `ZigToastData{Text,User}`; `toastItem` returns both; `addToast` also returns the toast id. |
+Every capability a Go app has is reachable from Zig; the SDK carries 297
+Element methods, 20 host packages, and 400+ ABI operations.
 
-File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
+| Area | What is there |
+|------|---------------|
+| Widgets and chrome | Windows, menus, tray, flyouts, dialogs, notifications, vibrancy, window state, title bar |
+| Native UI | Layout, 40+ widgets, virtualized lists and tables, outline, tree, grid, toolbar, find bar, toasts |
+| Input | Keys, text, IME (`TextInputClient`), `observeInput`/`handleInput`/`hitTest`, drag and drop, rich MIME |
+| Drawing | Painter paths, gradients, masks, transforms, effects (`ui.Effect`), bitmaps, canvases, fonts |
+| Motion | `animate`/`animateTo`/`spring`, keyframes, timelines, transitions, content transitions |
+| Documents | `DocumentsOf(T)` with autosave, typed content, window factory; rich text with Markdown/HTML/JSON |
+| Media | GIF, APNG, pushed frames, streams, native video with the system's framework, audio |
+| Data | HTTP, WebSocket, SQLite, watch, updater |
+| Canvas | `ui.Graph`: boards, node bodies built by Zig, selection/connect/move/delete callbacks |
+| Platform | Clipboard, secrets, cookies, session, locale, content rules, protocol, deep links, hotkey, screen, power, shell, dock/jump list, single instance |
 
-### Notification
-`Notification.supported` · `show` · `close` · `clearAll` · click handlers
+What stays Go, and why it is not a gap:
 
-### Flyout
-`newFlyoutUi` · parent/tray · vibrancy · placement/gap/flags · `Window.setAnchor` · `Context.hasVibrancy`
-
-### Tray
-`Tray.new` · `setIcon`/`setTitle`/`setToolTip`/`setMenuJSON` · `onClick`/`registerMenuHandler`
-
-### Dialogs
-`Dialog.open` / `save` / `message` (blocking, NUL-separated paths)
-
-### Window / a11y (upstream sync)
-`Window.setInputRegion` · Element `role(.status/.log/.alert/…)` (ARIA live status from #1462)
-
-### Motion & timing (now bound)
-`after` · `animationFrame` · `disableAnimations` · `invalidate` · `closeToast` · `animate` / `animateTo` / `spring` · `arrived` · `animateColor` · `animatePose` (`AnimPreset`: custom/smooth/snappy/bouncy)
-
-### Roadmap to "complete"
-
-| Track | Status | Notes |
-|-------|--------|-------|
-| Widgets / chrome / data | Done | Gallery covers Controls→Editor |
-| Drag / toast / video / routes | Done | Incl. stream push + toast userdata |
-| Motion / timing | Done | Ops 322–332 |
-| Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
-| File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
-| Tray | Done | `Tray.new` / menu / click / destroy |
-| Fetch / WebSocket / Updater | Done | HTTP+WS for Zig; thin updater prefs/check |
-| Watch + PermissionFlow | Done | `mygo.Watch` / `mygo.PermissionFlow` opt-in hosts |
-| SQLite plugin SDK | Done | `mygo.SQLite` open/execute/query/transaction (JSON args) |
-| Terminal plugin SDK | Done | `mygo.Terminal` + `ui.terminalView`; gallery Term tab |
-| Completeness batch | Done | App state, window chrome/events, shell icons/trash, clipboard files, page stop/theme/title — see COMPLETENESS.md |
-| Capture / PDF | Done | `capturePagePNG` / `printToPDF` |
-| Zoom / DevTools / Print / Locale.onChanged | Done | page chrome + `Locale.onChanged` |
-| Context menu / ContentRules / media | Done | `onContextMenu`, `ContentRules.compile`, mute/capture/PiP |
-| Page.Eval | Done | `Window.evalJSON` |
-| Locale / FindInPage | Done | `Locale.*`, `Window.findInPage`/`reload`/`goBack`/`goForward` |
-| Login / Relaunch | Done | `Lifecycle.setOpenAtLogin`/`relaunch` |
-| Permission / window.open | Done | `setPermissionHandler`/`setWindowOpenHandler` |
-| Page events | Done | `Window.onPage` / `navigateRespond` (will/did/DOM/fail/gone) |
-| Session | Done | `Session.clearBrowsingData`/`clearData` + window `session_name` |
-| Cookies / Downloads | Done | `Cookies.listJSON`/`setJSON` + `Window.onDownload` |
-| Page auth/cert | Done | `setAuthHandler`/`authRespond`/`setCertificateErrorHandler` |
-| Secrets | Done | `Secrets.set`/`get`/`delete` (Keychain/libsecret/CredMan) |
-| Clipboard image | Done | `writeImage`/`readImage`/`availableFormatsJSON` |
-| Desktop | Done | JumpList / recent docs / Dock menu·icon·hide / App menu |
-| Protocol | Done | `Protocol.handle`/`respond`/`unhandle` custom schemes |
-| Lifecycle | Done | activate/quit/openURL/openFile/single-instance/about/badge/bounce/URL schemes |
-| Appearance / Power | Done | `Appearance.isDark`/`setSource`/`preferencesJSON`, `Power.keepAwake`/`onEvent` |
-| Path / Screen / Hotkey | Done | `Path.get`/`set`, `Screen.displaysJSON`/`cursor`, `Hotkey.register` |
-| Window vibrancy/progress | Done | `setVibrancy`/`setVibrancyTint`/`setProgressBar`/`setContentProtection` + title bar opts/insets |
-| Notification | Done | `Notification.show`/`close`/`clearAll`/`onAppClick` |
-| Flyout | Done | `newFlyoutUi` + vibrancy + `Window.setAnchor` |
-| Bitmap / Canvas / Fonts | Done | `registerBitmap`/`bitmap`, `registerFont`, `registerCanvas` + Painter `canvasBegin`/`End`/`image` |
-| DX: CI + one-shot build | Done | `.github/workflows/zig.yml`; `go run ./zig/cmd/build <app>`; `scaffold -build` |
-| Standalone module path | Open | `mygo-zig` go.mod branding / docs site |
+| Item | Why |
+|------|-----|
+| `Plugin` / `mygo.Use` | It is how Go packages register themselves; the shim calls `host.Use(...)` and Zig uses the feature through its `zig/host` package. |
+| A plugin's JavaScript service | Pages call it; Zig does not go through JS. |
+| Go's type parameters | `DocumentsOf(T)` is their Zig spelling. |
 
 ## Quick start
 
 ```sh
-# Regenerate Element modifiers from ui/api_gen.go:
-go run ./zig/cmd/uigen
+# A new app, from the template
+go run ./zig/cmd/scaffold myapp                   # zig/examples/myapp-zig
+(cd zig/examples/myapp-zig && zig build)          # the dylib
+go run ./cmd/mygo build -skip-dmg zig/examples/myapp-zig
 
-# 1. WebView
-(cd zig/examples/hello-zig && zig build -Doptimize=ReleaseSmall)
-go run ./cmd/mygo generate zig/examples/hello-zig
-go run ./cmd/mygo build -skip-dmg zig/examples/hello-zig
-
-# 2. GPU Native UI (counter)
-(cd zig/examples/counter-native-zig && zig build -Doptimize=ReleaseSmall)
-go run ./cmd/mygo build -skip-dmg zig/examples/counter-native-zig
-
-# 3. Widget gallery (one-shot)
+# Or build an example, dylib and bundle, in one step
 go run ./zig/cmd/build zig/examples/gallery-zig
-open zig/examples/gallery-zig/dist/darwin-arm64/Gallery\ Zig.app
+open zig/examples/gallery-zig/dist/darwin-arm64/"Gallery Zig.app"
+
+# Regenerate the Element modifiers after ui/api_gen.go changes
+go run ./zig/cmd/uigen
 ```
 
 ## Linking opt-in features
+
+An app's Go shim is the only Go it writes:
 
 ```go
 package main
 
 import (
 	"github.com/egoist/mygo/zig/host"
-	_ "github.com/egoist/mygo/zig/host/ui"       // Native GPU UI
-	_ "github.com/egoist/mygo/zig/host/markdown" // optional
-	_ "github.com/egoist/mygo/zig/host/editor"   // optional
-	_ "github.com/egoist/mygo/zig/host/terminal" // optional
-	_ "github.com/egoist/mygo/zig/host/sqlite"   // optional
-	_ "github.com/egoist/mygo/zig/host/watch"    // optional
-	_ "github.com/egoist/mygo/zig/host/permissionflow" // optional
+	_ "github.com/egoist/mygo/zig/host/ui"      // native UI
+	_ "github.com/egoist/mygo/zig/host/markdown"
+	_ "github.com/egoist/mygo/zig/host/editor"
+	_ "github.com/egoist/mygo/zig/host/chart"
+	_ "github.com/egoist/mygo/zig/host/richtext"
+	_ "github.com/egoist/mygo/zig/host/graph"
+	_ "github.com/egoist/mygo/zig/host/video"
+	_ "github.com/egoist/mygo/zig/host/terminal"
+	_ "github.com/egoist/mygo/zig/host/sqlite"
+	_ "github.com/egoist/mygo/zig/host/fetch"
+	_ "github.com/egoist/mygo/zig/host/websocket"
+	_ "github.com/egoist/mygo/zig/host/watch"
+	_ "github.com/egoist/mygo/zig/host/updater"
+	_ "github.com/egoist/mygo/zig/host/permissionflow"
+	_ "github.com/egoist/mygo/zig/host/glass"
+	_ "github.com/egoist/mygo/zig/host/game"
+	_ "github.com/egoist/mygo/zig/host/gamepad"
+	_ "github.com/egoist/mygo/zig/host/webview"
+	_ "github.com/egoist/mygo/zig/host/documents"
 )
 
-func main() { host.Main("myapp") }
+func main() {
+	host.Use(fetch.Plugin) // Go plugins, when the app has pages that call them
+	host.Main("myapp")
+}
 ```
 
-Apps that omit `host/ui` never link `package ui`. Markdown and the editor register their own host opcodes (`200` / `210` / `211`) the same way.
+An app that imports only `host` is a WebView app and links none of `package
+ui`; each package above registers its own host opcode, so an app that does not
+import it pays nothing for it.
 
 ## Syncing upstream
 

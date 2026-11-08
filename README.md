@@ -1,3 +1,32 @@
+# MyZig — write MyGo apps in Zig
+
+This fork of [MyGo](https://github.com/egoist/mygo) makes
+**[Zig](https://ziglang.org)** a first-class language for MyGo apps: windows,
+GPU-drawn native UI, menus, documents, rich text, a node canvas, video, audio
+and the platform APIs, all from Zig, behind a six-line Go shim and with no cgo.
+
+```zig
+const mygo = @import("mygo");
+
+fn view(app: *App, c: *ui.Context) void {
+    const root = c.column().fill().center().gap(12).begin();
+    defer root.end();
+    _ = c.text("Hello from Zig").fontSize(32).bold();
+    if (c.primaryButton("go", "Count").clicked()) app.n += 1;
+}
+```
+
+```go
+// main.go — the whole Go side
+func main() { host.Main("myapp") }
+```
+
+Start with **[zig/README.md](zig/README.md)**: the API, the ABI, the opt-in
+packages, and what stays Go. Upstream keeps apps Go-authored; this fork
+maintains the Zig bindings.
+
+---
+
 <p align="center">
 <img width="800" height="360" alt="MyGo!!!!!" src="https://github.com/user-attachments/assets/c3eee9bc-5f22-4032-95b6-776e8381910a" />
 </p>
