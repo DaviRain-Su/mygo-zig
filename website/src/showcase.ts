@@ -312,4 +312,12 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/gorequest.jpg",
   },
+  {
+    name: "Ferry",
+    description:
+      "A per-process proxy router for Windows, built on ProxyBridge, with ordered rules, SOCKS5 and HTTP proxy nodes, and live connections and logs.",
+    url: "https://github.com/ayuayue/ferry",
+    author: "ayuayue",
+    mode: "web",
+  },
 ]
