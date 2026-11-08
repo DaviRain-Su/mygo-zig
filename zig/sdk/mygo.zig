@@ -77,6 +77,9 @@ pub const WinCtl = enum(usize) {
     load_html = 14,
     set_input_region = 15,
     set_anchor = 16,
+    set_vibrancy = 17,
+    set_vibrancy_tint = 18,
+    set_progress_bar = 19,
 };
 
 const ZigEvent = enum(usize) {
@@ -137,6 +140,8 @@ pub const CWindowOptions = extern struct {
     always_on_top: u8 = 0,
     transparent: u8 = 0,
     _pad: [2]u8 = .{ 0, 0 },
+    vibrancy: CStr = .{},
+    vibrancy_tint: CStr = .{},
 };
 
 const CAssetSpec = extern struct {
@@ -438,6 +443,8 @@ pub const WindowOptions = struct {
     disable_resize: bool = false,
     always_on_top: bool = false,
     transparent: bool = false,
+    vibrancy: []const u8 = "",
+    vibrancy_tint: []const u8 = "",
 
     pub fn toC(self: WindowOptions) CWindowOptions {
         return .{
@@ -457,6 +464,8 @@ pub const WindowOptions = struct {
             .disable_resize = @intFromBool(self.disable_resize),
             .always_on_top = @intFromBool(self.always_on_top),
             .transparent = @intFromBool(self.transparent),
+            .vibrancy = CStr.fromSlice(self.vibrancy),
+            .vibrancy_tint = CStr.fromSlice(self.vibrancy_tint),
         };
     }
 };
@@ -535,6 +544,31 @@ pub const Window = struct {
     pub fn setAnchor(self: Window, r: Rectangle) void {
         var b = CBounds{ .x = r.x, .y = r.y, .width = r.width, .height = r.height };
         _ = self.ctl(.set_anchor, @intFromPtr(&b), 0);
+    }
+
+    /// Material behind transparent content, e.g. "sidebar", "glass", "mica".
+    pub fn setVibrancy(self: Window, material: []const u8) void {
+        _ = self.ctl(.set_vibrancy, sliceAddr(material), material.len);
+    }
+
+    /// Tint for Liquid Glass (macOS 26); empty clears. Syntax of background_color.
+    pub fn setVibrancyTint(self: Window, color: []const u8) Error!void {
+        if (self.ctl(.set_vibrancy_tint, sliceAddr(color), color.len) != 0) return Error.MyGoError;
+    }
+
+    /// Taskbar/Dock progress. State: "", "normal", "indeterminate", "paused", "error".
+    pub fn setProgressBar(self: Window, state: []const u8, value: f64) void {
+        const Spec = extern struct {
+            state_ptr: usize = 0,
+            state_len: usize = 0,
+            value: f64 = 0,
+        };
+        var spec = Spec{
+            .state_ptr = sliceAddr(state),
+            .state_len = state.len,
+            .value = value,
+        };
+        _ = self.ctl(.set_progress_bar, @intFromPtr(&spec), 0);
     }
 
     pub fn invalidate(self: Window) void {

@@ -267,6 +267,8 @@ func ParseWindowOptions(raw *CWindowOptions) mygo.WindowOptions {
 		DisableResize:   raw.DisableResize != 0,
 		AlwaysOnTop:     raw.AlwaysOnTop != 0,
 		Transparent:     raw.Transparent != 0,
+		Vibrancy:        mygo.Vibrancy(StrField(raw.Vibrancy)),
+		VibrancyTint:    StrField(raw.VibrancyTint),
 		Page: mygo.PageOptions{
 			DevTools: mygo.DevTools(raw.DevTools),
 		},
@@ -653,6 +655,23 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		if in := PtrTo[CBounds](a2); in != nil {
 			w.SetAnchor(mygo.Rectangle{X: int(in.X), Y: int(in.Y), Width: int(in.Width), Height: int(in.Height)})
 		}
+	case WinCtlSetVibrancy:
+		w.SetVibrancy(mygo.Vibrancy(CopyString(a2, a3)))
+	case WinCtlSetVibrancyTint:
+		if err := w.SetVibrancyTint(CopyString(a2, a3)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+	case WinCtlSetProgressBar:
+		spec := PtrTo[CProgressSpec](a2)
+		if spec == nil {
+			SetError(errors.New("zighost: progress needs spec"))
+			return ^uintptr(0)
+		}
+		w.SetProgressBar(mygo.ProgressBar{
+			State: mygo.ProgressState(CopyString(spec.StatePtr, spec.StateLen)),
+			Value: spec.Value,
+		})
 	}
 	return 0
 }
