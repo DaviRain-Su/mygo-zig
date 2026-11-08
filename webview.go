@@ -127,6 +127,10 @@ func (w *Window) newWebView(opts WebViewOptions, bg *background) (*WebView, erro
 // Page returns the web view's page.
 func (v *WebView) Page() *Page { return v.w.pg }
 
+// ID identifies the web view's page window, for page APIs that take a
+// window id (load URL, evaluate, navigation events).
+func (v *WebView) ID() int { return v.w.ID() }
+
 // Window returns the window the web view is in.
 func (v *WebView) Window() *Window { return v.w.host }
 

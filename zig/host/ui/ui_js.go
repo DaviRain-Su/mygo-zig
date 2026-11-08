@@ -18,3 +18,5 @@ func WithPainter(p *mygoui.Painter, fn func(handle uintptr)) {
 	_ = p
 	_ = fn
 }
+
+func RegisterWebViewResolver(fn func(id int64) *mygo.WebView) { _ = fn }

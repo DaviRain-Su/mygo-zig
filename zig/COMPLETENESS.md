@@ -46,12 +46,12 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 
 | Item | Why |
 |------|-----|
-| Standalone docs site / go.mod branding | packaging (in-tree `docs/zig.md` Done) |
+| Standalone docs / go.mod | **Done** guide (`zig/BRANDING.md` + docs note) |
 | ~~`Shell.InstalledApps` / `LaunchApp`~~ | **Done** (Shell 8/9) |
 | `Shell.WriteShortcutLink` | Windows-only |
 | ~~Arbitrary MIME `Clipboard.Write`~~ | **Done** (Clipboard 12/13) |
-| Full Documents / NSDocument | Go-first document apps |
-| First-class Zig `WebView` type | Page + UI WebView already |
+| ~~Full Documents~~ (bytes subset) | **Done** (`zig/host/documents`) |
+| ~~First-class Zig `WebView`~~ | **Done** (`zig/host/webview`) |
 | ~~glass / game / automation Zig~~ | **Done** (HostOp 246/247 + blank-import) |
 
 ## Roadmap
@@ -62,6 +62,7 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 4. **Phase 3** — watch + permissionflow — Done
 5. **Phase 4** — docs/zig.md + fetch/websocket/updater — Done
 6. **Phase 5** — edge FFI (apps/MIME/glass/game/automation/recent list) — Done
+7. **Phase 6** — documents/webview/shortcut/gamepad/branding — Done
 
 ## Terminal ABI notes
 
@@ -96,3 +97,10 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 - Desktop 8: RecentDocuments JSON list
 - HostOpGlass=246, HostOpGame=247, ZigEventGameUpdate/Draw=39/40
 - Still Go-only: NewDocuments[T], first-class WebView type, Win shortcut API (none public), go.mod branding
+
+## Phase 6 ABI
+
+- `HostOpGamepad=248` — pads JSON + packed state
+- `HostOpWebView=249` — create/destroy/focus/capture + `ui` op 340 place-by-id
+- `HostOpDocuments=250`, `ZigEventDocuments=41` — bytes Documents, Zig supplies window
+- `Shell` subop 10 — `WriteShortcutLink` (Windows; ErrUnsupported elsewhere)

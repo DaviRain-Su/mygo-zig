@@ -31,6 +31,9 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 | `host/glass/` | Opt-in Liquid Glass / Blur / ScrollEdge |
 | `host/game/` | Opt-in fixed-step game View |
 | `host/automation/` | Opt-in MYGO_AUTOMATION (inspector builds) |
+| `host/gamepad/` | Opt-in controller poll |
+| `host/webview/` | First-class WebView handles |
+| `host/documents/` | Bytes document controller |
 | `sdk/mygo.zig` | Idiomatic Zig SDK (`exportApp`, `bind`, `declareEvent`, `Window`, …) |
 | `sdk/ui.zig` | Zero-alloc CommandBuffer client + rich controls |
 | `sdk/element_gen.zig` | Generated style / layout / query modifiers |

@@ -151,6 +151,8 @@ func (shell) Beep() { nsBeep() }
 
 type screen struct{}
 
+
+
 func (screen) Displays() []platform.Display {
 	var out []platform.Display
 	withPool(func() {

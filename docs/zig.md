@@ -4,8 +4,12 @@ MyGo's core is Go-authored apps. Zig (and other languages) sit **outside**
 core on the [Model A](https://github.com/DaviRain-Su/mygo-zig) host: a
 `CGO_ENABLED=0` purego process loads your Zig dylib and talks over one
 callback. Official inclusion of Zig-authored apps in `egoist/mygo` was
-declined; maintain apps against [`DaviRain-Su/mygo-zig`](https://github.com/DaviRain-Su/mygo-zig)
-(or your fork) and merge `upstream/main` periodically.
+declined; maintain apps against [`DaviRain-Su/myzig`](https://github.com/DaviRain-Su/myzig)
+(canonical rename of `mygo-zig`) and merge `upstream/main` periodically.
+
+Module path in this tree is still `github.com/egoist/mygo/...` so pure-Go
+apps and upstream stay compatible; a standalone `go.mod` rename is optional
+packaging (see `zig/BRANDING.md`).
 
 ## Layers
 
@@ -73,6 +77,9 @@ opcode map and status matrix.
 | `zig/host/glass` | `c.glass` / `glassBlur` / `scrollEdge` |
 | `zig/host/game` | `c.gameView` (fixed-step Update/Draw) |
 | `zig/host/automation` | blank-import `plugins/automation` |
+| `zig/host/gamepad` | `mygo.Gamepad` poll |
+| `zig/host/webview` | first-class `mygo.WebView` + `c.webViewHandle` |
+| `zig/host/documents` | bytes `Documents` (Window via Zig callback) |
 
 `Fetch` / `WebSocket` exist because Zig's ecosystem HTTP and WebSocket
 clients are often incomplete for desktop apps (proxies, forbidden headers,

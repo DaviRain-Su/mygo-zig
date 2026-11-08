@@ -1199,6 +1199,8 @@ func (shell) OpenApplication(path string) error {
 
 // FileIcon returns a transparent PNG of the size asked for, or the error of
 // a path that does not exist.
+
+
 func (shell) FileIcon(path string, size int) ([]byte, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, err

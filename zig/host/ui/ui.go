@@ -32,6 +32,12 @@ func init() {
 	host.UIDispatch = uiDispatch
 }
 
+var webViewResolver func(id int64) *mygo.WebView
+
+// RegisterWebViewResolver lets zig/host/webview resolve first-class WebView ids.
+func RegisterWebViewResolver(fn func(id int64) *mygo.WebView) { webViewResolver = fn }
+
+
 // Core 16-bit opcodes (< 100; >= 100 are AST-generated Element modifiers).
 const (
 	opColumn        uint16 = 1
@@ -135,6 +141,7 @@ const (
 	opDraggable       uint16 = 302
 	opWebView         uint16 = 303
 	opWebViewDestroy  uint16 = 304
+	opWebViewHandle   uint16 = 340 // place first-class WebView by id
 	opDragData        uint16 = 305
 	opDropData        uint16 = 306
 	opDataDragOver    uint16 = 307
@@ -2930,6 +2937,23 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				delete(f.host.webviews, key)
 				delete(f.host.wvURLs, key)
 			}
+
+		case opWebViewHandle:
+			id, ok := r.u64()
+			if !ok {
+				return
+			}
+			if webViewResolver == nil {
+				host.SetError(errors.New("zighost: webview host not linked"))
+				return
+			}
+			wv := webViewResolver(int64(id))
+			if wv == nil || wv.IsDestroyed() {
+				host.SetError(errors.New("zighost: webview handle not found"))
+				f.cur = mygoui.Box(c)
+				return
+			}
+			f.cur = mygoui.WebView(c, wv)
 
 		case opDragData:
 			text, ok := r.str()

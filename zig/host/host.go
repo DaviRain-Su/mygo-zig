@@ -391,6 +391,27 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return GameDispatch(activeCall, op, a0, a1, a2, a3)
 	}
+	if op == HostOpGamepad {
+		if GamepadDispatch == nil {
+			SetError(errors.New("zighost: gamepad not linked (import _ \"github.com/egoist/mygo/zig/host/gamepad\")"))
+			return ^uintptr(0)
+		}
+		return GamepadDispatch(op, a0, a1, a2, a3)
+	}
+	if op == HostOpWebView {
+		if WebViewDispatch == nil {
+			SetError(errors.New("zighost: webview host not linked (import _ \"github.com/egoist/mygo/zig/host/webview\")"))
+			return ^uintptr(0)
+		}
+		return WebViewDispatch(op, a0, a1, a2, a3)
+	}
+	if op == HostOpDocuments {
+		if DocumentsDispatch == nil {
+			SetError(errors.New("zighost: documents not linked (import _ \"github.com/egoist/mygo/zig/host/documents\")"))
+			return ^uintptr(0)
+		}
+		return DocumentsDispatch(activeCall, op, a0, a1, a2, a3)
+	}
 	if op == HostOpSQLite {
 		if SQLiteDispatch == nil {
 			SetError(errors.New("zighost: sqlite not linked (import _ \"github.com/egoist/mygo/zig/host/sqlite\")"))
@@ -802,6 +823,17 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 				return ^uintptr(0)
 			}
 			if err := mygo.Shell.LaunchApp(app); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+		case 10: // WriteShortcutLink JSON
+			var opts mygo.ShortcutLinkOptions
+			if err := json.Unmarshal(CopyBytes(a1, a2), &opts); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			if err := mygo.Shell.WriteShortcutLink(opts); err != nil {
 				SetError(err)
 				return ^uintptr(0)
 			}

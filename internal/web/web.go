@@ -517,6 +517,8 @@ func (shell) FileIcon(string, int) ([]byte, error) { return nil, errUnsupported 
 func (shell) TypeIcon(string, int) ([]byte, error) { return nil, errUnsupported }
 func (shell) OpenApplication(string) error         { return errUnsupported }
 
+
+
 func (*Backend) Applications() ([]platform.Application, error) { return nil, errUnsupported }
 
 type screen struct{}

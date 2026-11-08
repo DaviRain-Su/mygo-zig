@@ -223,6 +223,8 @@ func (shell) Beep() { gdkDisplayBeep(gdkDisplayGetDefault()) }
 
 type screen struct{}
 
+
+
 func (screen) Displays() []platform.Display {
 	d := gdkDisplayGetDefault()
 	if d == 0 {

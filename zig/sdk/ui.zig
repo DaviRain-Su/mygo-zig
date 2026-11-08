@@ -240,6 +240,7 @@ pub const CoreOp = enum(u16) {
     draggable = 302,
     web_view = 303,
     web_view_destroy = 304,
+    web_view_handle = 340,
     drag_data = 305,
     drop_data = 306,
     data_drag_over = 307,
@@ -2812,6 +2813,14 @@ pub const Context = struct {
         self.writeStr(key);
         self.flush();
     }
+    /// Places a first-class `mygo.WebView` created with `mygo.WebView.create`.
+    pub fn webViewHandle(self: *Context, wv: mygo.WebView) Element {
+        self.writeOp(@intFromEnum(CoreOp.web_view_handle));
+        self.writeU64(wv.id);
+        return .{ .ctx = self };
+    }
+
+
 
     /// Native text drag source (Finder / other apps can receive it).
     pub fn dragData(self: *Context, payload: []const u8) void {

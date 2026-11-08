@@ -1,25 +1,14 @@
-# Remaining edge coverage
+# Edge coverage
 
-After Phase 5. Goal was to close every **FFI-reachable** edge that is still
-useful, and document what cannot cross FFI cleanly.
+## Done
 
-## Done (this pass)
+All previously deferred FFI-reachable edges from Phase 5–6, including:
+Documents (bytes), first-class WebView, Windows `.lnk`, gamepad, branding notes.
 
-| Item | Status |
-|------|--------|
-| Shell InstalledApps / LaunchApp | Done — HostOpShell 8/9 JSON |
-| Clipboard HTML + Flush + MIME map | Done — subs 9–13 |
-| Recent documents list | Done — DesktopRecentList |
-| glass | Done — `zig/host/glass` + `Element.glass` / `glassBlur` / `scrollEdge` |
-| game | Done — `zig/host/game` + `Context.gameView` |
-| automation | Done — blank-import `zig/host/automation` |
+## Remaining product choices (not missing FFI)
 
-## Explicitly Go-only / skip
-
-| Item | Why |
-|------|-----|
-| Full `NewDocuments[T]` | Go generics + Read/Write/Window callbacks are the product |
-| Windows WriteShortcutLink | No public Shell API to bind |
-| First-class WebView type | Duplicate of Page window + `ui.webView` |
-| Standalone docs site / go.mod rename | packaging |
-| gamepad deep binding | optional follow-on under game |
+| Item | Note |
+|------|------|
+| Generic `Documents[T]` beyond `[]byte` | Zig apps use bytes + own parse |
+| Standalone npm/docs deploy | packaging when you want a site |
+| gamepad JustPressed helpers | doable in Zig from consecutive `state` polls |

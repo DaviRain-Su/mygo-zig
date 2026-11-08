@@ -1490,6 +1490,9 @@ const Gallery = struct {
             }
             _ = c.box().height(48).fill().radius(12).glass(.{ .style = .regular, .clarity = 0.3 });
             _ = c.text("glass (Liquid Glass material)").fontSize(12).textColor(t.text_muted);
+            if (c.button("pads-demo", "List gamepads").clicked()) {
+                self.runPadsDemo();
+            }
             if (c.button("apps-demo", "List installed apps").clicked()) {
                 self.runAppsDemo();
             }
@@ -2024,6 +2027,21 @@ const Gallery = struct {
 
 
 
+
+
+    fn runPadsDemo(self: *Gallery) void {
+        const alloc = std.heap.page_allocator;
+        const raw = mygo.Gamepad.padsJSON(alloc) catch {
+            const msg = "pads: failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        defer alloc.free(raw);
+        const n = @min(raw.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], raw[0..n]);
+        self.path_len = n;
+    }
 
     fn runAppsDemo(self: *Gallery) void {
         const alloc = std.heap.page_allocator;

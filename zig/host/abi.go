@@ -47,6 +47,7 @@ const (
 	ZigEventWebSocket     uintptr = 38 // a0=cb_id a1=conn_id a2=kind a3=payload
 	ZigEventGameUpdate    uintptr = 39 // a0=cb_id a1=*CGameInput a2=0 a3=userdata
 	ZigEventGameDraw      uintptr = 40 // a0=cb_id a1=painter a2=*CGameDraw a3=userdata
+	ZigEventDocuments     uintptr = 41 // a0=cb_id a1=doc_id a2=kind a3=payload → return win_id for kind=1
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -113,6 +114,9 @@ const (
 	HostOpUpdater        uintptr = 245 // a0=subop
 	HostOpGlass          uintptr = 246 // a0=subop (material)
 	HostOpGame           uintptr = 247 // a0=subop
+	HostOpGamepad        uintptr = 248 // a0=subop
+	HostOpWebView        uintptr = 249 // a0=subop first-class WebView
+	HostOpDocuments      uintptr = 250 // a0=subop bytes documents
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -378,6 +382,9 @@ var WebSocketDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 var UpdaterDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 var GlassDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 var GameDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+var GamepadDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+var WebViewDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+var DocumentsDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr

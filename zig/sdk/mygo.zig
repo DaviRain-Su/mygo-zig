@@ -78,6 +78,9 @@ pub const HostOp = enum(usize) {
     updater = 245,
     glass = 246,
     game = 247,
+    gamepad = 248,
+    webview = 249,
+    documents = 250,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -238,6 +241,7 @@ const ZigEvent = enum(usize) {
     websocket = 38,
     game_update = 39,
     game_draw = 40,
+    documents = 41,
 };
 
 pub const CStr = extern struct {
@@ -743,6 +747,18 @@ pub fn registerGameDraw(h: RawGameDraw, userdata: usize) usize {
     return game_draw_count;
 }
 
+const RawDocHandler = *const fn (doc_id: usize, kind: u8, a3: usize, userdata: usize) usize;
+var doc_handlers: [8]RawDocHandler = undefined;
+var doc_handler_ud: [8]usize = undefined;
+var doc_count: usize = 0;
+
+pub fn registerDocHandler(h: RawDocHandler, userdata: usize) usize {
+    doc_handlers[doc_count] = h;
+    doc_handler_ud[doc_count] = userdata;
+    doc_count += 1;
+    return doc_count;
+}
+
 pub const GameInput = extern struct {
     keys_down: u64 = 0,
     keys_pressed: u64 = 0,
@@ -1202,6 +1218,10 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     const info: *const GameDrawInfo = @ptrFromInt(a2);
                     game_draw_handlers[a0 - 1](a1, info, game_draw_ud[a0 - 1]);
                     return 0;
+                },
+                .documents => {
+                    if (a0 == 0 or a0 > doc_count) return 0;
+                    return @intCast(doc_handlers[a0 - 1](a1, @truncate(a2), a3, doc_handler_ud[a0 - 1]));
                 },
             }
         }
@@ -2725,6 +2745,181 @@ pub const Protocol = struct {
 
 
 
+
+pub const Gamepad = struct {
+    pub fn padsJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.gamepad, 1, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub const State = extern struct {
+        buttons: [17]f32 = @splat(0),
+        axes: [4]f32 = @splat(0),
+        connected: u8 = 0,
+        _pad: [3]u8 = .{ 0, 0, 0 },
+    };
+
+    pub fn state(pad_id: usize) State {
+        var out: State = .{};
+        _ = dispatch(.gamepad, 2, pad_id, @intFromPtr(&out), 0);
+        return out;
+    }
+};
+
+pub const WebView = struct {
+    id: usize = 0,
+
+    pub fn create(parent: Window, url: []const u8, background: []const u8, transparent: bool, scroll_to_container: bool) Error!WebView {
+        const Spec = extern struct {
+            url_ptr: usize = 0,
+            url_len: usize = 0,
+            background_ptr: usize = 0,
+            background_len: usize = 0,
+            transparent: u8 = 0,
+            scroll_to_container: u8 = 0,
+            _pad: [6]u8 = @splat(0),
+        };
+        var spec = Spec{
+            .url_ptr = sliceAddr(url),
+            .url_len = url.len,
+            .background_ptr = sliceAddr(background),
+            .background_len = background.len,
+            .transparent = @intFromBool(transparent),
+            .scroll_to_container = @intFromBool(scroll_to_container),
+        };
+        const id = dispatch(.webview, 1, @intCast(parent.id), @intFromPtr(&spec), 0);
+        if (id == 0 or id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    pub fn destroy(self: WebView) void {
+        _ = dispatch(.webview, 2, self.id, 0, 0);
+    }
+
+    pub fn focus(self: WebView) void {
+        _ = dispatch(.webview, 3, self.id, 0, 0);
+    }
+
+    pub fn isDestroyed(self: WebView) bool {
+        return dispatch(.webview, 4, self.id, 0, 0) != 0;
+    }
+
+    pub fn setBackgroundColor(self: WebView, color: []const u8) Error!void {
+        if (dispatch(.webview, 5, self.id, sliceAddr(color), color.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn capturePagePNG(self: WebView, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4 * 1024 * 1024]u8 = undefined;
+        const got = dispatch(.webview, 6, self.id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    /// Internal page window id for page/WinCtl APIs.
+    pub fn pageWindowID(self: WebView) i32 {
+        return @intCast(dispatch(.webview, 7, self.id, 0, 0));
+    }
+};
+
+pub const Documents = struct {
+    pub const Event = union(enum) {
+        need_window: void,
+        state: []const u8,
+        reload: void,
+    };
+
+    /// Configure before App.Run. `types_json` is `[{ "name","extensions":[...]}]`.
+    /// Handler for need_window must create a native UI window and return its id.
+    pub fn configure(
+        types_json: []const u8,
+        autosave_off: bool,
+        ask_on_quit: bool,
+        no_untitled: bool,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, doc_id: usize, Event) usize,
+    ) Error!void {
+        const S = struct {
+            fn onDoc(doc_id: usize, kind: u8, a3: usize, ud: usize) usize {
+                const s: StatePtr = @ptrFromInt(ud);
+                switch (kind) {
+                    1 => return handler(s, doc_id, .need_window),
+                    2 => {
+                        const payload = if (a3 != 0) blk: {
+                            const cs: *const CStr = @ptrFromInt(a3);
+                            break :blk cs.toSlice();
+                        } else "";
+                        _ = handler(s, doc_id, .{ .state = payload });
+                        return 0;
+                    },
+                    3 => {
+                        _ = handler(s, doc_id, .reload);
+                        return 0;
+                    },
+                    else => return 0,
+                }
+            }
+        };
+        const cb = registerDocHandler(&S.onDoc, @intFromPtr(state));
+        const Spec = extern struct {
+            types_ptr: usize = 0,
+            types_len: usize = 0,
+            autosave_off: u8 = 0,
+            ask_on_quit: u8 = 0,
+            no_untitled: u8 = 0,
+            _pad: u8 = 0,
+            window_cb: usize = 0,
+            window_ud: usize = 0,
+        };
+        var spec = Spec{
+            .types_ptr = sliceAddr(types_json),
+            .types_len = types_json.len,
+            .autosave_off = @intFromBool(autosave_off),
+            .ask_on_quit = @intFromBool(ask_on_quit),
+            .no_untitled = @intFromBool(no_untitled),
+            .window_cb = cb,
+            .window_ud = @intFromPtr(state),
+        };
+        if (dispatch(.documents, 1, @intFromPtr(&spec), 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn new() Error!usize {
+        const id = dispatch(.documents, 2, 0, 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return id;
+    }
+
+    pub fn open(path: []const u8) Error!usize {
+        const id = dispatch(.documents, 3, sliceAddr(path), path.len, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return id;
+    }
+
+    pub fn content(allocator: std.mem.Allocator, doc_id: usize) Error![]u8 {
+        var scratch: [1024 * 1024]u8 = undefined;
+        const got = dispatch(.documents, 6, doc_id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn setContent(doc_id: usize, bytes: []const u8) Error!void {
+        if (dispatch(.documents, 7, doc_id, sliceAddr(bytes), bytes.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn save(doc_id: usize) Error!void {
+        if (dispatch(.documents, 8, doc_id, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn stateJSON(allocator: std.mem.Allocator, doc_id: usize) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.documents, 11, doc_id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+};
+
 pub const Fetch = struct {
     /// Performs one HTTP request. `headers_json` is `[["k","v"],...]` or "[]".
     /// `redirect` is "follow" (default), "error", or "manual".
@@ -3875,6 +4070,11 @@ pub const Shell = struct {
     /// `app_json` is one InstalledApp object, typically `{ "path": "..." }`.
     pub fn launchAppJSON(app_json: []const u8) Error!void {
         if (dispatch(.shell, 9, sliceAddr(app_json), app_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    /// Windows .lnk; ErrUnsupported elsewhere. JSON ShortcutLinkOptions.
+    pub fn writeShortcutLinkJSON(opts_json: []const u8) Error!void {
+        if (dispatch(.shell, 10, sliceAddr(opts_json), opts_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
 };
 
