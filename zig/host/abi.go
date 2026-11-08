@@ -130,25 +130,26 @@ type CCanvasSpec struct {
 
 // Window control sub-opcodes for HostOpWindowControl.
 const (
-	WinCtlShow            uintptr = 1
-	WinCtlHide            uintptr = 2
-	WinCtlClose           uintptr = 3
-	WinCtlCenter          uintptr = 4
-	WinCtlMinimize        uintptr = 5
-	WinCtlMaximize        uintptr = 6
-	WinCtlUnmaximize      uintptr = 7
-	WinCtlSetFullscreen   uintptr = 8
-	WinCtlInvalidate      uintptr = 9
-	WinCtlSetTitle        uintptr = 10
-	WinCtlGetBounds       uintptr = 11
-	WinCtlSetBounds       uintptr = 12
-	WinCtlLoadURL         uintptr = 13
-	WinCtlLoadHTML        uintptr = 14
-	WinCtlSetInputRegion  uintptr = 15 // a2=*CBounds, a3=count; a3=^0 → nil (full)
-	WinCtlSetAnchor       uintptr = 16 // a2=*CBounds — flyout only
-	WinCtlSetVibrancy     uintptr = 17 // a2=vibrancy ptr, a3=len
-	WinCtlSetVibrancyTint uintptr = 18 // a2=tint ptr, a3=len
-	WinCtlSetProgressBar  uintptr = 19 // a2=*CProgressSpec
+	WinCtlShow                 uintptr = 1
+	WinCtlHide                 uintptr = 2
+	WinCtlClose                uintptr = 3
+	WinCtlCenter               uintptr = 4
+	WinCtlMinimize             uintptr = 5
+	WinCtlMaximize             uintptr = 6
+	WinCtlUnmaximize           uintptr = 7
+	WinCtlSetFullscreen        uintptr = 8
+	WinCtlInvalidate           uintptr = 9
+	WinCtlSetTitle             uintptr = 10
+	WinCtlGetBounds            uintptr = 11
+	WinCtlSetBounds            uintptr = 12
+	WinCtlLoadURL              uintptr = 13
+	WinCtlLoadHTML             uintptr = 14
+	WinCtlSetInputRegion       uintptr = 15 // a2=*CBounds, a3=count; a3=^0 → nil (full)
+	WinCtlSetAnchor            uintptr = 16 // a2=*CBounds — flyout only
+	WinCtlSetVibrancy          uintptr = 17 // a2=vibrancy ptr, a3=len
+	WinCtlSetVibrancyTint      uintptr = 18 // a2=tint ptr, a3=len
+	WinCtlSetProgressBar       uintptr = 19 // a2=*CProgressSpec
+	WinCtlSetContentProtection uintptr = 20 // a2=1/0
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -184,6 +185,9 @@ type CWindowOptions struct {
 	_               [2]byte
 	Vibrancy        CStr
 	VibrancyTint    CStr
+	TitleBarStyle   CStr
+	TitleBarHeight  int32
+	_PadTB          [4]byte
 }
 
 // CAssetSpec describes an embedded asset registered by Zig (`@embedFile`).

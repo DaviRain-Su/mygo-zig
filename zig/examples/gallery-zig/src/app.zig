@@ -199,6 +199,7 @@ const Gallery = struct {
     notif_supported: bool = false,
     notif_click_cb: usize = 0,
     win_vibrancy: bool = false,
+    content_protect: bool = false,
     dock_progress: f64 = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
@@ -1273,6 +1274,13 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("protect-toggle", "Toggle content protect").clicked()) {
+                if (self.main_win_id != 0) {
+                    const win = mygo.Window{ .id = self.main_win_id };
+                    self.content_protect = !self.content_protect;
+                    win.setContentProtection(self.content_protect);
+                }
+            }
             if (c.button("vib-toggle", if (self.win_vibrancy) "Clear vibrancy" else "Window glass").clicked()) {
                 if (self.main_win_id != 0) {
                     const win = mygo.Window{ .id = self.main_win_id };
@@ -1297,10 +1305,12 @@ const Gallery = struct {
                     }
                 }
             }
-            _ = c.textf("vibrancy={s} progress={d}% ctx={s}", .{
+            _ = c.textf("vibrancy={s} progress={d}% ctx={s} protect={s} titlebar h={d}", .{
                 if (self.win_vibrancy) "glass" else "off",
                 @as(u32, @intFromFloat(self.dock_progress * 100)),
                 if (c.hasVibrancy()) "yes" else "no",
+                if (self.content_protect) "on" else "off",
+                @as(i32, @intFromFloat(c.titleBar().height)),
             }).fontSize(11).textColor(t.text_muted);
 
             if (self.notif_supported) {

@@ -233,6 +233,9 @@ type cUIFrameInfo struct {
 	WindowActive uint8
 	Vibrancy     uint8
 	_            [2]byte
+	TitleBarH    float32
+	TitleBarL    float32
+	TitleBarR    float32
 	Theme        cUITheme
 }
 
@@ -752,12 +755,16 @@ func makeFrameInfo(wh *uiWindowHost, c *mygoui.Context, th cUITheme) cUIFrameInf
 	if c.Vibrancy() {
 		vib = 1
 	}
+	bar := c.TitleBar()
 	return cUIFrameInfo{
 		WindowID:     wh.winID,
 		Width:        w,
 		Height:       h,
 		WindowActive: active,
 		Vibrancy:     vib,
+		TitleBarH:    bar.Height,
+		TitleBarL:    bar.Left,
+		TitleBarR:    bar.Right,
 		Theme:        th,
 	}
 }
@@ -931,14 +938,7 @@ func runFrame(c *mygoui.Context, wh *uiWindowHost, th cUITheme, fn func(handle u
 }
 
 func runSubview(c *mygoui.Context, wh *uiWindowHost, th cUITheme, cbID, ud uintptr) {
-	w, h := c.Size()
-	info := cUIFrameInfo{
-		WindowID:     wh.winID,
-		Width:        w,
-		Height:       h,
-		WindowActive: 1,
-		Theme:        th,
-	}
+	info := makeFrameInfo(wh, c, th)
 	runFrame(c, wh, th, func(subHandle uintptr) {
 		wh.callZig(host.ZigEventUISubview, cbID, subHandle, uintptr(unsafe.Pointer(&info)), ud)
 	})
@@ -2814,11 +2814,7 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 						activeFrames[idx].cur = viewport
 						activeFrames[idx].toasts = toasts
 					}
-					info := cUIFrameInfo{
-						WindowID:     wh.winID,
-						WindowActive: 1,
-						Theme:        th,
-					}
+					info := makeFrameInfo(wh, c, th)
 					// Pack toast count into Width so Zig knows how many toastItem calls to make.
 					info.Width = float32(len(toasts))
 					wh.callZig(host.ZigEventUISubview, uintptr(bodyCbID), handle, uintptr(unsafe.Pointer(&info)), uintptr(bodyUD))

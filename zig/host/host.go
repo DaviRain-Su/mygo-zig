@@ -269,6 +269,8 @@ func ParseWindowOptions(raw *CWindowOptions) mygo.WindowOptions {
 		Transparent:     raw.Transparent != 0,
 		Vibrancy:        mygo.Vibrancy(StrField(raw.Vibrancy)),
 		VibrancyTint:    StrField(raw.VibrancyTint),
+		TitleBarStyle:   mygo.TitleBarStyle(StrField(raw.TitleBarStyle)),
+		TitleBarHeight:  int(raw.TitleBarHeight),
 		Page: mygo.PageOptions{
 			DevTools: mygo.DevTools(raw.DevTools),
 		},
@@ -672,6 +674,8 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 			State: mygo.ProgressState(CopyString(spec.StatePtr, spec.StateLen)),
 			Value: spec.Value,
 		})
+	case WinCtlSetContentProtection:
+		w.SetContentProtection(a2 != 0)
 	}
 	return 0
 }

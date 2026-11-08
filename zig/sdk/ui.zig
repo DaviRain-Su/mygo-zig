@@ -346,7 +346,16 @@ pub const CFrameInfo = extern struct {
     window_active: u8,
     vibrancy: u8 = 0,
     _pad: [2]u8 = .{ 0, 0 },
+    title_bar_h: f32 = 0,
+    title_bar_l: f32 = 0,
+    title_bar_r: f32 = 0,
     theme: CTheme,
+};
+
+pub const TitleBar = struct {
+    height: f32 = 0,
+    left: f32 = 0,
+    right: f32 = 0,
 };
 
 pub const CListRowInfo = extern struct {
@@ -1157,6 +1166,7 @@ pub const Context = struct {
     height_dip: f32,
     window_active: bool,
     vibrancy: bool = false,
+    title_bar: TitleBar = .{},
     ui_theme: Theme,
     buf: [16384]u8 = undefined,
     len: usize = 0,
@@ -1169,6 +1179,7 @@ pub const Context = struct {
             .height_dip = info.height,
             .window_active = info.window_active != 0,
             .vibrancy = info.vibrancy != 0,
+            .title_bar = .{ .height = info.title_bar_h, .left = info.title_bar_l, .right = info.title_bar_r },
             .ui_theme = Theme.fromC(info.theme),
         };
     }
@@ -1176,6 +1187,11 @@ pub const Context = struct {
     /// True when the window shows a system vibrancy/material behind content.
     pub fn hasVibrancy(self: *const Context) bool {
         return self.vibrancy;
+    }
+
+    /// Room taken by window controls when the title bar is hidden.
+    pub fn titleBar(self: *const Context) TitleBar {
+        return self.title_bar;
     }
 
     pub fn initForRow(handle: usize, info: *const CListRowInfo) Context {

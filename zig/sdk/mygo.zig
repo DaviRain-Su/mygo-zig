@@ -80,6 +80,7 @@ pub const WinCtl = enum(usize) {
     set_vibrancy = 17,
     set_vibrancy_tint = 18,
     set_progress_bar = 19,
+    set_content_protection = 20,
 };
 
 const ZigEvent = enum(usize) {
@@ -142,6 +143,9 @@ pub const CWindowOptions = extern struct {
     _pad: [2]u8 = .{ 0, 0 },
     vibrancy: CStr = .{},
     vibrancy_tint: CStr = .{},
+    title_bar_style: CStr = .{},
+    title_bar_height: i32 = 0,
+    _pad_tb: [4]u8 = @splat(0),
 };
 
 const CAssetSpec = extern struct {
@@ -445,6 +449,9 @@ pub const WindowOptions = struct {
     transparent: bool = false,
     vibrancy: []const u8 = "",
     vibrancy_tint: []const u8 = "",
+    /// "", "default", "hidden", "hiddenInset".
+    title_bar_style: []const u8 = "",
+    title_bar_height: i32 = 0,
 
     pub fn toC(self: WindowOptions) CWindowOptions {
         return .{
@@ -466,6 +473,8 @@ pub const WindowOptions = struct {
             .transparent = @intFromBool(self.transparent),
             .vibrancy = CStr.fromSlice(self.vibrancy),
             .vibrancy_tint = CStr.fromSlice(self.vibrancy_tint),
+            .title_bar_style = CStr.fromSlice(self.title_bar_style),
+            .title_bar_height = self.title_bar_height,
         };
     }
 };
@@ -569,6 +578,10 @@ pub const Window = struct {
             .value = value,
         };
         _ = self.ctl(.set_progress_bar, @intFromPtr(&spec), 0);
+    }
+
+    pub fn setContentProtection(self: Window, on: bool) void {
+        _ = self.ctl(.set_content_protection, @intFromBool(on), 0);
     }
 
     pub fn invalidate(self: Window) void {
