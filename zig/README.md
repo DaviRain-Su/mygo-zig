@@ -8,7 +8,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 - **Pay-only-for-what-you-use**: WebView Zig apps (`zig/host` alone) build without linking `package ui`; Native GPU UI, Markdown and the code editor are separate opt-in imports.
 - **Full `mygo` CLI integration**: `mygo generate` (typed `src/mygo.ts` from Zig `comptime` reflection) and `mygo build` (`.app` / `.dmg` / `.deb` / NSIS).
 
-> Maintained on the [`DaviRain-Su/mygo`](https://github.com/DaviRain-Su/mygo) fork. Upstream keeps apps Go-authored (`egoist/mygo#1451`); `#1430` `package ffi` is the supported Go→native direction.
+> Maintained on the [`DaviRain-Su/myzig`](https://github.com/DaviRain-Su/myzig) fork. Upstream keeps apps Go-authored (`egoist/mygo#1451`); `#1430` `package ffi` is the supported Go→native direction.
 
 ## Directory layout
 
@@ -40,6 +40,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 | `examples/hello-zig/` | WebView + generated `src/mygo.ts` |
 | `examples/counter-native-zig/` | GPU UI: numeric transition, Painter wave, 100k-row List |
 | `examples/gallery-zig/` | Full widget tour (Controls / Inputs / Layout / Data / Markdown / Editor) |
+| `examples/documents-zig/` | Bytes Documents demo (open/save/revert) |
 
 ## Native UI surface (Zig)
 

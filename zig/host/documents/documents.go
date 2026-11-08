@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/zig/host"
@@ -38,6 +39,16 @@ const (
 	docState       = 11 // → JSON DocumentState
 	docWindowID    = 12 // → win_id
 	docPath        = 13 // → string out
+	docRevert      = 14
+	docRename      = 15 // a1=id a2=name
+	docMoveTo      = 16 // a1=id a2=dir
+	docDuplicate   = 17 // → new id
+	docClose       = 18
+	docSetEdited   = 19 // a1=id a2=0/1
+	docChanged     = 20
+	docName        = 21 // → string out
+	docForWindow   = 22 // a1=win_id → doc_id or 0
+	docFocus       = 23
 )
 
 const (
@@ -52,6 +63,7 @@ type cDocConfig struct {
 	AskOnQuit          uint8
 	NoUntitled         uint8
 	_                  byte
+	AutosaveDelayMs    uint32 // 0 = Go default (5s)
 	WindowCb           uintptr // ZigEventDocuments cb id
 	WindowUD           uintptr
 }
@@ -145,6 +157,9 @@ func dispatch(call host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		if spec.AutosaveOff != 0 {
 			opts.Autosave = mygo.AutosaveOff
+		}
+		if spec.AutosaveDelayMs != 0 {
+			opts.AutosaveDelay = time.Duration(spec.AutosaveDelayMs) * time.Millisecond
 		}
 		ds = mygo.NewDocuments(opts)
 		configured.Store(true)
@@ -261,6 +276,92 @@ func dispatch(call host.CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr {
 			return notFound()
 		}
 		return host.WriteStringToOut(d.Path(), a2, a3)
+	case docRevert:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		if err := d.Revert(); err != nil {
+			host.SetError(err)
+			return ^uintptr(0)
+		}
+		host.SetError(nil)
+		return 0
+	case docRename:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		if err := d.Rename(host.CopyString(a2, a3)); err != nil {
+			host.SetError(err)
+			return ^uintptr(0)
+		}
+		host.SetError(nil)
+		return 0
+	case docMoveTo:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		if err := d.MoveTo(host.CopyString(a2, a3)); err != nil {
+			host.SetError(err)
+			return ^uintptr(0)
+		}
+		host.SetError(nil)
+		return 0
+	case docDuplicate:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		return uintptr(putDoc(d.Duplicate()))
+	case docClose:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		d.Close()
+		return 0
+	case docSetEdited:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		d.SetEdited(a2 != 0)
+		return 0
+	case docChanged:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		d.Changed()
+		return 0
+	case docName:
+		d := getDoc(int64(a1))
+		if d == nil {
+			return notFound()
+		}
+		return host.WriteStringToOut(d.Name(), a2, a3)
+	case docForWindow:
+		if ds == nil {
+			return missing()
+		}
+		w := mygo.WindowByID(int(a1))
+		if w == nil {
+			return 0
+		}
+		d := ds.ForWindow(w)
+		if d == nil {
+			return 0
+		}
+		return uintptr(putDoc(d))
+	case docFocus:
+		d := getDoc(int64(a1))
+		if d == nil || d.Window() == nil {
+			return notFound()
+		}
+		d.Window().Focus()
+		return 0
 	default:
 		host.SetError(errors.New("zighost: unknown documents subop"))
 		return ^uintptr(0)

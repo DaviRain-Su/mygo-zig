@@ -7,6 +7,7 @@
 package webview
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -35,14 +36,28 @@ const (
 	wvSetBackgroundColor = 5 // a1=id a2=color_ptr a3=color_len
 	wvCapturePage        = 6 // a1=id a2=out a3=cap → n
 	wvPageWindowID       = 7 // → internal page window id for WinCtl/page ops
+	wvParentWindowID     = 8 // → host window id
 )
 
 type cWebViewSpec struct {
-	URLPtr, URLLen             uintptr
-	BackgroundPtr, BackgroundLen uintptr
-	Transparent                uint8
-	ScrollToContainer          uint8
-	_                          [6]byte
+	URLPtr, URLLen                 uintptr
+	BackgroundPtr, BackgroundLen   uintptr
+	Transparent                    uint8
+	ScrollToContainer              uint8
+	DevTools                       int8 // -1 default, 0 off, 1 on
+	Untrusted                      uint8
+	PreloadAllFrames               uint8
+	SafariTabFocus                 uint8
+	PictureInPicture               uint8
+	SwipeNavigation                uint8
+	PinchZoom                      uint8
+	_pad                           uint8
+	ZoomFactor                     float64 // 0 = default
+	SessionNamePtr, SessionNameLen uintptr
+	PreloadPtr, PreloadLen         uintptr
+	UserAgentPtr, UserAgentLen     uintptr
+	UASuffixPtr, UASuffixLen       uintptr
+	TrustedPtr, TrustedLen         uintptr // JSON []string
 }
 
 func resolve(id int64) *mygo.WebView {
@@ -73,6 +88,30 @@ func dispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 			BackgroundColor:   host.CopyString(spec.BackgroundPtr, spec.BackgroundLen),
 			Transparent:       spec.Transparent != 0,
 			ScrollToContainer: spec.ScrollToContainer != 0,
+			Page: mygo.PageOptions{
+				DevTools:          mygo.DevTools(spec.DevTools),
+				Untrusted:         spec.Untrusted != 0,
+				PreloadScript:     host.CopyString(spec.PreloadPtr, spec.PreloadLen),
+				PreloadAllFrames:  spec.PreloadAllFrames != 0,
+				UserAgent:         host.CopyString(spec.UserAgentPtr, spec.UserAgentLen),
+				UserAgentSuffix:   host.CopyString(spec.UASuffixPtr, spec.UASuffixLen),
+				SafariTabFocus:    spec.SafariTabFocus != 0,
+				PictureInPicture:  spec.PictureInPicture != 0,
+				SwipeNavigation:   spec.SwipeNavigation != 0,
+				PinchZoom:         spec.PinchZoom != 0,
+				ZoomFactor:        spec.ZoomFactor,
+			},
+		}
+		if name := host.CopyString(spec.SessionNamePtr, spec.SessionNameLen); name != "" {
+			opts.Page.Session = mygo.NewSession(name)
+		}
+		if raw := host.CopyBytes(spec.TrustedPtr, spec.TrustedLen); len(raw) > 0 {
+			var origins []string
+			if err := json.Unmarshal(raw, &origins); err != nil {
+				host.SetError(err)
+				return ^uintptr(0)
+			}
+			opts.Page.TrustedOrigins = origins
 		}
 		v, err := parent.NewWebView(opts)
 		if err != nil {
@@ -139,6 +178,12 @@ func dispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 			return 0
 		}
 		return uintptr(v.ID())
+	case wvParentWindowID:
+		v := resolve(int64(a1))
+		if v == nil || v.Window() == nil {
+			return 0
+		}
+		return uintptr(v.Window().ID())
 	default:
 		host.SetError(errors.New("zighost: unknown webview subop"))
 		return ^uintptr(0)

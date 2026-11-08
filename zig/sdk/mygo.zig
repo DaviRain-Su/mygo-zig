@@ -2747,6 +2747,33 @@ pub const Protocol = struct {
 
 
 pub const Gamepad = struct {
+    pub const Button = enum(u8) {
+        south = 0,
+        east = 1,
+        west = 2,
+        north = 3,
+        left_bumper = 4,
+        right_bumper = 5,
+        left_trigger = 6,
+        right_trigger = 7,
+        select = 8,
+        start = 9,
+        left_stick_button = 10,
+        right_stick_button = 11,
+        dpad_up = 12,
+        dpad_down = 13,
+        dpad_left = 14,
+        dpad_right = 15,
+        guide = 16,
+    };
+
+    pub const Axis = enum(u8) {
+        left_x = 0,
+        left_y = 1,
+        right_x = 2,
+        right_y = 3,
+    };
+
     pub fn padsJSON(allocator: std.mem.Allocator) Error![]u8 {
         var scratch: [4096]u8 = undefined;
         const got = dispatch(.gamepad, 1, @intFromPtr(&scratch), scratch.len, 0);
@@ -2759,6 +2786,40 @@ pub const Gamepad = struct {
         axes: [4]f32 = @splat(0),
         connected: u8 = 0,
         _pad: [3]u8 = .{ 0, 0, 0 },
+
+        pub fn value(self: State, b: Button) f32 {
+            return self.buttons[@intFromEnum(b)];
+        }
+
+        pub fn pressed(self: State, b: Button) bool {
+            return self.value(b) >= 0.25;
+        }
+
+        pub fn justPressed(self: State, last: State, b: Button) bool {
+            return self.pressed(b) and !last.pressed(b);
+        }
+
+        pub fn justReleased(self: State, last: State, b: Button) bool {
+            return !self.pressed(b) and last.pressed(b);
+        }
+
+        pub fn leftStick(self: State) struct { x: f32, y: f32 } {
+            const p = stick(self.axes[0], self.axes[1]);
+            return .{ .x = p[0], .y = p[1] };
+        }
+
+        pub fn rightStick(self: State) struct { x: f32, y: f32 } {
+            const p = stick(self.axes[2], self.axes[3]);
+            return .{ .x = p[0], .y = p[1] };
+        }
+
+        fn stick(x: f32, y: f32) [2]f32 {
+            const dead: f32 = 0.1;
+            const m = @sqrt(x * x + y * y);
+            if (m < dead) return .{ 0, 0 };
+            const k = @min((m - dead) / (1 - dead), 1) / m;
+            return .{ x * k, y * k };
+        }
     };
 
     pub fn state(pad_id: usize) State {
@@ -2771,7 +2832,29 @@ pub const Gamepad = struct {
 pub const WebView = struct {
     id: usize = 0,
 
-    pub fn create(parent: Window, url: []const u8, background: []const u8, transparent: bool, scroll_to_container: bool) Error!WebView {
+    pub const CreateOptions = struct {
+        url: []const u8 = "",
+        background: []const u8 = "",
+        transparent: bool = false,
+        scroll_to_container: bool = false,
+        /// -1 = platform default, 0 = off, 1 = on
+        devtools: i8 = -1,
+        untrusted: bool = false,
+        preload_all_frames: bool = false,
+        safari_tab_focus: bool = false,
+        picture_in_picture: bool = false,
+        swipe_navigation: bool = false,
+        pinch_zoom: bool = false,
+        zoom_factor: f64 = 0,
+        session_name: []const u8 = "",
+        preload_script: []const u8 = "",
+        user_agent: []const u8 = "",
+        user_agent_suffix: []const u8 = "",
+        /// JSON array of trusted origins, e.g. `["https://example.com"]`
+        trusted_origins_json: []const u8 = "",
+    };
+
+    pub fn create(parent: Window, opts: CreateOptions) Error!WebView {
         const Spec = extern struct {
             url_ptr: usize = 0,
             url_len: usize = 0,
@@ -2779,15 +2862,51 @@ pub const WebView = struct {
             background_len: usize = 0,
             transparent: u8 = 0,
             scroll_to_container: u8 = 0,
-            _pad: [6]u8 = @splat(0),
+            devtools: i8 = -1,
+            untrusted: u8 = 0,
+            preload_all_frames: u8 = 0,
+            safari_tab_focus: u8 = 0,
+            picture_in_picture: u8 = 0,
+            swipe_navigation: u8 = 0,
+            pinch_zoom: u8 = 0,
+            _pad: u8 = 0,
+            zoom_factor: f64 = 0,
+            session_name_ptr: usize = 0,
+            session_name_len: usize = 0,
+            preload_ptr: usize = 0,
+            preload_len: usize = 0,
+            user_agent_ptr: usize = 0,
+            user_agent_len: usize = 0,
+            ua_suffix_ptr: usize = 0,
+            ua_suffix_len: usize = 0,
+            trusted_ptr: usize = 0,
+            trusted_len: usize = 0,
         };
         var spec = Spec{
-            .url_ptr = sliceAddr(url),
-            .url_len = url.len,
-            .background_ptr = sliceAddr(background),
-            .background_len = background.len,
-            .transparent = @intFromBool(transparent),
-            .scroll_to_container = @intFromBool(scroll_to_container),
+            .url_ptr = sliceAddr(opts.url),
+            .url_len = opts.url.len,
+            .background_ptr = sliceAddr(opts.background),
+            .background_len = opts.background.len,
+            .transparent = @intFromBool(opts.transparent),
+            .scroll_to_container = @intFromBool(opts.scroll_to_container),
+            .devtools = opts.devtools,
+            .untrusted = @intFromBool(opts.untrusted),
+            .preload_all_frames = @intFromBool(opts.preload_all_frames),
+            .safari_tab_focus = @intFromBool(opts.safari_tab_focus),
+            .picture_in_picture = @intFromBool(opts.picture_in_picture),
+            .swipe_navigation = @intFromBool(opts.swipe_navigation),
+            .pinch_zoom = @intFromBool(opts.pinch_zoom),
+            .zoom_factor = opts.zoom_factor,
+            .session_name_ptr = sliceAddr(opts.session_name),
+            .session_name_len = opts.session_name.len,
+            .preload_ptr = sliceAddr(opts.preload_script),
+            .preload_len = opts.preload_script.len,
+            .user_agent_ptr = sliceAddr(opts.user_agent),
+            .user_agent_len = opts.user_agent.len,
+            .ua_suffix_ptr = sliceAddr(opts.user_agent_suffix),
+            .ua_suffix_len = opts.user_agent_suffix.len,
+            .trusted_ptr = sliceAddr(opts.trusted_origins_json),
+            .trusted_len = opts.trusted_origins_json.len,
         };
         const id = dispatch(.webview, 1, @intCast(parent.id), @intFromPtr(&spec), 0);
         if (id == 0 or id == std.math.maxInt(usize)) return Error.MyGoError;
@@ -2817,9 +2936,26 @@ pub const WebView = struct {
         return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
     }
 
-    /// Internal page window id for page/WinCtl APIs.
+    /// Internal page window id — use with Window page / WinCtl helpers.
+    pub fn pageWindow(self: WebView) Window {
+        return .{ .id = @intCast(dispatch(.webview, 7, self.id, 0, 0)) };
+    }
+
     pub fn pageWindowID(self: WebView) i32 {
         return @intCast(dispatch(.webview, 7, self.id, 0, 0));
+    }
+
+    pub fn parentWindowID(self: WebView) i32 {
+        return @intCast(dispatch(.webview, 8, self.id, 0, 0));
+    }
+
+    // Page sugar — same surface as Window page APIs, routed via pageWindow.
+    pub fn loadUrl(self: WebView, url: []const u8) Error!void {
+        return self.pageWindow().loadUrl(url);
+    }
+
+    pub fn evalJSON(self: WebView, allocator: std.mem.Allocator, code: []const u8) Error![]u8 {
+        return self.pageWindow().evalJSON(allocator, code);
     }
 };
 
@@ -2832,11 +2968,13 @@ pub const Documents = struct {
 
     /// Configure before App.Run. `types_json` is `[{ "name","extensions":[...]}]`.
     /// Handler for need_window must create a native UI window and return its id.
+    /// Content is always raw bytes on the wire (Zig owns encode/decode).
     pub fn configure(
         types_json: []const u8,
         autosave_off: bool,
         ask_on_quit: bool,
         no_untitled: bool,
+        autosave_delay_ms: u32,
         comptime StatePtr: type,
         state: StatePtr,
         comptime handler: fn (StatePtr, doc_id: usize, Event) usize,
@@ -2870,6 +3008,7 @@ pub const Documents = struct {
             ask_on_quit: u8 = 0,
             no_untitled: u8 = 0,
             _pad: u8 = 0,
+            autosave_delay_ms: u32 = 0,
             window_cb: usize = 0,
             window_ud: usize = 0,
         };
@@ -2879,6 +3018,7 @@ pub const Documents = struct {
             .autosave_off = @intFromBool(autosave_off),
             .ask_on_quit = @intFromBool(ask_on_quit),
             .no_untitled = @intFromBool(no_untitled),
+            .autosave_delay_ms = autosave_delay_ms,
             .window_cb = cb,
             .window_ud = @intFromPtr(state),
         };
@@ -2891,10 +3031,25 @@ pub const Documents = struct {
         return id;
     }
 
-    pub fn open(path: []const u8) Error!usize {
-        const id = dispatch(.documents, 3, sliceAddr(path), path.len, 0);
+    pub fn open(file_path: []const u8) Error!usize {
+        const id = dispatch(.documents, 3, sliceAddr(file_path), file_path.len, 0);
         if (id == std.math.maxInt(usize)) return Error.MyGoError;
         return id;
+    }
+
+    /// Opens the system file dialog; returns JSON array of doc ids.
+    pub fn openDialogJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.documents, 4, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn listJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.documents, 5, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
     }
 
     pub fn content(allocator: std.mem.Allocator, doc_id: usize) Error![]u8 {
@@ -2912,11 +3067,75 @@ pub const Documents = struct {
         if (dispatch(.documents, 8, doc_id, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
 
+    pub fn saveAs(doc_id: usize, file_path: []const u8) Error!void {
+        if (dispatch(.documents, 9, doc_id, sliceAddr(file_path), file_path.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn saveAnyway(doc_id: usize) Error!void {
+        if (dispatch(.documents, 10, doc_id, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
     pub fn stateJSON(allocator: std.mem.Allocator, doc_id: usize) Error![]u8 {
         var scratch: [4096]u8 = undefined;
         const got = dispatch(.documents, 11, doc_id, @intFromPtr(&scratch), scratch.len);
         if (got == std.math.maxInt(usize)) return Error.MyGoError;
         return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn windowID(doc_id: usize) i32 {
+        return @intCast(dispatch(.documents, 12, doc_id, 0, 0));
+    }
+
+    pub fn filePath(allocator: std.mem.Allocator, doc_id: usize) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.documents, 13, doc_id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn revert(doc_id: usize) Error!void {
+        if (dispatch(.documents, 14, doc_id, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn rename(doc_id: usize, new_name: []const u8) Error!void {
+        if (dispatch(.documents, 15, doc_id, sliceAddr(new_name), new_name.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn moveTo(doc_id: usize, dir: []const u8) Error!void {
+        if (dispatch(.documents, 16, doc_id, sliceAddr(dir), dir.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn duplicate(doc_id: usize) Error!usize {
+        const id = dispatch(.documents, 17, doc_id, 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return id;
+    }
+
+    pub fn close(doc_id: usize) void {
+        _ = dispatch(.documents, 18, doc_id, 0, 0);
+    }
+
+    pub fn setEdited(doc_id: usize, edited: bool) void {
+        _ = dispatch(.documents, 19, doc_id, @intFromBool(edited), 0);
+    }
+
+    pub fn changed(doc_id: usize) void {
+        _ = dispatch(.documents, 20, doc_id, 0, 0);
+    }
+
+    pub fn displayName(allocator: std.mem.Allocator, doc_id: usize) Error![]u8 {
+        var scratch: [1024]u8 = undefined;
+        const got = dispatch(.documents, 21, doc_id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn forWindow(win_id: i32) usize {
+        return dispatch(.documents, 22, @intCast(win_id), 0, 0);
+    }
+
+    pub fn focus(doc_id: usize) void {
+        _ = dispatch(.documents, 23, doc_id, 0, 0);
     }
 };
 
@@ -4075,6 +4294,32 @@ pub const Shell = struct {
     /// Windows .lnk; ErrUnsupported elsewhere. JSON ShortcutLinkOptions.
     pub fn writeShortcutLinkJSON(opts_json: []const u8) Error!void {
         if (dispatch(.shell, 10, sliceAddr(opts_json), opts_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub const ShortcutLink = struct {
+        link_path: []const u8,
+        target: []const u8,
+        args: []const []const u8 = &.{},
+        working_dir: []const u8 = "",
+        description: []const u8 = "",
+        icon_path: []const u8 = "",
+        icon_index: i32 = 0,
+    };
+
+    /// Typed Windows .lnk writer (builds JSON for writeShortcutLinkJSON).
+    pub fn writeShortcutLink(allocator: std.mem.Allocator, opts: ShortcutLink) Error!void {
+        var list: std.ArrayList(u8) = .empty;
+        defer list.deinit(allocator);
+        try std.json.Stringify.value(.{
+            .linkPath = opts.link_path,
+            .target = opts.target,
+            .args = opts.args,
+            .workingDir = opts.working_dir,
+            .description = opts.description,
+            .iconPath = opts.icon_path,
+            .iconIndex = opts.icon_index,
+        }, .{}, list.writer(allocator));
+        try writeShortcutLinkJSON(list.items);
     }
 };
 

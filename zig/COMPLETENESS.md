@@ -46,12 +46,12 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 
 | Item | Why |
 |------|-----|
-| Standalone docs / go.mod | **Done** guide (`zig/BRANDING.md` + docs note) |
+| Branding docs (`myzig`) | **Done** (`zig/BRANDING.md` + `docs/zig.md`) |
 | ~~`Shell.InstalledApps` / `LaunchApp`~~ | **Done** (Shell 8/9) |
 | `Shell.WriteShortcutLink` | Windows-only |
 | ~~Arbitrary MIME `Clipboard.Write`~~ | **Done** (Clipboard 12/13) |
-| ~~Full Documents~~ (bytes subset) | **Done** (`zig/host/documents`) |
-| ~~First-class Zig `WebView`~~ | **Done** (`zig/host/webview`) |
+| Documents (bytes wire; full Document ops) | **Done** (`zig/host/documents` + `documents-zig` example) |
+| First-class Zig `WebView` + PageOptions | **Done** (`zig/host/webview`) |
 | ~~glass / game / automation Zig~~ | **Done** (HostOp 246/247 + blank-import) |
 
 ## Roadmap
@@ -100,7 +100,7 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 
 ## Phase 6 ABI
 
-- `HostOpGamepad=248` — pads JSON + packed state
-- `HostOpWebView=249` — create/destroy/focus/capture + `ui` op 340 place-by-id
-- `HostOpDocuments=250`, `ZigEventDocuments=41` — bytes Documents, Zig supplies window
+- `HostOpGamepad=248` — pads JSON + packed state (+ Zig Pressed/Just*/stick helpers)
+- `HostOpWebView=249` — full create options (PageOptions) + destroy/focus/capture + parent/page ids; `ui` op 340
+- `HostOpDocuments=250`, `ZigEventDocuments=41` — configure…focus (subops 1–23), Zig supplies window
 - `Shell` subop 10 — `WriteShortcutLink` (Windows; ErrUnsupported elsewhere)

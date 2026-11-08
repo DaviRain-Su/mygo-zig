@@ -79,7 +79,7 @@ opcode map and status matrix.
 | `zig/host/automation` | blank-import `plugins/automation` |
 | `zig/host/gamepad` | `mygo.Gamepad` poll |
 | `zig/host/webview` | first-class `mygo.WebView` + `c.webViewHandle` |
-| `zig/host/documents` | bytes `Documents` (Window via Zig callback) |
+| `zig/host/documents` | full bytes `Documents` (Window via Zig callback); see `zig/examples/documents-zig` |
 
 `Fetch` / `WebSocket` exist because Zig's ecosystem HTTP and WebSocket
 clients are often incomplete for desktop apps (proxies, forbidden headers,

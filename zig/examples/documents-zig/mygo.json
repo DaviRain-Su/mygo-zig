@@ -1,0 +1,6 @@
+{
+  "name": "Documents Zig",
+  "identifier": "dev.mygo.documentszig",
+  "version": "0.1.0",
+  "bindings": "src/mygo.ts"
+}
