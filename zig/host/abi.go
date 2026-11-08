@@ -62,6 +62,7 @@ const (
 	HostOpAppEvents     uintptr = 28 // a0=subop
 	HostOpProtocol      uintptr = 29 // a0=subop
 	HostOpDesktop       uintptr = 30 // a0=subop — dock/jumplist/recent
+	HostOpSecrets       uintptr = 31 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -556,3 +557,16 @@ const (
 	DesktopDockHide    uintptr = 6
 	DesktopDockShow    uintptr = 7
 )
+
+// Secrets sub-ops for HostOpSecrets.
+const (
+	SecretsSet    uintptr = 1 // a1=*CSecretSpec
+	SecretsGet    uintptr = 2 // a1=*CSecretSpec, a2=out_ptr, a3=out_cap → len; ^0 + ErrSecretNotFound
+	SecretsDelete uintptr = 3 // a1=*CSecretSpec
+)
+
+type CSecretSpec struct {
+	ServicePtr, ServiceLen uintptr // empty → app id
+	KeyPtr, KeyLen         uintptr
+	ValuePtr, ValueLen     uintptr // Set only
+}

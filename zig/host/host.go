@@ -573,6 +573,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpDesktop:
 		return hostDesktop(a0, a1, a2, a3)
 
+	case HostOpSecrets:
+		return hostSecrets(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1989,4 +1992,45 @@ func setDockMenu(raw []byte, cbID uintptr) uintptr {
 	}
 	SetError(nil)
 	return 0
+}
+
+func hostSecrets(sub, a1, a2, a3 uintptr) uintptr {
+	spec := PtrTo[CSecretSpec](a1)
+	if spec == nil {
+		SetError(errors.New("zighost: secrets need spec"))
+		return ^uintptr(0)
+	}
+	svc := CopyString(spec.ServicePtr, spec.ServiceLen)
+	key := CopyString(spec.KeyPtr, spec.KeyLen)
+	store := mygo.Secrets
+	if svc != "" {
+		store = mygo.Secrets.Service(svc)
+	}
+	switch sub {
+	case SecretsSet:
+		if err := store.Set(key, CopyBytes(spec.ValuePtr, spec.ValueLen)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case SecretsGet:
+		v, err := store.Get(key)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(v, a2, a3)
+	case SecretsDelete:
+		if err := store.Delete(key); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown secrets subop"))
+		return ^uintptr(0)
+	}
 }

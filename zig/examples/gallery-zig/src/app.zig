@@ -1352,6 +1352,24 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("secret-set", "Secret set demo").clicked()) {
+                mygo.Secrets.set("", "gallery-zig-demo", "hello-from-zig") catch {};
+            }
+            if (c.button("secret-get", "Secret get").clicked()) {
+                if (mygo.Secrets.get(std.heap.page_allocator, "", "gallery-zig-demo")) |v| {
+                    defer std.heap.page_allocator.free(v);
+                    const n = @min(v.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..n], v[0..n]);
+                    self.path_len = n;
+                } else |_| {
+                    const msg = "(missing or unsupported)";
+                    @memcpy(self.path_buf[0..msg.len], msg);
+                    self.path_len = msg.len;
+                }
+            }
+            if (c.button("secret-del", "Secret delete").clicked()) {
+                mygo.Secrets.delete("", "gallery-zig-demo") catch {};
+            }
             if (c.button("clip-formats", "Clipboard formats").clicked()) {
                 if (mygo.Clipboard.availableFormatsJSON(std.heap.page_allocator)) |json| {
                     defer std.heap.page_allocator.free(json);

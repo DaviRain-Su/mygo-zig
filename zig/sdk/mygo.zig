@@ -45,6 +45,7 @@ pub const HostOp = enum(usize) {
     app_events = 28,
     protocol = 29,
     desktop = 30,
+    secrets = 31,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -1248,6 +1249,52 @@ pub const Notification = struct {
 
 
 
+
+
+pub const Secrets = struct {
+    const CSpec = extern struct {
+        service_ptr: usize = 0,
+        service_len: usize = 0,
+        key_ptr: usize = 0,
+        key_len: usize = 0,
+        value_ptr: usize = 0,
+        value_len: usize = 0,
+    };
+
+    fn fill(spec: *CSpec, service: []const u8, key: []const u8, value: []const u8) void {
+        spec.* = .{
+            .service_ptr = sliceAddr(service),
+            .service_len = service.len,
+            .key_ptr = sliceAddr(key),
+            .key_len = key.len,
+            .value_ptr = sliceAddr(value),
+            .value_len = value.len,
+        };
+    }
+
+    /// Empty service uses the app identifier.
+    pub fn set(service: []const u8, key: []const u8, value: []const u8) Error!void {
+        var spec: CSpec = .{};
+        fill(&spec, service, key, value);
+        if (dispatch(.secrets, 1, @intFromPtr(&spec), 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn get(allocator: std.mem.Allocator, service: []const u8, key: []const u8) Error![]u8 {
+        var spec: CSpec = .{};
+        fill(&spec, service, key, "");
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.secrets, 2, @intFromPtr(&spec), @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn delete(service: []const u8, key: []const u8) Error!void {
+        var spec: CSpec = .{};
+        fill(&spec, service, key, "");
+        if (dispatch(.secrets, 3, @intFromPtr(&spec), 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+};
 
 pub const Desktop = struct {
     /// Set Windows jump-list tasks. Pass JSON array of task objects. "[]" clears.
