@@ -48,6 +48,7 @@ pub const HostOp = enum(usize) {
     secrets = 31,
     cookies = 32,
     session = 33,
+    locale = 34,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -102,6 +103,11 @@ pub const WinCtl = enum(usize) {
     set_permission_handler = 28,
     set_window_open_handler = 29,
     window_open_respond = 30,
+    find_in_page = 31,
+    stop_find_in_page = 32,
+    reload = 33,
+    go_back = 34,
+    go_forward = 35,
 };
 
 const ZigEvent = enum(usize) {
@@ -1176,6 +1182,48 @@ pub const Window = struct {
         _ = self.ctl(.window_open_respond, @intFromPtr(&spec), 0);
     }
 
+    pub const FindResult = struct { matches: u32 = 0, active: u32 = 0 };
+
+    pub fn findInPage(self: Window, text: []const u8, opts: struct { match_case: bool = false, backward: bool = false, find_next: bool = false }) Error!FindResult {
+        const Spec = extern struct {
+            text_ptr: usize = 0,
+            text_len: usize = 0,
+            match_case: u8 = 0,
+            backward: u8 = 0,
+            find_next: u8 = 0,
+            _pad: [5]u8 = @splat(0),
+        };
+        var spec = Spec{
+            .text_ptr = sliceAddr(text),
+            .text_len = text.len,
+            .match_case = if (opts.match_case) 1 else 0,
+            .backward = if (opts.backward) 1 else 0,
+            .find_next = if (opts.find_next) 1 else 0,
+        };
+        const packed_res = self.ctl(.find_in_page, @intFromPtr(&spec), 0);
+        if (packed_res == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{
+            .matches = @intCast(packed_res >> 32),
+            .active = @intCast(packed_res & 0xffff_ffff),
+        };
+    }
+
+    pub fn stopFindInPage(self: Window) void {
+        _ = self.ctl(.stop_find_in_page, 0, 0);
+    }
+
+    pub fn reload(self: Window) void {
+        _ = self.ctl(.reload, 0, 0);
+    }
+
+    pub fn goBack(self: Window) void {
+        _ = self.ctl(.go_back, 0, 0);
+    }
+
+    pub fn goForward(self: Window) void {
+        _ = self.ctl(.go_forward, 0, 0);
+    }
+
     pub fn invalidate(self: Window) void {
         _ = self.ctl(.invalidate, 0, 0);
     }
@@ -1700,6 +1748,41 @@ pub const SiteData = struct {
     pub const caches: u64 = 8;
     pub const service_workers: u64 = 16;
     pub const all: u64 = 0; // host treats 0 as SiteDataAll
+};
+
+
+pub const Locale = struct {
+    pub fn get(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [64]u8 = undefined;
+        const got = dispatch(.locale, 1, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn set(tag: []const u8) void {
+        _ = dispatch(.locale, 2, sliceAddr(tag), tag.len, 0);
+    }
+
+    pub fn preferredJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [2048]u8 = undefined;
+        const got = dispatch(.locale, 3, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn languagesJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [2048]u8 = undefined;
+        const got = dispatch(.locale, 4, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn setLanguagesJSON(json: []const u8) Error!void {
+        if (dispatch(.locale, 5, sliceAddr(json), json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
 };
 
 pub const Session = struct {

@@ -71,6 +71,7 @@ const (
 	HostOpSecrets       uintptr = 31 // a0=subop
 	HostOpCookies       uintptr = 32 // a0=subop
 	HostOpSession       uintptr = 33 // a0=subop
+	HostOpLocale        uintptr = 34 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -182,6 +183,11 @@ const (
 	WinCtlSetPermissionHandler uintptr = 28 // a2=cb_id (0 clears)
 	WinCtlSetWindowOpenHandler uintptr = 29 // a2=cb_id (0 clears)
 	WinCtlWindowOpenRespond    uintptr = 30 // a2=*CWindowOpenResp
+	WinCtlFindInPage           uintptr = 31 // a2=*CFindSpec → (matches<<32)|active
+	WinCtlStopFindInPage       uintptr = 32
+	WinCtlReload               uintptr = 33
+	WinCtlGoBack               uintptr = 34
+	WinCtlGoForward            uintptr = 35
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -700,3 +706,20 @@ type CWindowOpenResp struct {
 	_     [7]byte
 	Opts  CWindowOptions
 }
+
+type CFindSpec struct {
+	TextPtr, TextLen uintptr
+	MatchCase        uint8
+	Backward         uint8
+	FindNext         uint8
+	_                [5]byte
+}
+
+// Locale sub-ops for HostOpLocale.
+const (
+	LocaleGet              uintptr = 1 // a1=out a2=cap → len
+	LocaleSet              uintptr = 2 // a1=tag (empty = follow user)
+	LocalePreferredJSON    uintptr = 3 // a1=out a2=cap
+	LocaleLanguagesJSON    uintptr = 4
+	LocaleSetLanguagesJSON uintptr = 5 // a1=json array
+)

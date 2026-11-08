@@ -1427,6 +1427,26 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("show-locale", "Show locale").clicked()) {
+                if (mygo.Locale.get(std.heap.page_allocator)) |loc| {
+                    defer std.heap.page_allocator.free(loc);
+                    const n = @min(loc.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..n], loc[0..n]);
+                    self.path_len = n;
+                } else |_| {}
+            }
+            if (c.button("find-example", "Find Example in page win").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    if (win.findInPage("Example", .{ .find_next = true })) |res| {
+                        var buf: [64]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "matches={d} active={d}", .{ res.matches, res.active }) catch "ok";
+                        const n = @min(msg.len, self.path_buf.len);
+                        @memcpy(self.path_buf[0..n], msg[0..n]);
+                        self.path_len = n;
+                    } else |_| {}
+                }
+            }
             if (c.button("open-at-login", "Toggle open at login").clicked()) {
                 const cur = mygo.Lifecycle.openAtLogin();
                 mygo.Lifecycle.setOpenAtLogin(!cur) catch {};

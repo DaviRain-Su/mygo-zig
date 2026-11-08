@@ -586,6 +586,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpSession:
 		return hostSession(a0, a1, a2, a3)
 
+	case HostOpLocale:
+		return hostLocale(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -747,6 +750,28 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		setWindowOpenHandler(w, a2)
 	case WinCtlWindowOpenRespond:
 		return windowOpenRespond(a2)
+	case WinCtlFindInPage:
+		return findInPage(w, a2)
+	case WinCtlStopFindInPage:
+		if w.Page() != nil {
+			w.Page().StopFindInPage()
+		}
+		return 0
+	case WinCtlReload:
+		if w.Page() != nil {
+			w.Page().Reload()
+		}
+		return 0
+	case WinCtlGoBack:
+		if w.Page() != nil {
+			w.Page().GoBack()
+		}
+		return 0
+	case WinCtlGoForward:
+		if w.Page() != nil {
+			w.Page().GoForward()
+		}
+		return 0
 	}
 	return 0
 }
@@ -1121,6 +1146,10 @@ func splitNUL(s string) []string {
 		}
 	}
 	return out
+}
+
+func writeStringToOut(s string, outPtr, outCap uintptr) uintptr {
+	return writeBytesToOut([]byte(s), outPtr, outCap)
 }
 
 func writeBytesToOut(b []byte, outPtr, outCap uintptr) uintptr {
@@ -2565,4 +2594,65 @@ func windowOpenRespond(a2 uintptr) uintptr {
 	default:
 	}
 	return 0
+}
+
+func findInPage(w *mygo.Window, a2 uintptr) uintptr {
+	if w.Page() == nil {
+		SetError(errors.New("zighost: findInPage needs a page"))
+		return ^uintptr(0)
+	}
+	spec := PtrTo[CFindSpec](a2)
+	if spec == nil {
+		SetError(errors.New("zighost: findInPage needs spec"))
+		return ^uintptr(0)
+	}
+	res, err := w.Page().FindInPage(CopyString(spec.TextPtr, spec.TextLen), mygo.FindOptions{
+		MatchCase: spec.MatchCase != 0,
+		Backward:  spec.Backward != 0,
+		FindNext:  spec.FindNext != 0,
+	})
+	if err != nil {
+		SetError(err)
+		return ^uintptr(0)
+	}
+	SetError(nil)
+	return (uintptr(res.Matches) << 32) | uintptr(uint32(res.Active))
+}
+
+func hostLocale(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case LocaleGet:
+		return writeStringToOut(mygo.App.Locale(), a1, a2)
+	case LocaleSet:
+		mygo.App.SetLocale(CopyString(a1, a2))
+		return 0
+	case LocalePreferredJSON:
+		raw, err := json.Marshal(mygo.App.PreferredLanguages())
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(raw, a1, a2)
+	case LocaleLanguagesJSON:
+		raw, err := json.Marshal(mygo.App.Languages())
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(raw, a1, a2)
+	case LocaleSetLanguagesJSON:
+		var tags []string
+		if err := json.Unmarshal(CopyBytes(a1, a2), &tags); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		mygo.App.SetLanguages(tags...)
+		SetError(nil)
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown locale subop"))
+		return ^uintptr(0)
+	}
 }
