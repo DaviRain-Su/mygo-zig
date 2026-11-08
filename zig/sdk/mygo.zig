@@ -43,6 +43,7 @@ pub const HostOp = enum(usize) {
     theme = 26,
     power = 27,
     app_events = 28,
+    protocol = 29,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -113,6 +114,7 @@ const ZigEvent = enum(usize) {
     theme = 21,
     power = 22,
     app = 23,
+    protocol = 24,
 };
 
 pub const CStr = extern struct {
@@ -319,6 +321,24 @@ fn registerAppHandler(h: RawAppHandler, userdata: usize) usize {
     return app_count;
 }
 
+pub const ProtocolRequest = struct {
+    method: []const u8,
+    url: []const u8,
+    headers_json: []const u8,
+};
+
+const RawProtocolHandler = *const fn (req_id: usize, req: ProtocolRequest, userdata: usize) void;
+var protocol_handlers: [16]RawProtocolHandler = undefined;
+var protocol_count: usize = 0;
+var protocol_handler_userdata: [16]usize = undefined;
+
+fn registerProtocolHandler(h: RawProtocolHandler, userdata: usize) usize {
+    protocol_handlers[protocol_count] = h;
+    protocol_handler_userdata[protocol_count] = userdata;
+    protocol_count += 1;
+    return protocol_count;
+}
+
 fn registerBytesHandler(h: RawBytesHandler) usize {
     bytes_handlers[bytes_count] = h;
     bytes_count += 1;
@@ -480,6 +500,34 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > app_count) return 0;
                     const app_kind: u8 = @intCast(a1);
                     return @intCast(app_handlers[a0 - 1](app_kind, a2, a3, app_handler_userdata[a0 - 1]));
+                },
+                .protocol => {
+                    if (a0 == 0 or a0 > protocol_count) return 0;
+                    const req_id = a1;
+                    const creq: *const extern struct {
+                        method_ptr: usize = 0,
+                        method_len: usize = 0,
+                        url_ptr: usize = 0,
+                        url_len: usize = 0,
+                        headers_ptr: usize = 0,
+                        headers_len: usize = 0,
+                    } = @ptrFromInt(a2);
+                    const req = ProtocolRequest{
+                        .method = if (creq.method_ptr != 0 and creq.method_len != 0)
+                            @as([*]const u8, @ptrFromInt(creq.method_ptr))[0..creq.method_len]
+                        else
+                            "",
+                        .url = if (creq.url_ptr != 0 and creq.url_len != 0)
+                            @as([*]const u8, @ptrFromInt(creq.url_ptr))[0..creq.url_len]
+                        else
+                            "",
+                        .headers_json = if (creq.headers_ptr != 0 and creq.headers_len != 0)
+                            @as([*]const u8, @ptrFromInt(creq.headers_ptr))[0..creq.headers_len]
+                        else
+                            "{}",
+                    };
+                    protocol_handlers[a0 - 1](req_id, req, protocol_handler_userdata[a0 - 1]);
+                    return 0;
                 },
             }
         }
@@ -1179,6 +1227,54 @@ pub const Notification = struct {
 
 
 
+
+
+pub const Protocol = struct {
+    const CResp = extern struct {
+        req_id: usize = 0,
+        status: i32 = 200,
+        _pad: [4]u8 = @splat(0),
+        headers_ptr: usize = 0,
+        headers_len: usize = 0,
+        body_ptr: usize = 0,
+        body_len: usize = 0,
+    };
+
+    /// Register a custom scheme. Handler must call `respond` before returning.
+    pub fn handle(comptime StatePtr: type, state: StatePtr, scheme: []const u8, comptime handler: fn (StatePtr, usize, ProtocolRequest) void) Error!void {
+        const S = struct {
+            fn onReq(req_id: usize, req: ProtocolRequest, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, req_id, req);
+            }
+        };
+        const cb = registerProtocolHandler(&S.onReq, @intFromPtr(state));
+        if (dispatch(.protocol, 1, sliceAddr(scheme), scheme.len, cb) == std.math.maxInt(usize)) {
+            return Error.MyGoError;
+        }
+    }
+
+    pub fn unhandle(scheme: []const u8) void {
+        _ = dispatch(.protocol, 2, sliceAddr(scheme), scheme.len, 0);
+    }
+
+    pub fn isHandled(scheme: []const u8) bool {
+        return dispatch(.protocol, 3, sliceAddr(scheme), scheme.len, 0) != 0;
+    }
+
+    /// Must be called from the `handle` callback before it returns.
+    pub fn respond(req_id: usize, status: i32, headers_json: []const u8, body: []const u8) void {
+        var spec = CResp{
+            .req_id = req_id,
+            .status = status,
+            .headers_ptr = sliceAddr(headers_json),
+            .headers_len = headers_json.len,
+            .body_ptr = sliceAddr(body),
+            .body_len = body.len,
+        };
+        _ = dispatch(.protocol, 4, @intFromPtr(&spec), 0, 0);
+    }
+};
 
 pub const Lifecycle = struct {
     fn cstrSlice(ptr: usize) []const u8 {

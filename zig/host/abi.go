@@ -30,6 +30,7 @@ const (
 	ZigEventTheme         uintptr = 21 // a0=cb_id
 	ZigEventPower         uintptr = 22 // a0=cb_id a1=*CStr event
 	ZigEventApp           uintptr = 23 // a0=cb_id a1=kind a2=*CStr|flag a3
+	ZigEventProtocol      uintptr = 24 // a0=cb_id a1=req_id a2=*CProtocolReq
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -59,6 +60,7 @@ const (
 	HostOpTheme         uintptr = 26 // a0=subop
 	HostOpPower         uintptr = 27 // a0=subop
 	HostOpAppEvents     uintptr = 28 // a0=subop
+	HostOpProtocol      uintptr = 29 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -517,4 +519,28 @@ type CAboutSpec struct {
 	VersionPtr, VersionLen     uintptr
 	CopyrightPtr, CopyrightLen uintptr
 	CreditsPtr, CreditsLen     uintptr
+}
+
+// Protocol sub-ops for HostOpProtocol.
+const (
+	ProtocolHandle    uintptr = 1 // a1=scheme_ptr a2=scheme_len a3=cb_id
+	ProtocolUnhandle  uintptr = 2 // a1=scheme_ptr a2=scheme_len
+	ProtocolIsHandled uintptr = 3 // → 1/0
+	ProtocolRespond   uintptr = 4 // a1=*CProtocolResp
+)
+
+// CProtocolRequest is passed to Zig for each custom-scheme request.
+type CProtocolRequest struct {
+	MethodPtr, MethodLen   uintptr
+	URLPtr, URLLen         uintptr
+	HeadersPtr, HeadersLen uintptr // JSON object string→string
+}
+
+// CProtocolResp is written by Zig via ProtocolRespond during the request callback.
+type CProtocolResp struct {
+	ReqID                  uintptr
+	Status                 int32
+	_                      [4]byte
+	HeadersPtr, HeadersLen uintptr // JSON object
+	BodyPtr, BodyLen       uintptr
 }

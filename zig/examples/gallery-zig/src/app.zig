@@ -176,6 +176,7 @@ const Gallery = struct {
     native_drop_len: usize = 0,
     native_over: bool = false,
     show_web: bool = false,
+    web_url_is_proto: bool = false,
     show_video: bool = false,
     video_registered: bool = false,
     frames_registered: bool = false,
@@ -615,6 +616,18 @@ const Gallery = struct {
 
 
 
+
+    fn onProtocol(self: *Gallery, req_id: usize, req: mygo.ProtocolRequest) void {
+        _ = self;
+        if (std.mem.indexOf(u8, req.url, "/hello") != null) {
+            const body = "<!doctype html><meta charset=utf-8><title>gzig</title><body style='font:16px system-ui;padding:24px'><h1>galleryzig://</h1><p>Served from Zig Protocol.handle</p></body>";
+            const headers = "{\"Content-Type\":\"text/html; charset=utf-8\"}";
+            mygo.Protocol.respond(req_id, 200, headers, body);
+            return;
+        }
+        mygo.Protocol.respond(req_id, 404, "{\"Content-Type\":\"text/plain\"}", "not found");
+    }
+
     fn onDidBecomeActive(self: *Gallery) void {
         self.app_active = true;
     }
@@ -921,10 +934,21 @@ const Gallery = struct {
                 self.show_web = !self.show_web;
                 if (!self.show_web) c.destroyWebView("docs");
             }
+            if (c.button("proto-web", "Protocol page").clicked()) {
+                self.web_url_is_proto = true;
+                self.show_web = true;
+                c.destroyWebView("docs");
+            }
+            if (c.button("docs-web", "Docs page").clicked()) {
+                self.web_url_is_proto = false;
+                self.show_web = true;
+                c.destroyWebView("docs");
+            }
         }
 
         if (self.show_web) {
-            _ = c.webView("docs", "https://mygo.egoist.dev").fillWidth().height(180).border(1, t.border).radius(8);
+            const url: []const u8 = if (self.web_url_is_proto) "galleryzig://localhost/hello" else "https://mygo.egoist.dev";
+            _ = c.webView("docs", url).fillWidth().height(180).border(1, t.border).radius(8);
         }
 
         {
@@ -1741,6 +1765,7 @@ fn init() !void {
 }
 
 fn onReady() void {
+    mygo.Protocol.handle(*Gallery, &app_state, "galleryzig", Gallery.onProtocol) catch {};
     app_state.ensureTray();
     app_state.notif_supported = mygo.Notification.supported();
     app_state.notif_click_cb = mygo.Notification.registerClickHandler(*Gallery, &app_state, Gallery.onNotifClick);

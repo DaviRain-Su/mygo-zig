@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -565,6 +566,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 
 	case HostOpAppEvents:
 		return hostAppEvents(a0, a1, a2, a3)
+
+	case HostOpProtocol:
+		return hostProtocol(a0, a1, a2, a3)
 
 	case HostOpClipboard:
 		switch a0 {
@@ -1745,4 +1749,131 @@ func hostAppEvents(sub, a1, a2, a3 uintptr) uintptr {
 		SetError(errors.New("zighost: unknown app event subop"))
 		return ^uintptr(0)
 	}
+}
+
+var (
+	protocolReqsMu  sync.Mutex
+	protocolReqs    = map[uintptr]chan protocolReply{}
+	nextProtocolReq atomic.Uintptr
+)
+
+type protocolReply struct {
+	status  int
+	headers http.Header
+	body    []byte
+}
+
+func hostProtocol(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case ProtocolHandle:
+		scheme := CopyString(a1, a2)
+		cbID := a3
+		err := mygo.Protocol.HandleFunc(scheme, func(w http.ResponseWriter, r *http.Request) {
+			serveZigProtocol(cbID, w, r)
+		})
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case ProtocolUnhandle:
+		mygo.Protocol.Unhandle(CopyString(a1, a2))
+		return 0
+	case ProtocolIsHandled:
+		if mygo.Protocol.IsHandled(CopyString(a1, a2)) {
+			return 1
+		}
+		return 0
+	case ProtocolRespond:
+		spec := PtrTo[CProtocolResp](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: protocol respond needs spec"))
+			return ^uintptr(0)
+		}
+		reply := protocolReply{
+			status: int(spec.Status),
+			body:   CopyBytes(spec.BodyPtr, spec.BodyLen),
+		}
+		if spec.HeadersLen > 0 {
+			var obj map[string]string
+			if err := json.Unmarshal(CopyBytes(spec.HeadersPtr, spec.HeadersLen), &obj); err == nil {
+				reply.headers = make(http.Header, len(obj))
+				for k, v := range obj {
+					reply.headers.Set(k, v)
+				}
+			}
+		}
+		if reply.status == 0 {
+			reply.status = 200
+		}
+		protocolReqsMu.Lock()
+		ch := protocolReqs[spec.ReqID]
+		protocolReqsMu.Unlock()
+		if ch != nil {
+			select {
+			case ch <- reply:
+			default:
+			}
+		}
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown protocol subop"))
+		return ^uintptr(0)
+	}
+}
+
+func serveZigProtocol(cbID uintptr, w http.ResponseWriter, r *http.Request) {
+	reqID := nextProtocolReq.Add(1)
+	ch := make(chan protocolReply, 1)
+	protocolReqsMu.Lock()
+	protocolReqs[reqID] = ch
+	protocolReqsMu.Unlock()
+	defer func() {
+		protocolReqsMu.Lock()
+		delete(protocolReqs, reqID)
+		protocolReqsMu.Unlock()
+	}()
+
+	headersJSON, _ := json.Marshal(flatHeaders(r.Header))
+	method := []byte(r.Method)
+	urlBytes := []byte(r.URL.String())
+	req := CProtocolRequest{}
+	req.MethodPtr, req.MethodLen = SliceAddr(method)
+	req.URLPtr, req.URLLen = SliceAddr(urlBytes)
+	req.HeadersPtr, req.HeadersLen = SliceAddr(headersJSON)
+
+	// Protocol handlers run off the main thread; marshal onto main so Zig
+	// callbacks stay consistent with the rest of the host.
+	done := make(chan struct{})
+	mygo.RunOnMain(func() {
+		defer close(done)
+		activeCall(ZigEventProtocol, cbID, reqID, uintptrSlicePtr(&req), 0)
+	})
+	<-done
+
+	var reply protocolReply
+	select {
+	case reply = <-ch:
+	default:
+		http.Error(w, "no zig response", http.StatusInternalServerError)
+		return
+	}
+	for k, vs := range reply.headers {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(reply.status)
+	_, _ = w.Write(reply.body)
+}
+
+func flatHeaders(h http.Header) map[string]string {
+	out := make(map[string]string, len(h))
+	for k, vs := range h {
+		if len(vs) > 0 {
+			out[k] = vs[0]
+		}
+	}
+	return out
 }
