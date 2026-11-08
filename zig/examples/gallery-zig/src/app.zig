@@ -1352,6 +1352,17 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("clip-formats", "Clipboard formats").clicked()) {
+                if (mygo.Clipboard.availableFormatsJSON(std.heap.page_allocator)) |json| {
+                    defer std.heap.page_allocator.free(json);
+                    const n = @min(json.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..n], json[0..n]);
+                    self.path_len = n;
+                } else |_| {}
+            }
+            if (c.button("clip-image", "Copy tray PNG").clicked()) {
+                mygo.Clipboard.writeImage(tray_png) catch {};
+            }
             if (c.button("dock-hide", "Hide Dock icon").clicked()) {
                 mygo.Desktop.hideDock();
             }

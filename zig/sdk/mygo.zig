@@ -1674,6 +1674,26 @@ pub const Clipboard = struct {
     }
 
     pub fn readText(allocator: std.mem.Allocator) Error![]u8 {
+        return readBytes(allocator, 3);
+    }
+
+    pub fn writeImage(png: []const u8) Error!void {
+        if (dispatch(.clipboard, 4, sliceAddr(png), png.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn readImage(allocator: std.mem.Allocator) Error![]u8 {
+        return readBytes(allocator, 5);
+    }
+
+    pub fn availableFormatsJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.clipboard, 6, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    fn readBytes(allocator: std.mem.Allocator, sub: usize) Error![]u8 {
         const Capture = struct {
             alloc: std.mem.Allocator,
             result: ?[]u8 = null,
@@ -1694,7 +1714,7 @@ pub const Clipboard = struct {
             S.cb_id = registerBytesHandler(&Capture.handle);
         }
         var cap = Capture{ .alloc = allocator };
-        _ = dispatch(.clipboard, 3, S.cb_id, @intFromPtr(&cap), 0);
+        _ = dispatch(.clipboard, sub, S.cb_id, @intFromPtr(&cap), 0);
         if (cap.oom) return Error.OutOfMemory;
         return cap.result orelse (allocator.dupe(u8, "") catch Error.OutOfMemory);
     }

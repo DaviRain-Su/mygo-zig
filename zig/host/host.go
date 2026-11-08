@@ -583,6 +583,19 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 			txt := []byte(mygo.Clipboard.ReadText())
 			ptr, n := SliceAddr(txt)
 			activeCall(ZigEventBytes, a1, ptr, n, a2)
+		case 4: // write_image PNG
+			if err := mygo.Clipboard.WriteImage(CopyBytes(a1, a2)); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+		case 5: // read_image: a1=cb_id a2=userdata
+			img := mygo.Clipboard.ReadImage()
+			ptr, n := SliceAddr(img)
+			activeCall(ZigEventBytes, a1, ptr, n, a2)
+		case 6: // available_formats JSON → a1=out a2=cap
+			raw, _ := json.Marshal(mygo.Clipboard.AvailableFormats())
+			return writeBytesToOut(raw, a1, a2)
 		}
 		return 0
 
