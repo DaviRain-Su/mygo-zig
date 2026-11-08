@@ -10,9 +10,12 @@ import (
 type snapshot struct {
 	nodes     []Node
 	edges     []Edge
+	groups    []Group
 	selection []string
 	cam       Camera
 	edgeSeq   int
+	nodeSeq   int
+	groupSeq  int
 }
 
 func (b *Board) capture() snapshot {
@@ -24,12 +27,22 @@ func (b *Board) capture() snapshot {
 		}
 		// Content callbacks are shared; undo restores layout/ids only.
 	}
+	groups := make([]Group, len(b.Groups))
+	for i, g := range b.Groups {
+		groups[i] = g
+		if len(g.Members) > 0 {
+			groups[i].Members = append([]string(nil), g.Members...)
+		}
+	}
 	return snapshot{
 		nodes:     nodes,
 		edges:     append([]Edge(nil), b.Edges...),
+		groups:    groups,
 		selection: append([]string(nil), b.Selection...),
 		cam:       b.Camera,
 		edgeSeq:   b.edgeSeq,
+		nodeSeq:   b.nodeSeq,
+		groupSeq:  b.groupSeq,
 	}
 }
 
@@ -45,9 +58,12 @@ func (b *Board) restore(s snapshot) {
 		}
 	}
 	b.Edges = s.edges
+	b.Groups = s.groups
 	b.Selection = append([]string(nil), s.selection...)
 	b.Camera = s.cam
 	b.edgeSeq = s.edgeSeq
+	b.nodeSeq = s.nodeSeq
+	b.groupSeq = s.groupSeq
 	if b.OnSelection != nil {
 		b.OnSelection(b.Selection)
 	}

@@ -145,3 +145,27 @@ func distToEdge(style EdgeStyle, px, py, x0, y0, x1, y1 float32, outSide, inSide
 	}
 	return distToCubic(px, py, x0, y0, x1, y1)
 }
+
+func parseEdgeSel(id string) (string, bool) {
+	if len(id) > 5 && id[:5] == "edge:" {
+		return id[5:], true
+	}
+	return "", false
+}
+
+func edgeMidpoint(style EdgeStyle, x0, y0, x1, y1 float32, outSide, inSide Side) (float32, float32) {
+	if style == EdgeOrthogonal {
+		pts := orthogonalPoints(x0, y0, x1, y1, outSide, inSide)
+		if len(pts) == 0 {
+			return (x0 + x1) / 2, (y0 + y1) / 2
+		}
+		mid := pts[len(pts)/2]
+		return mid[0], mid[1]
+	}
+	cx0, cy0, cx1, cy1 := cubicControls(x0, y0, x1, y1)
+	t := float32(0.5)
+	u := 1 - t
+	x := u*u*u*x0 + 3*u*u*t*cx0 + 3*u*t*t*cx1 + t*t*t*x1
+	y := u*u*u*y0 + 3*u*u*t*cy0 + 3*u*t*t*cy1 + t*t*t*y1
+	return x, y
+}

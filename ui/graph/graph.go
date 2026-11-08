@@ -68,6 +68,7 @@ type Edge struct {
 	ID                     string
 	Source, Target         string // node ids
 	SourcePort, TargetPort string
+	Label                  string
 }
 
 // Board is the document the canvas shows and edits.
@@ -77,8 +78,9 @@ type Board struct {
 	EdgeStyle EdgeStyle
 	Nodes     []Node
 	Edges     []Edge
+	Groups    []Group
 
-	Selection []string // node ids, or "edge:"+id
+	Selection []string // node ids, "edge:"+id, or "group:"+id
 
 	// Minimap draws a corner overview when true.
 	Minimap bool
@@ -101,6 +103,7 @@ type Board struct {
 	connWY     float32
 	edgeSeq    int
 	nodeSeq    int
+	groupSeq   int
 	viewR      ui.Rect
 
 	marquee       bool
@@ -113,6 +116,8 @@ type Board struct {
 	draggingGroup bool
 	dragMoved     bool
 	dragOrigins   map[string][2]float32
+
+	groupDragging bool // pointer-drag of a selected group frame
 
 	lastMods ui.Modifiers
 
@@ -234,6 +239,7 @@ func View(c *ui.Context, b *Board) ui.Element {
 	}
 	b.ensureEdgeSeq()
 	b.ensureNodeSeq()
+	b.ensureGroupSeq()
 	t := c.Theme()
 	root := ui.Box(c).Clip().Background(t.Background).Cursor(cursorFor(b.Tool)).Focusable()
 
@@ -358,11 +364,15 @@ func (b *Board) beginGroupDrag(id string) {
 	if !b.selected(id) {
 		b.setSelection([]string{id})
 	}
+	b.expandSelectionForDrag()
 	b.draggingGroup = true
 	b.dragMoved = false
 	b.dragOrigins = make(map[string][2]float32)
 	for _, sid := range b.Selection {
-		if len(sid) > 5 && sid[:5] == "edge:" {
+		if _, ok := parseEdgeSel(sid); ok {
+			continue
+		}
+		if _, ok := parseGroupSel(sid); ok {
 			continue
 		}
 		if n := b.NodeByID(sid); n != nil {
@@ -385,6 +395,7 @@ func (b *Board) moveSelectionBy(dx, dy float32) {
 
 func (b *Board) paintWorld(p *ui.Painter, r ui.Rect, t *ui.Theme) {
 	b.Camera.Draw(p, r, func() {
+		b.paintGroups(p, t)
 		vis := b.Camera.Visible(r)
 		step := float32(32)
 		x0 := float32(math.Floor(float64(vis.X)/float64(step))) * step
@@ -409,6 +420,9 @@ func (b *Board) paintWorld(p *ui.Painter, r ui.Rect, t *ui.Theme) {
 				col = t.Danger
 			}
 			strokeEdge(p, b.EdgeStyle, x0, y0, x1, y1, sp.Side, tp.Side, col, 2)
+			if e.Label != "" {
+				b.paintEdgeLabel(p, t, e.Label, x0, y0, x1, y1, sp.Side, tp.Side)
+			}
 		}
 
 		if b.connecting {
@@ -505,4 +519,19 @@ func (b *Board) contentBounds() ui.Rect {
 		}
 	}
 	return ui.Rect{X: minX, Y: minY, W: maxX - minX, H: maxY - minY}
+}
+
+func (b *Board) paintEdgeLabel(p *ui.Painter, t *ui.Theme, label string, x0, y0, x1, y1 float32, outSide, inSide Side) {
+	mx, my := edgeMidpoint(b.EdgeStyle, x0, y0, x1, y1, outSide, inSide)
+	const size float32 = 11
+	// Approximate width; good enough for short labels.
+	w := float32(len(label)) * size * 0.55
+	h := size + 6
+	pad := float32(6)
+	r := ui.Rect{X: mx - w/2 - pad, Y: my - h/2, W: w + 2*pad, H: h}
+	p.Fill(r, t.Surface.Alpha(0.92), 4)
+	p.StrokePath((&ui.Path{}).
+		MoveTo(r.X, r.Y).LineTo(r.X+r.W, r.Y).LineTo(r.X+r.W, r.Y+r.H).LineTo(r.X, r.Y+r.H).Close(),
+		1, t.Border)
+	p.Text(r.X+pad, r.Y+h-5, label, size, t.TextMuted)
 }

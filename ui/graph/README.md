@@ -1,8 +1,9 @@
 # ui/graph — node canvas
 
 Opt-in package: an infinite 2D world with a camera, free-positioned nodes
-that host arbitrary `ui` subtrees, ports, cubic or orthogonal edges, tools
-(select/drag, pan, connect), marquee multi-select, undo/redo, and a minimap.
+that host arbitrary `ui` subtrees, ports, cubic/orthogonal edges with
+labels, groups, tools (select/drag, pan, connect), marquee multi-select,
+undo/redo, minimap, JSON persistence, and layered auto-layout.
 
 A simplified React Flow for native MyGo UI — foundation for whiteboards,
 book cards, excerpts and links.
@@ -35,33 +36,37 @@ go run ./examples/node-canvas
 
 | Tool / gesture | Action |
 | --- | --- |
-| **Select (V)** | Click node/edge; drag node (moves whole selection); empty-drag marquee; Shift-click / Shift-marquee additive |
+| **Select (V)** | Click node/edge/group; drag selection; empty-drag marquee; Shift additive |
 | **Pan (H)** | Drag empty canvas; middle-button pans in any tool |
 | **Connect (C)** | Press a port, drag to another port |
 | **O** | Toggle bezier ↔ orthogonal edges |
-| Delete / Backspace | Remove selection |
-| ⌘/Ctrl+A | Select all nodes |
-| ⌘/Ctrl+D | Duplicate selected nodes |
+| **G / ⇧G** | Group selected nodes / ungroup |
+| **L** | Auto-layout (layered) + fit |
+| **F** | Fit camera to content |
+| Delete / Backspace | Remove selection (group frame only, or nodes+incident edges) |
+| ⌘/Ctrl+A · ⌘/Ctrl+D | Select all · duplicate nodes |
 | ⌘/Ctrl+Z · ⇧⌘/Ctrl+Z | Undo · Redo |
-| Wheel | Pan; Ctrl/⌘+wheel or pinch zooms around the pointer |
+| Wheel | Pan; Ctrl/⌘+wheel or pinch zooms |
 
 Callbacks: `OnSelection`, `OnMove`, `OnConnect`, `OnDelete`, `OnViewport`.
-Public helpers: `AddNode`, `Undo`/`Redo`, `CanUndo`/`CanRedo`.
+
+Helpers: `AddNode`, `GroupSelection`, `UngroupSelection`, `AutoLayout`,
+`FitCamera`, `Export`/`Load`/`MarshalJSON`, `BindNodeContent`,
+`Undo`/`Redo`.
+
+## Persistence
+
+`MarshalJSON` / `Load` persist camera, nodes (without `Content`), edges
+(including `Label`), and groups. After load, reattach bodies with
+`BindNodeContent`.
 
 ## Architecture
 
-- **Camera** — same idea as `plugins/game.Camera` (pan/zoom, world↔view),
-  kept local so whiteboard apps do not pull in the game loop.
-- **Drawing** — edges, ports, grid, marquee and minimap are painted in
-  world/view space via `Camera.Draw` + `Painter` (viewport clipped).
-- **Nodes** — `Absolute` cards in view space, scaled by zoom, with normal
-  `ui` children in the body slot; `Dragged` moves the selection in world units.
-- **Hit testing** — edges/ports use world-space geometry; node chrome uses
-  the element tree so buttons inside a card keep working.
-- **History** — document snapshots (nodes/edges/selection/camera); Content
-  callbacks are rebound by id across undo.
+- **Camera** — pan/zoom, world↔view (local copy of the game.Camera idea).
+- **Drawing** — grid, groups, edges/labels, ports, marquee, minimap via Painter.
+- **Nodes** — Absolute cards in view space with zoom Scale; Dragged moves the selection.
+- **History** — document snapshots; Content rebound by id across undo.
 
-## Not in this layer yet
+## Not yet
 
-Groups, auto-layout, edge labels, persistence formats, collaborative CRDT.
-Those build on `Board` + events.
+Nested groups, edge routing around nodes, collaborative CRDT, auto edge labels from schema.

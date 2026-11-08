@@ -2,8 +2,8 @@
 //
 //	go run ./examples/node-canvas
 //
-// Keys: V select · H pan · C connect · O edge style · Delete · ⌘Z/⇧⌘Z undo/redo
-// ⌘A select all · ⌘D duplicate · Shift-click / marquee multi-select
+// Keys: V select · H pan · C connect · O edges · G/⇧G group · L layout · F fit
+// Delete · ⌘Z undo · ⌘A/⌘D select all/duplicate · Shift/marquee multi-select
 // Wheel pans; Ctrl/⌘+wheel or pinch zooms. Middle-drag pans any tool.
 package main
 
@@ -57,7 +57,7 @@ func main() {
 				},
 			},
 			Edges: []graph.Edge{
-				{ID: "e1", Source: "note", SourcePort: "out", Target: "card", TargetPort: "in"},
+				{ID: "e1", Source: "note", SourcePort: "out", Target: "card", TargetPort: "in", Label: "cites"},
 			},
 		},
 		status: "V select · H pan · C connect · O edges",
@@ -114,6 +114,23 @@ func (a *app) view(c *ui.Context) {
 			redo.Disabled(!a.board.CanRedo())
 			if redo.Clicked() {
 				a.board.Redo()
+			}
+			if ui.Button(c.Key("group"), "Group").Clicked() {
+				a.board.GroupSelection()
+			}
+			if ui.Button(c.Key("layout"), "Layout").Clicked() {
+				a.board.AutoLayout(graph.LayoutOptions{})
+				if a.board.Camera.Zoom > 0 {
+					// Fit uses last view from Draw; Approximate with window.
+					w, h := c.Size()
+					a.board.FitCamera(ui.Rect{W: w, H: h - 40}, 48)
+				}
+			}
+			if ui.Button(c.Key("save"), "Copy JSON").Clicked() {
+				if raw, err := a.board.MarshalJSON(); err == nil {
+					mygo.Clipboard.WriteText(string(raw))
+					a.status = "board JSON copied"
+				}
 			}
 			ui.Text(c, a.status).FontSize(12).TextColor(c.Theme().TextMuted).Grow(1)
 			if ui.Button(c.Key("add"), "+ Node").Clicked() {

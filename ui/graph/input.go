@@ -73,6 +73,18 @@ func (b *Board) handleInput(ev ui.InputEvent) bool {
 				// Card elements handle click/drag; Shift toggle also there.
 				return false
 			}
+			if gid := b.hitGroup(wx, wy); gid != "" {
+				id := groupSelID(gid)
+				if ev.Mods&ui.Shift != 0 {
+					b.toggleSelection(id)
+				} else if !b.selected(id) {
+					b.setSelection([]string{id})
+				}
+				b.beginGroupDrag(id)
+				b.groupDragging = true
+				b.lastPanX, b.lastPanY = wx, wy
+				return true
+			}
 			// Empty canvas: start marquee (Shift keeps previous selection).
 			b.marquee = true
 			b.marqueeAdditive = ev.Mods&ui.Shift != 0
@@ -93,6 +105,18 @@ func (b *Board) handleInput(ev ui.InputEvent) bool {
 		}
 		if b.connecting {
 			b.connWX, b.connWY = wx, wy
+			return true
+		}
+		if b.groupDragging {
+			dx, dy := wx-b.lastPanX, wy-b.lastPanY
+			if dx != 0 || dy != 0 {
+				if !b.dragMoved {
+					b.pushUndo()
+					b.dragMoved = true
+				}
+				b.moveSelectionBy(dx, dy)
+				b.lastPanX, b.lastPanY = wx, wy
+			}
 			return true
 		}
 		if b.marquee {
@@ -124,6 +148,13 @@ func (b *Board) handleInput(ev ui.InputEvent) bool {
 				}
 			}
 			b.connecting = false
+			return true
+		}
+		if b.groupDragging {
+			b.groupDragging = false
+			b.draggingGroup = false
+			b.dragMoved = false
+			b.dragOrigins = nil
 			return true
 		}
 		if b.marquee {
@@ -178,6 +209,23 @@ func (b *Board) handleKey(ev ui.InputEvent) bool {
 		}
 		return true
 	}
+	if ev.Key == ui.KeyG && !cmd {
+		if ev.Mods&ui.Shift != 0 {
+			return b.UngroupSelection()
+		}
+		return b.GroupSelection() != ""
+	}
+	if ev.Key == ui.KeyL && !cmd {
+		b.AutoLayout(LayoutOptions{})
+		if b.viewR.W > 0 {
+			b.FitCamera(b.viewR, 48)
+		}
+		return true
+	}
+	if ev.Key == ui.KeyF && !cmd && b.viewR.W > 0 {
+		b.FitCamera(b.viewR, 48)
+		return true
+	}
 	return false
 }
 
@@ -225,17 +273,26 @@ func (b *Board) deleteSelection() bool {
 		return false
 	}
 	b.pushUndo()
-	var edgeIDs, nodeIDs []string
+	var edgeIDs, nodeIDs, groupIDs []string
 	for _, id := range b.Selection {
-		if len(id) > 5 && id[:5] == "edge:" {
-			edgeIDs = append(edgeIDs, id[5:])
-		} else {
-			nodeIDs = append(nodeIDs, id)
+		if eid, ok := parseEdgeSel(id); ok {
+			edgeIDs = append(edgeIDs, eid)
+			continue
 		}
+		if gid, ok := parseGroupSel(id); ok {
+			groupIDs = append(groupIDs, gid)
+			continue
+		}
+		nodeIDs = append(nodeIDs, id)
 	}
 	if len(edgeIDs) > 0 {
 		b.Edges = slices.DeleteFunc(b.Edges, func(e Edge) bool {
 			return slices.Contains(edgeIDs, e.ID)
+		})
+	}
+	if len(groupIDs) > 0 {
+		b.Groups = slices.DeleteFunc(b.Groups, func(g Group) bool {
+			return slices.Contains(groupIDs, g.ID)
 		})
 	}
 	if len(nodeIDs) > 0 {
@@ -245,6 +302,7 @@ func (b *Board) deleteSelection() bool {
 		b.Edges = slices.DeleteFunc(b.Edges, func(e Edge) bool {
 			return slices.Contains(nodeIDs, e.Source) || slices.Contains(nodeIDs, e.Target)
 		})
+		b.scrubGroupsAfterNodeDelete(nodeIDs)
 	}
 	b.setSelection(nil)
 	if b.OnDelete != nil {
