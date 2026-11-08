@@ -143,6 +143,31 @@ _ = doc.view(c, .{ .placeholder = "Write…" }).fill().grow(1.0);
 `Doc` also has `set(format, data)`, `insert(at, text)`, `selection` /
 `setSelection`, `version`, `canUndo` / `canRedo` and `destroy`.
 
+Links and tags stay in Zig:
+
+```zig
+doc = doc.onLink(*App, &app, App.openLink)          // a URL was clicked
+         .onLinkCommand(*App, &app, App.askForLink) // Cmd+K
+         .onTagStyle(*App, &app, App.tagStyle);     // color a @mention
+```
+
+`onTagStyle` fills a `ui.RichText.Style` (color, background, weight, italic,
+underline, strikethrough, radius, padding).
+
+### Window state
+
+Windows with a `state_key` remember their bounds. Zig can own that storage:
+
+```zig
+fn load(app: *App, buf: []u8) usize {   // JSON of map[string]WindowState
+    @memcpy(buf[0..app.saved.len], app.saved);
+    return app.saved.len;
+}
+fn save(app: *App, json: []const u8) void { app.saved = json; }
+
+mygo.setWindowStateStore(*App, &app, App.load, App.save);  // before the first window
+```
+
 ### System text input (IME)
 
 ```zig

@@ -7,7 +7,7 @@
 //! / Linux / Windows installers via `mygo build`.
 
 const std = @import("std");
-const abi = @import("abi.zig");
+pub const abi = @import("abi.zig");
 pub const ui = @import("ui.zig");
 
 pub const HostDispatchFn = *const fn (
@@ -90,6 +90,7 @@ pub const HostOp = enum(usize) {
     audio = 253,
     graph = 255,
     richtext = 256,
+    window_states = 254,
 };
 
 pub const WinCtl = enum(usize) {
@@ -262,6 +263,11 @@ const ZigEvent = enum(usize) {
     graph_delete = 52,
     graph_viewport = 53,
     graph_node = 54,
+    richtext_link = 55,
+    richtext_link_command = 56,
+    richtext_tag = 57,
+    window_states_load = 58,
+    window_states_save = 59,
 };
 
 pub const CStr = extern struct {
@@ -415,6 +421,67 @@ pub fn registerGraphNode(handler: RawGraphNode, userdata: usize) usize {
     graph_node_ud[graph_node_count] = userdata;
     graph_node_count += 1;
     return graph_node_count;
+}
+
+/// Window state store: load writes JSON into a buffer, save reads it.
+pub const RawWindowStatesLoad = *const fn (buf: []u8, userdata: usize) usize;
+pub const RawWindowStatesSave = *const fn (json: []const u8, userdata: usize) void;
+pub var window_states_load_handlers: [16]RawWindowStatesLoad = undefined;
+pub var window_states_save_handlers: [16]RawWindowStatesSave = undefined;
+pub var window_states_ud: [16]usize = undefined;
+pub var window_states_count: usize = 0;
+
+/// setWindowStateStore saves and restores windows with a StateKey through Zig.
+pub fn setWindowStateStore(
+    comptime StatePtr: type,
+    state: StatePtr,
+    comptime load: fn (StatePtr, []u8) usize,
+    comptime save: fn (StatePtr, []const u8) void,
+) void {
+    const L = struct {
+        fn onLoad(buf: []u8, ud: usize) usize {
+            const s: StatePtr = @ptrFromInt(ud);
+            return load(s, buf);
+        }
+    };
+    const S = struct {
+        fn onSave(json: []const u8, ud: usize) void {
+            const s: StatePtr = @ptrFromInt(ud);
+            save(s, json);
+        }
+    };
+    if (window_states_count >= window_states_load_handlers.len) return;
+    window_states_load_handlers[window_states_count] = &L.onLoad;
+    window_states_save_handlers[window_states_count] = &S.onSave;
+    window_states_ud[window_states_count] = @intFromPtr(state);
+    window_states_count += 1;
+    _ = dispatch(.window_states, 1, window_states_count, window_states_count, 0);
+}
+
+/// Rich text callbacks: a link URL, a link command, or a tag's style.
+pub const RawRichTextBytes = *const fn (data: []const u8, userdata: usize) void;
+pub const RawRichTextTag = *const fn (tag: []const u8, style: *abi.SpanStyle, userdata: usize) void;
+pub var richtext_handlers: [64]RawRichTextBytes = undefined;
+pub var richtext_tag_handlers: [64]RawRichTextTag = undefined;
+pub var richtext_ud: [64]usize = undefined;
+pub var richtext_count: usize = 0;
+
+/// registerRichTextHandler adds a link or link-command handler, returning its id.
+pub fn registerRichTextHandler(handler: RawRichTextBytes, userdata: usize) usize {
+    if (richtext_count >= richtext_handlers.len) return 0;
+    richtext_handlers[richtext_count] = handler;
+    richtext_ud[richtext_count] = userdata;
+    richtext_count += 1;
+    return richtext_count;
+}
+
+/// registerRichTextTag adds a tag style handler, returning its id.
+pub fn registerRichTextTag(handler: RawRichTextTag, userdata: usize) usize {
+    if (richtext_count >= richtext_tag_handlers.len) return 0;
+    richtext_tag_handlers[richtext_count] = handler;
+    richtext_ud[richtext_count] = userdata;
+    richtext_count += 1;
+    return richtext_count;
 }
 
 /// Text-input client questions (HandleTextInput).
@@ -981,6 +1048,35 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > graph_count) return 0;
                     const slice: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
                     graph_handlers[a0 - 1](slice, graph_ud[a0 - 1]);
+                    return 0;
+                },
+                .window_states_load => {
+                    if (a0 == 0 or a0 > window_states_count) return 0;
+                    const buf: []u8 = if (a1 != 0 and a2 > 0) @as([*]u8, @ptrFromInt(a1))[0..a2] else &.{};
+                    return @intCast(window_states_load_handlers[a0 - 1](buf, window_states_ud[a0 - 1]));
+                },
+                .window_states_save => {
+                    if (a0 == 0 or a0 > window_states_count) return 0;
+                    const json: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
+                    window_states_save_handlers[a0 - 1](json, window_states_ud[a0 - 1]);
+                    return 0;
+                },
+                .richtext_link => {
+                    if (a0 == 0 or a0 > richtext_count) return 0;
+                    const slice: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
+                    richtext_handlers[a0 - 1](slice, richtext_ud[a0 - 1]);
+                    return 0;
+                },
+                .richtext_link_command => {
+                    if (a0 == 0 or a0 > richtext_count) return 0;
+                    richtext_handlers[a0 - 1]("", richtext_ud[a0 - 1]);
+                    return 0;
+                },
+                .richtext_tag => {
+                    if (a0 == 0 or a0 > richtext_count) return 0;
+                    const slice: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
+                    const style: *abi.SpanStyle = @ptrFromInt(a3);
+                    richtext_tag_handlers[a0 - 1](slice, style, richtext_ud[a0 - 1]);
                     return 0;
                 },
                 .graph_node => {

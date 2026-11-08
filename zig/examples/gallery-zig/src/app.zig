@@ -281,6 +281,9 @@ const Gallery = struct {
     timeline_run: u64 = 0,
     board: ui.Graph.Board = .{ .id = 0 },
     doc: ui.RichText.Doc = .{ .id = 0 },
+    rich_status: []const u8 = "",
+    win_states: [8 * 1024]u8 = @splat(0),
+    win_states_len: usize = 0,
     rich_buf: [64 * 1024]u8 = @splat(0),
     graph_sel: [4][]const u8 = @splat(""),
     graph_sel_count: usize = 0,
@@ -1282,6 +1285,11 @@ const Gallery = struct {
         const t = c.theme();
         if (self.doc.id == 0) {
             self.doc = ui.RichText.markdown(sample_rich) catch .{ .id = 0 };
+            if (self.doc.id != 0) {
+                self.doc = self.doc.onLink(*Gallery, self, Gallery.onRichLink);
+                self.doc = self.doc.onLinkCommand(*Gallery, self, Gallery.onRichLinkCommand);
+                self.doc = self.doc.onTagStyle(*Gallery, self, Gallery.onRichTag);
+            }
         }
         {
             const row = c.row().fillWidth().gap(6).center().begin();
@@ -1300,9 +1308,37 @@ const Gallery = struct {
                 const md = self.doc.save(.markdown, self.rich_buf[0..]);
                 mygo.Clipboard.writeText(md);
             }
-            _ = c.textf("v{d}", .{self.doc.version()}).fontSize(11).textColor(t.text_muted).grow(1.0);
+            _ = c.textf("v{d} {s}", .{ self.doc.version(), self.rich_status }).fontSize(11).textColor(t.text_muted).grow(1.0);
         }
         _ = self.doc.view(c, .{ .placeholder = "Write something…" }).fill().grow(1.0);
+    }
+
+    fn loadWindowStates(self: *Gallery, buf: []u8) usize {
+        if (self.win_states_len == 0 or self.win_states_len > buf.len) return 0;
+        @memcpy(buf[0..self.win_states_len], self.win_states[0..self.win_states_len]);
+        return self.win_states_len;
+    }
+
+    fn saveWindowStates(self: *Gallery, json: []const u8) void {
+        const n = @min(json.len, self.win_states.len);
+        @memcpy(self.win_states[0..n], json[0..n]);
+        self.win_states_len = n;
+    }
+
+    fn onRichLink(self: *Gallery, url: []const u8) void {
+        mygo.Shell.openExternal(url) catch {};
+        self.rich_status = "link";
+    }
+
+    fn onRichLinkCommand(self: *Gallery) void {
+        self.rich_status = "cmd+k";
+    }
+
+    fn onRichTag(self: *Gallery, tag: []const u8, style: *ui.RichText.Style) void {
+        _ = tag;
+        self.rich_status = "tag";
+        style.color = ui.Color.rgb(99, 102, 241);
+        style.weight = 600;
     }
 
     fn viewGraph(self: *Gallery, c: *ui.Context) void {
@@ -2672,10 +2708,12 @@ fn onReady() void {
     mygo.Lifecycle.onDidBecomeActive(*Gallery, &app_state, Gallery.onDidBecomeActive);
     mygo.Lifecycle.onDidResignActive(*Gallery, &app_state, Gallery.onDidResignActive);
     mygo.Lifecycle.onOpenURL(*Gallery, &app_state, Gallery.onOpenURL);
+    mygo.setWindowStateStore(*Gallery, &app_state, Gallery.loadWindowStates, Gallery.saveWindowStates);
     const win = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,
         .height = 680,
+        .state_key = "gallery-zig",
     }, Gallery.view) catch |err| {
         var buf: [256]u8 = undefined;
         std.debug.print("newWindowUi failed ({s}): {s}\n", .{ @errorName(err), mygo.lastError(&buf) });

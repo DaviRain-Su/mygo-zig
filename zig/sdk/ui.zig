@@ -1011,14 +1011,90 @@ pub const RichText = struct {
         placeholder_len: usize = 0,
         flags: u32 = 0,
         _pad: [4]u8 = .{ 0, 0, 0, 0 },
+        link_cb: usize = 0,
+        linkcmd_cb: usize = 0,
+        tag_cb: usize = 0,
+    };
+
+    /// How a tag's runs look (EditorOptions.TagStyle).
+    pub const Style = struct {
+        color: ?Color = null,
+        background: ?Color = null,
+        weight: i32 = 0,
+        italic: bool = false,
+        underline: bool = false,
+        strikethrough: bool = false,
+        radius: f32 = 0,
+        padding_x: f32 = 0,
+        padding_y: f32 = 0,
     };
 
     /// A document kept by the host.
     pub const Doc = struct {
         id: usize,
+        link_cb: usize = 0,
+        linkcmd_cb: usize = 0,
+        tag_cb: usize = 0,
 
         pub fn valid(self: Doc) bool {
             return self.id != 0;
+        }
+
+        /// onLink runs when a link is clicked, instead of the system.
+        pub fn onLink(self: Doc, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) Doc {
+            const S = struct {
+                fn onURL(url: []const u8, ud: usize) void {
+                    const s: StatePtr = @ptrFromInt(ud);
+                    handler(s, url);
+                }
+            };
+            var out = self;
+            out.link_cb = mygo.registerRichTextHandler(&S.onURL, @intFromPtr(state));
+            return out;
+        }
+
+        /// onLinkCommand runs for Cmd+K, as the app asks for a URL.
+        pub fn onLinkCommand(self: Doc, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) Doc {
+            const S = struct {
+                fn onCmd(url: []const u8, ud: usize) void {
+                    _ = url;
+                    const s: StatePtr = @ptrFromInt(ud);
+                    handler(s);
+                }
+            };
+            var out = self;
+            out.linkcmd_cb = mygo.registerRichTextHandler(&S.onCmd, @intFromPtr(state));
+            return out;
+        }
+
+        /// onTagStyle styles the runs that carry a tag.
+        pub fn onTagStyle(self: Doc, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8, *Style) void) Doc {
+            const S = struct {
+                fn onTag(tag: []const u8, cs: *mygo.abi.SpanStyle, ud: usize) void {
+                    const s: StatePtr = @ptrFromInt(ud);
+                    var style = Style{};
+                    handler(s, tag, &style);
+                    cs.* = .{};
+                    if (style.color) |c| {
+                        cs.color = c.toU32();
+                        cs.flags |= 8;
+                    }
+                    if (style.background) |c| {
+                        cs.background = c.toU32();
+                        cs.flags |= 16;
+                    }
+                    cs.weight = style.weight;
+                    cs.radius = style.radius;
+                    cs.padding_x = style.padding_x;
+                    cs.padding_y = style.padding_y;
+                    if (style.italic) cs.flags |= 1;
+                    if (style.underline) cs.flags |= 2;
+                    if (style.strikethrough) cs.flags |= 4;
+                }
+            };
+            var out = self;
+            out.tag_cb = mygo.registerRichTextTag(&S.onTag, @intFromPtr(state));
+            return out;
         }
 
         /// save writes the text in a format into buf.
@@ -1092,6 +1168,9 @@ pub const RichText = struct {
                 .placeholder_ptr = mygo.sliceAddr(o.placeholder),
                 .placeholder_len = o.placeholder.len,
                 .flags = flags,
+                .link_cb = self.link_cb,
+                .linkcmd_cb = self.linkcmd_cb,
+                .tag_cb = self.tag_cb,
             };
             _ = mygo.dispatch(.richtext, @intFromEnum(Sub.view), c.frame_handle, self.id, @intFromPtr(&spec));
             return .{ .ctx = c };

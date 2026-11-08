@@ -9,7 +9,9 @@ package richtext
 
 import (
 	"encoding/json"
+	"runtime"
 	"sync"
+	"unsafe"
 
 	mygoui "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
@@ -91,6 +93,8 @@ type CView struct {
 	// Flags: 1 read only, 2 no markdown shortcuts.
 	Flags uint32
 	_     [4]byte
+	// Callback ids: link, link command, tag style (0 for none).
+	LinkCb, LinkCmdCb, TagCb uintptr
 }
 
 type docHost struct {
@@ -264,6 +268,29 @@ func dispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 				opts.Placeholder = host.CopyString(view.PlaceholderPtr, view.PlaceholderLen)
 				opts.ReadOnly = view.Flags&1 != 0
 				opts.NoMarkdown = view.Flags&2 != 0
+				if view.LinkCb != 0 {
+					cb := view.LinkCb
+					opts.OnLink = func(url string) {
+						raw := []byte(url)
+						host.CallZigPayload(host.ZigEventRichTextLink, cb, raw)
+					}
+				}
+				if view.LinkCmdCb != 0 {
+					cb := view.LinkCmdCb
+					opts.OnLinkCommand = func() {
+						host.CallZig(host.ZigEventRichTextLinkCommand, cb, 0, 0, 0)
+					}
+				}
+				if view.TagCb != 0 {
+					cb := view.TagCb
+					opts.TagStyle = func(tag string, s *mygoui.Span) {
+						var style host.CSpanStyle
+						raw := []byte(tag)
+						host.CallZig(host.ZigEventRichTextTag, cb, uintptrOfBytes(raw), uintptr(len(raw)), uintptrOf(&style))
+						runtime.KeepAlive(raw)
+						applySpanStyle(s, &style)
+					}
+				}
 			}
 			return richtext.Editor(c, h.doc, opts)
 		})
@@ -274,6 +301,50 @@ func dispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	}
 	return ^uintptr(0)
 }
+
+// applySpanStyle writes a Zig tag style into a span.
+func applySpanStyle(s *mygoui.Span, st *host.CSpanStyle) {
+	if st.Flags&8 != 0 {
+		s.Color = unpackRGBA(st.Color)
+	}
+	if st.Flags&16 != 0 {
+		s.Background = unpackRGBA(st.Background)
+	}
+	if st.Weight != 0 {
+		s.Weight = int(st.Weight)
+	}
+	if st.Flags&1 != 0 {
+		s.Italic = true
+	}
+	if st.Flags&2 != 0 {
+		s.Underline = true
+	}
+	if st.Flags&4 != 0 {
+		s.Strikethrough = true
+	}
+	if st.Radius != 0 {
+		s.Radius = st.Radius
+	}
+	if st.PaddingX != 0 {
+		s.PaddingX = st.PaddingX
+	}
+	if st.PaddingY != 0 {
+		s.PaddingY = st.PaddingY
+	}
+}
+
+func unpackRGBA(v uint32) mygoui.Color {
+	return mygoui.Color{R: uint8(v >> 24), G: uint8(v >> 16), B: uint8(v >> 8), A: uint8(v)}
+}
+
+func uintptrOfBytes(b []byte) uintptr {
+	if len(b) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(unsafe.SliceData(b)))
+}
+
+func uintptrOf[T any](v *T) uintptr { return uintptr(unsafe.Pointer(v)) }
 
 func runCommand(d *richtext.Document, cmd uintptr) uintptr {
 	switch cmd {

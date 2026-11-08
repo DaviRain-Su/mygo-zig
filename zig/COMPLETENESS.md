@@ -227,3 +227,25 @@ Still Go-only, all by design rather than by effort:
   Markdown).
 - `ui/richtext`'s `Theme` and per-run attributes stay in Go; Zig drives the
   document, not its styling tables.
+
+## Phase 14 — the callbacks that were still Go-only
+
+- Rich text: `EditorOptions.OnLink`, `OnLinkCommand` and `TagStyle` are
+  events now (`ZigEventRichTextLink=55`, `...LinkCommand=56`, `...Tag=57`),
+  with `Doc.onLink` / `onLinkCommand` / `onTagStyle` in the SDK; a tag style
+  comes back as a `ui.RichText.Style` (color, background, weight, italic,
+  underline, strikethrough, radius, padding).
+- `App.SetWindowStateStore`: `mygo.setWindowStateStore` owns the storage in
+  Zig (`HostOpWindowStates=254`, events 58/59), JSON in and out, so windows
+  with a `state_key` persist without Go-side files.
+- The gallery wires all of them: link/link-command/tag callbacks on the Rich
+  tab, and a Zig-backed window state store for its own window.
+
+What stays Go-only, and why it is not a gap:
+- `ui.Effect` paints a GPU effect over a content bitmap: it needs shader
+  code and a bitmap-draw primitive in Zig. The glass plugin already gives
+  Zig effects; a general shader effect is a renderer feature, not a binding.
+- `Plugin` / `mygo.Use` is how Go packages register themselves. Zig features
+  are opt-in host imports instead; there is nothing to call.
+- `NewDocuments[T]` is a generic wrapper over the byte-level `Documents`
+  API the SDK already has; Zig types its own content.

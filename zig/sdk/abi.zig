@@ -73,3 +73,15 @@ pub const TextClientReq = extern struct {
     in_ptr: usize = 0,
     in_len: usize = 0,
 };
+
+/// A tag's span style as Zig sets it (ui/richtext EditorOptions.TagStyle).
+pub const SpanStyle = extern struct {
+    color: u32 = 0,
+    background: u32 = 0,
+    weight: i32 = 0,
+    radius: f32 = 0,
+    padding_x: f32 = 0,
+    padding_y: f32 = 0,
+    /// 1 italic, 2 underline, 4 strikethrough, 8 color, 16 background.
+    flags: u32 = 0,
+};

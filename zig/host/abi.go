@@ -7,60 +7,65 @@ type CallZigFn func(kind, a0, a1, a2, a3 uintptr) uintptr
 
 // Zig entry event kinds (`mygo_zig_entry(kind, a0, a1, a2, a3)`).
 const (
-	ZigEventInit          uintptr = 1  // a0 = host_dispatch_fn_ptr
-	ZigEventReady         uintptr = 2  // app WhenReady on main thread
-	ZigEventIPC           uintptr = 3  // a0 = cb_id, a1 = win_id, a2 = *CIpcArgs, a3 = reply_handle
-	ZigEventWindow        uintptr = 4  // a0 = cb_id, a1 = win_id, a2 = payload_ptr, a3 = payload_len
-	ZigEventMenu          uintptr = 5  // a0 = cb_id, a1 = win_id, a2 = id_ptr, a3 = id_len
-	ZigEventBytes         uintptr = 6  // a0 = cb_id, a1 = ptr, a2 = len, a3 = userdata
-	ZigEventUIView        uintptr = 7  // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
-	ZigEventUIListRow     uintptr = 8  // a0 = cb_id, a1 = frame_handle, a2 = *CUIListRowInfo, a3 = userdata
-	ZigEventUIPaint       uintptr = 9  // a0 = cb_id, a1 = painter_handle, a2 = *CUIRect, a3 = userdata
-	ZigEventUISubview     uintptr = 10 // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
-	ZigEventUITableCell   uintptr = 11 // a0 = cb_id, a1 = frame_handle, a2 = *CUITableCellInfo, a3 = userdata
-	ZigEventUIAction      uintptr = 12 // a0 = cb_id, a1 = 0, a2 = 0, a3 = userdata (toast action, …)
-	ZigEventUIGridItem    uintptr = 13 // a0 = cb_id, a1 = frame_handle, a2 = *CUIGridItemInfo, a3 = userdata
-	ZigEventUIOutlineRow  uintptr = 14 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineRowInfo, a3 = userdata
-	ZigEventUIRoute       uintptr = 15 // a0 = cb_id, a1 = frame_handle, a2 = *CUIRouteInfo, a3 = userdata
-	ZigEventUIOutlineCell uintptr = 16 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineCellInfo, a3 = userdata
-	ZigEventUIProvide     uintptr = 17 // a0 = cb_id, a1 = out_buf_ptr, a2 = out_buf_cap, a3 = userdata → bytes written
-	ZigEventTray          uintptr = 18 // a0=cb_id a1=tray_id a2=kind(1 click/2 right/3 appearance/4 menu) a3=*CStr menu id when kind=4
-	ZigEventNotification  uintptr = 19 // a0=cb_id a1=kind(1 note click / 2 app click) a2=*CStr id
-	ZigEventHotkey        uintptr = 20 // a0=cb_id a1=hotkey_id
-	ZigEventTheme         uintptr = 21 // a0=cb_id
-	ZigEventPower         uintptr = 22 // a0=cb_id a1=*CStr event
-	ZigEventApp           uintptr = 23 // a0=cb_id a1=kind a2=*CStr|flag a3
-	ZigEventProtocol      uintptr = 24 // a0=cb_id a1=req_id a2=*CProtocolReq
-	ZigEventAuth          uintptr = 25 // a0=cb_id a1=win_id a2=*CAuthReq a3=req_id
-	ZigEventCert          uintptr = 26 // a0=cb_id a1=win_id a2=*CCertErr; return !=0 allow
-	ZigEventDownload      uintptr = 27 // a0=cb_id a1=win_id a2=kind(1 will/2 done) a3=*CDownload
-	ZigEventPage          uintptr = 28 // a0=cb_id a1=win_id a2=kind a3=*CPageEvent
-	ZigEventPermission    uintptr = 29 // a0=cb_id a1=win_id a2=*CPermReq; return !=0 grant
-	ZigEventWindowOpen    uintptr = 30 // a0=cb_id a1=win_id a2=*CWindowOpenReq a3=req_id
-	ZigEventContextMenu   uintptr = 31 // a0=cb_id a1=win_id a2=*CContextMenuEv a3=req_id
-	ZigEventPageMedia     uintptr = 32 // a0=cb_id a1=win_id a2=kind(1 audible/2 capture) a3=payload
-	ZigEventLocale        uintptr = 33 // a0=cb_id a1=*CStr locale
-	ZigEventRegion        uintptr = 34 // a0=cb_id a1=*CStr region JSON
-	ZigEventTerminal      uintptr = 35 // a0=cb_id a1=term_id a2=kind a3=payload
-	ZigEventWatch         uintptr = 36 // a0=cb_id a1=watch_id a2=kind a3=payload
-	ZigEventPermFlow      uintptr = 37 // a0=cb_id a1=req_id a2=status a3=*CStr err
-	ZigEventWebSocket     uintptr = 38 // a0=cb_id a1=conn_id a2=kind a3=payload
-	ZigEventGameUpdate    uintptr = 39 // a0=cb_id a1=*CGameInput a2=0 a3=userdata
-	ZigEventGameDraw      uintptr = 40 // a0=cb_id a1=painter a2=*CGameDraw a3=userdata
-	ZigEventDocuments     uintptr = 41 // a0=cb_id a1=doc_id a2=kind a3=payload → return win_id for kind=1
-	ZigEventNetwork       uintptr = 42 // a0=cb_id a1=*CStr JSON NetworkStatus
-	ZigEventNowPlaying    uintptr = 43 // a0=cb_id a1=cmd a2=position_ns
-	ZigEventUIInput       uintptr = 44 // a0=cb_id a1=*CUIInput a2=userdata → 1 took it
-	ZigEventUIHitTest     uintptr = 45 // a0=cb_id a1=*CUIHit a2=userdata → 1 hit
-	ZigEventAudioEnd      uintptr = 46 // a0=cb_id a1=player_id
-	ZigEventUITextKey     uintptr = 47 // a0=cb_id a1=*CTextKey a2=userdata → 1 handled
-	ZigEventUITextClient  uintptr = 48 // a0=cb_id a1=*CTextClientReq a2=userdata
-	ZigEventGraphSelect   uintptr = 49 // a0=cb_id a1=JSON ids a2=len
-	ZigEventGraphConnect  uintptr = 50 // a0=cb_id a1=JSON edge a2=len
-	ZigEventGraphMove     uintptr = 51 // a0=cb_id a1=JSON {id,x,y} a2=len
-	ZigEventGraphDelete   uintptr = 52 // a0=cb_id a1=JSON {edges,nodes} a2=len
-	ZigEventGraphViewport uintptr = 53 // a0=cb_id a1=JSON camera a2=len
-	ZigEventGraphNode     uintptr = 54 // a0=cb_id a1=frame a2=*CGraphNodeInfo
+	ZigEventInit                uintptr = 1  // a0 = host_dispatch_fn_ptr
+	ZigEventReady               uintptr = 2  // app WhenReady on main thread
+	ZigEventIPC                 uintptr = 3  // a0 = cb_id, a1 = win_id, a2 = *CIpcArgs, a3 = reply_handle
+	ZigEventWindow              uintptr = 4  // a0 = cb_id, a1 = win_id, a2 = payload_ptr, a3 = payload_len
+	ZigEventMenu                uintptr = 5  // a0 = cb_id, a1 = win_id, a2 = id_ptr, a3 = id_len
+	ZigEventBytes               uintptr = 6  // a0 = cb_id, a1 = ptr, a2 = len, a3 = userdata
+	ZigEventUIView              uintptr = 7  // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
+	ZigEventUIListRow           uintptr = 8  // a0 = cb_id, a1 = frame_handle, a2 = *CUIListRowInfo, a3 = userdata
+	ZigEventUIPaint             uintptr = 9  // a0 = cb_id, a1 = painter_handle, a2 = *CUIRect, a3 = userdata
+	ZigEventUISubview           uintptr = 10 // a0 = cb_id, a1 = frame_handle, a2 = *CUIFrameInfo, a3 = userdata
+	ZigEventUITableCell         uintptr = 11 // a0 = cb_id, a1 = frame_handle, a2 = *CUITableCellInfo, a3 = userdata
+	ZigEventUIAction            uintptr = 12 // a0 = cb_id, a1 = 0, a2 = 0, a3 = userdata (toast action, …)
+	ZigEventUIGridItem          uintptr = 13 // a0 = cb_id, a1 = frame_handle, a2 = *CUIGridItemInfo, a3 = userdata
+	ZigEventUIOutlineRow        uintptr = 14 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineRowInfo, a3 = userdata
+	ZigEventUIRoute             uintptr = 15 // a0 = cb_id, a1 = frame_handle, a2 = *CUIRouteInfo, a3 = userdata
+	ZigEventUIOutlineCell       uintptr = 16 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineCellInfo, a3 = userdata
+	ZigEventUIProvide           uintptr = 17 // a0 = cb_id, a1 = out_buf_ptr, a2 = out_buf_cap, a3 = userdata → bytes written
+	ZigEventTray                uintptr = 18 // a0=cb_id a1=tray_id a2=kind(1 click/2 right/3 appearance/4 menu) a3=*CStr menu id when kind=4
+	ZigEventNotification        uintptr = 19 // a0=cb_id a1=kind(1 note click / 2 app click) a2=*CStr id
+	ZigEventHotkey              uintptr = 20 // a0=cb_id a1=hotkey_id
+	ZigEventTheme               uintptr = 21 // a0=cb_id
+	ZigEventPower               uintptr = 22 // a0=cb_id a1=*CStr event
+	ZigEventApp                 uintptr = 23 // a0=cb_id a1=kind a2=*CStr|flag a3
+	ZigEventProtocol            uintptr = 24 // a0=cb_id a1=req_id a2=*CProtocolReq
+	ZigEventAuth                uintptr = 25 // a0=cb_id a1=win_id a2=*CAuthReq a3=req_id
+	ZigEventCert                uintptr = 26 // a0=cb_id a1=win_id a2=*CCertErr; return !=0 allow
+	ZigEventDownload            uintptr = 27 // a0=cb_id a1=win_id a2=kind(1 will/2 done) a3=*CDownload
+	ZigEventPage                uintptr = 28 // a0=cb_id a1=win_id a2=kind a3=*CPageEvent
+	ZigEventPermission          uintptr = 29 // a0=cb_id a1=win_id a2=*CPermReq; return !=0 grant
+	ZigEventWindowOpen          uintptr = 30 // a0=cb_id a1=win_id a2=*CWindowOpenReq a3=req_id
+	ZigEventContextMenu         uintptr = 31 // a0=cb_id a1=win_id a2=*CContextMenuEv a3=req_id
+	ZigEventPageMedia           uintptr = 32 // a0=cb_id a1=win_id a2=kind(1 audible/2 capture) a3=payload
+	ZigEventLocale              uintptr = 33 // a0=cb_id a1=*CStr locale
+	ZigEventRegion              uintptr = 34 // a0=cb_id a1=*CStr region JSON
+	ZigEventTerminal            uintptr = 35 // a0=cb_id a1=term_id a2=kind a3=payload
+	ZigEventWatch               uintptr = 36 // a0=cb_id a1=watch_id a2=kind a3=payload
+	ZigEventPermFlow            uintptr = 37 // a0=cb_id a1=req_id a2=status a3=*CStr err
+	ZigEventWebSocket           uintptr = 38 // a0=cb_id a1=conn_id a2=kind a3=payload
+	ZigEventGameUpdate          uintptr = 39 // a0=cb_id a1=*CGameInput a2=0 a3=userdata
+	ZigEventGameDraw            uintptr = 40 // a0=cb_id a1=painter a2=*CGameDraw a3=userdata
+	ZigEventDocuments           uintptr = 41 // a0=cb_id a1=doc_id a2=kind a3=payload → return win_id for kind=1
+	ZigEventNetwork             uintptr = 42 // a0=cb_id a1=*CStr JSON NetworkStatus
+	ZigEventNowPlaying          uintptr = 43 // a0=cb_id a1=cmd a2=position_ns
+	ZigEventUIInput             uintptr = 44 // a0=cb_id a1=*CUIInput a2=userdata → 1 took it
+	ZigEventUIHitTest           uintptr = 45 // a0=cb_id a1=*CUIHit a2=userdata → 1 hit
+	ZigEventAudioEnd            uintptr = 46 // a0=cb_id a1=player_id
+	ZigEventUITextKey           uintptr = 47 // a0=cb_id a1=*CTextKey a2=userdata → 1 handled
+	ZigEventUITextClient        uintptr = 48 // a0=cb_id a1=*CTextClientReq a2=userdata
+	ZigEventGraphSelect         uintptr = 49 // a0=cb_id a1=JSON ids a2=len
+	ZigEventGraphConnect        uintptr = 50 // a0=cb_id a1=JSON edge a2=len
+	ZigEventGraphMove           uintptr = 51 // a0=cb_id a1=JSON {id,x,y} a2=len
+	ZigEventGraphDelete         uintptr = 52 // a0=cb_id a1=JSON {edges,nodes} a2=len
+	ZigEventGraphViewport       uintptr = 53 // a0=cb_id a1=JSON camera a2=len
+	ZigEventGraphNode           uintptr = 54 // a0=cb_id a1=frame a2=*CGraphNodeInfo
+	ZigEventRichTextLink        uintptr = 55 // a0=cb_id a1=url a2=len
+	ZigEventRichTextLinkCommand uintptr = 56 // a0=cb_id
+	ZigEventRichTextTag         uintptr = 57 // a0=cb_id a1=tag a2=len a3=*CSpanStyle
+	ZigEventWindowStatesLoad    uintptr = 58 // a0=cb_id a1=out a2=cap → bytes of JSON
+	ZigEventWindowStatesSave    uintptr = 59 // a0=cb_id a1=JSON a2=len
 )
 
 // CUIInput is one InputEvent as the Zig side reads it. Layout must match
@@ -166,6 +171,19 @@ type CTextClientReq struct {
 	InLen    uintptr
 }
 
+// CSpanStyle styles the runs of a tag (ui/richtext's EditorOptions.TagStyle).
+type CSpanStyle struct {
+	// Color and Background apply when their Set bits are in Flags.
+	Color      uint32
+	Background uint32
+	Weight     int32
+	Radius     float32
+	PaddingX   float32
+	PaddingY   float32
+	// Flags: 1 italic, 2 underline, 4 strikethrough, 8 color, 16 background.
+	Flags uint32
+}
+
 // CUIHit asks a Zig hit test whether the pointer at PX, PY hits the element,
 // whose frame is X, Y, W, H.
 type CUIHit struct {
@@ -243,6 +261,7 @@ const (
 	HostOpNetwork        uintptr = 251 // a0=subop Network.Status/OnChanged
 	HostOpNowPlaying     uintptr = 252 // a0=subop NowPlaying
 	HostOpAudio          uintptr = 253 // a0=subop (audio.Sound / audio.Player)
+	HostOpWindowStates   uintptr = 254 // a0=subop (window state store)
 	HostOpGraph          uintptr = 255 // a0=subop (ui/graph boards)
 	HostOpRichText       uintptr = 256 // a0=subop (ui/richtext documents)
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
