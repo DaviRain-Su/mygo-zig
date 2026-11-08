@@ -87,6 +87,7 @@ pub const HostOp = enum(usize) {
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
+    audio = 253,
 };
 
 pub const WinCtl = enum(usize) {
@@ -200,6 +201,7 @@ pub const WinCtl = enum(usize) {
     gpu_process_id = 108,
     theme_color = 109,
     title_respond = 110,
+    session_state = 111,
 };
 
 
@@ -249,6 +251,7 @@ const ZigEvent = enum(usize) {
     now_playing = 43,
     ui_input = 44,
     ui_hit_test = 45,
+    audio_end = 46,
 };
 
 pub const CStr = extern struct {
@@ -294,6 +297,8 @@ pub const CWindowOptions = extern struct {
     _pad_tb: [4]u8 = @splat(0),
     session_name: CStr = .{},
     state_key: CStr = .{},
+    session_state_ptr: usize = 0,
+    session_state_len: usize = 0,
 };
 
 const CAssetSpec = extern struct {
@@ -366,6 +371,11 @@ pub var ui_input_count: usize = 0;
 pub const RawUIHit = *const fn (hit: *const abi.Hit, userdata: usize) usize;
 pub var ui_hit_handlers: [64]RawUIHit = undefined;
 pub var ui_hit_count: usize = 0;
+
+/// Player end-of-playback handlers.
+pub const RawAudioEnd = *const fn (player_id: usize, userdata: usize) void;
+pub var audio_end_handlers: [64]RawAudioEnd = undefined;
+pub var audio_end_count: usize = 0;
 
 pub var ui_subview_handlers: [128]ui.RawViewHandler = undefined;
 pub var ui_subview_count: usize = 0;
@@ -917,6 +927,11 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     const hit: *const abi.Hit = @ptrFromInt(a1);
                     return @intCast(ui_hit_handlers[a0 - 1](hit, a2));
                 },
+                .audio_end => {
+                    if (a0 == 0 or a0 > audio_end_count) return 0;
+                    audio_end_handlers[a0 - 1](a1, a2);
+                    return 0;
+                },
                 .ui_subview => {
                     if (a0 == 0 or a0 > ui_subview_count) return 0;
                     const info: *const ui.CFrameInfo = @ptrFromInt(a2);
@@ -1358,6 +1373,8 @@ pub const WindowOptions = struct {
     session_name: []const u8 = "",
     /// Remembers position/size/maximized across launches (WindowOptions.StateKey).
     state_key: []const u8 = "",
+    /// Brings back a page as Window.sessionState saved it.
+    session_state: []const u8 = "",
 
     pub fn toC(self: WindowOptions) CWindowOptions {
         return .{
@@ -1383,6 +1400,8 @@ pub const WindowOptions = struct {
             .title_bar_height = self.title_bar_height,
             .session_name = CStr.fromSlice(self.session_name),
             .state_key = CStr.fromSlice(self.state_key),
+            .session_state_ptr = sliceAddr(self.session_state),
+            .session_state_len = self.session_state.len,
         };
     }
 };
@@ -1834,6 +1853,14 @@ pub const Window = struct {
     }
 
     /// PNG screenshot of the visible page/content (caller frees).
+    /// Saves the page's session state into buf (its back/forward list and
+    /// form fields). Returns the bytes written.
+    pub fn sessionState(self: Window, buf: []u8) Error![]u8 {
+        const got = dispatch(.window_control, self.id, @intFromEnum(WinCtl.session_state), @intFromPtr(buf.ptr), buf.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return buf[0..@min(got, buf.len)];
+    }
+
     pub fn capturePagePNG(self: Window, allocator: std.mem.Allocator) Error![]u8 {
         var scratch: [8 * 1024 * 1024]u8 = undefined;
         const got = self.ctl(.capture_page, @intFromPtr(&scratch), scratch.len);
@@ -2715,6 +2742,169 @@ pub const Secrets = struct {
 
 /// A menu item, the JSON menu wire in a Zig type: `Desktop.setAppMenu`,
 /// `Tray.setMenu` and `Desktop.setDockMenu` take them.
+/// Sound playback: effects decoded into memory and players.
+///
+/// Decoders are the Go side's: a WAV always decodes, and Ogg Vorbis or MP3
+/// when the app (its Go shim) blank-imports audio/vorbis or audio/mp3.
+pub const Audio = struct {
+    const Sub = enum(usize) {
+        decode_sound = 1,
+        sound_duration = 2,
+        sound_play = 3,
+        open_stream = 4,
+        play = 5,
+        pause = 6,
+        stop = 7,
+        close = 8,
+        playing = 9,
+        set_volume = 10,
+        volume = 11,
+        set_pan = 12,
+        pan = 13,
+        set_speed = 14,
+        speed = 15,
+        set_loop = 16,
+        loop = 17,
+        seek = 18,
+        position = 19,
+        duration = 20,
+        set_loop_range = 21,
+        on_end = 22,
+    };
+
+    /// A Sound is audio decoded into memory, for effects that play often
+    /// and over themselves: each play is a new Player.
+    pub const Sound = struct {
+        id: usize,
+
+        /// durationMs is how long the sound is.
+        pub fn durationMs(self: Sound) u64 {
+            return dispatch(.audio, @intFromEnum(Sub.sound_duration), self.id, 0, 0);
+        }
+
+        /// play starts a new player of the sound.
+        pub fn play(self: Sound) Error!Player {
+            const id = dispatch(.audio, @intFromEnum(Sub.sound_play), self.id, 0, 0);
+            if (id == 0 or id == std.math.maxInt(usize)) return Error.MyGoError;
+            return .{ .id = id };
+        }
+
+        pub fn close(self: *Sound) void {
+            self.id = 0;
+        }
+    };
+
+    /// A Player plays a sound or a stream: its position, volume, pan, speed
+    /// and looping are its own.
+    pub const Player = struct {
+        id: usize,
+
+        pub fn play(self: Player) void {
+            _ = dispatch(.audio, @intFromEnum(Sub.play), self.id, 0, 0);
+        }
+        pub fn pause(self: Player) void {
+            _ = dispatch(.audio, @intFromEnum(Sub.pause), self.id, 0, 0);
+        }
+        pub fn stop(self: Player) void {
+            _ = dispatch(.audio, @intFromEnum(Sub.stop), self.id, 0, 0);
+        }
+        pub fn close(self: *Player) void {
+            if (self.id == 0) return;
+            _ = dispatch(.audio, @intFromEnum(Sub.close), self.id, 0, 0);
+            self.id = 0;
+        }
+        pub fn playing(self: Player) bool {
+            return dispatch(.audio, @intFromEnum(Sub.playing), self.id, 0, 0) != 0;
+        }
+        pub fn setVolume(self: Player, v: f64) Player {
+            _ = dispatch(.audio, @intFromEnum(Sub.set_volume), self.id, floatBits(v), 0);
+            return self;
+        }
+        pub fn volume(self: Player) f64 {
+            return bitsFloat(dispatch(.audio, @intFromEnum(Sub.volume), self.id, 0, 0));
+        }
+        pub fn setPan(self: Player, v: f64) Player {
+            _ = dispatch(.audio, @intFromEnum(Sub.set_pan), self.id, floatBits(v), 0);
+            return self;
+        }
+        pub fn pan(self: Player) f64 {
+            return bitsFloat(dispatch(.audio, @intFromEnum(Sub.pan), self.id, 0, 0));
+        }
+        pub fn setSpeed(self: Player, v: f64) Player {
+            _ = dispatch(.audio, @intFromEnum(Sub.set_speed), self.id, floatBits(v), 0);
+            return self;
+        }
+        pub fn speed(self: Player) f64 {
+            return bitsFloat(dispatch(.audio, @intFromEnum(Sub.speed), self.id, 0, 0));
+        }
+        pub fn setLoop(self: Player, on: bool) Player {
+            _ = dispatch(.audio, @intFromEnum(Sub.set_loop), self.id, @intFromBool(on), 0);
+            return self;
+        }
+        pub fn looping(self: Player) bool {
+            return dispatch(.audio, @intFromEnum(Sub.loop), self.id, 0, 0) != 0;
+        }
+        pub fn seekMs(self: Player, ms: u64) void {
+            _ = dispatch(.audio, @intFromEnum(Sub.seek), self.id, @intCast(ms), 0);
+        }
+        pub fn positionMs(self: Player) u64 {
+            return dispatch(.audio, @intFromEnum(Sub.position), self.id, 0, 0);
+        }
+        pub fn durationMs(self: Player) u64 {
+            return dispatch(.audio, @intFromEnum(Sub.duration), self.id, 0, 0);
+        }
+        pub fn setLoopRangeMs(self: Player, start_ms: u64, end_ms: u64) Player {
+            _ = dispatch(.audio, @intFromEnum(Sub.set_loop_range), self.id, @intCast(start_ms), @intCast(end_ms));
+            return self;
+        }
+        /// onEnd runs when the player stops playing by reaching its end.
+        pub fn onEnd(
+            self: Player,
+            comptime StatePtr: type,
+            state: StatePtr,
+            comptime handler: fn (StatePtr) void,
+        ) void {
+            const S = struct {
+                var cb_id: usize = 0;
+                fn onEnd(player_id: usize, ud: usize) void {
+                    _ = player_id;
+                    const s: StatePtr = @ptrFromInt(ud);
+                    handler(s);
+                }
+            };
+            if (S.cb_id == 0) {
+                if (audio_end_count >= audio_end_handlers.len) return;
+                audio_end_handlers[audio_end_count] = &S.onEnd;
+                audio_end_count += 1;
+                S.cb_id = audio_end_count;
+            }
+            _ = dispatch(.audio, @intFromEnum(Sub.on_end), self.id, S.cb_id, @intFromPtr(state));
+        }
+    };
+
+    /// decodeSound decodes audio bytes (WAV, and Ogg/MP3 with their plugins).
+    pub fn decodeSound(data: []const u8) Error!Sound {
+        const id = dispatch(.audio, @intFromEnum(Sub.decode_sound), sliceAddr(data), data.len, 0);
+        if (id == 0 or id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    /// openStream streams audio bytes as they play.
+    pub fn openStream(data: []const u8) Error!Player {
+        const id = dispatch(.audio, @intFromEnum(Sub.open_stream), sliceAddr(data), data.len, 0);
+        if (id == 0 or id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    fn floatBits(v: f64) usize {
+        return @bitCast(v);
+    }
+
+    fn bitsFloat(bits: usize) f64 {
+        return @bitCast(bits);
+    }
+};
+
 pub const MenuItem = struct {
     pub const Kind = enum {
         normal,

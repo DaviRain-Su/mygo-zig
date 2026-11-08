@@ -725,6 +725,54 @@ const handWrittenQueries = `
         self.ctx.writeU8(@intFromBool(o.non_motion));
         return self;
     }
+
+    /// Applies a composed 2D/3D transform.
+    pub fn transform(self: Element, t: ui.Transform) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.transform));
+        self.ctx.writeU8(t.len);
+        for (t.ops[0..t.len]) |op| {
+            switch (op) {
+                .translate => |v| {
+                    self.ctx.writeU8(0);
+                    self.ctx.writeF32(v[0]);
+                    self.ctx.writeF32(v[1]);
+                },
+                .translate_3d => |v| {
+                    self.ctx.writeU8(1);
+                    self.ctx.writeF32(v[0]);
+                    self.ctx.writeF32(v[1]);
+                    self.ctx.writeF32(v[2]);
+                },
+                .scale => |v| {
+                    self.ctx.writeU8(2);
+                    self.ctx.writeF32(v[0]);
+                    self.ctx.writeF32(v[1]);
+                },
+                .rotate => |deg| {
+                    self.ctx.writeU8(3);
+                    self.ctx.writeF32(deg);
+                },
+                .skew => |v| {
+                    self.ctx.writeU8(4);
+                    self.ctx.writeF32(v[0]);
+                    self.ctx.writeF32(v[1]);
+                },
+                .rotate_x => |deg| {
+                    self.ctx.writeU8(5);
+                    self.ctx.writeF32(deg);
+                },
+                .rotate_y => |deg| {
+                    self.ctx.writeU8(6);
+                    self.ctx.writeF32(deg);
+                },
+                .perspective => |d| {
+                    self.ctx.writeU8(7);
+                    self.ctx.writeF32(d);
+                },
+            }
+        }
+        return self;
+    }
 `
 
 func writeGoDecoder(methods []methodSpec) {

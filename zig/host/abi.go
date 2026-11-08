@@ -52,6 +52,7 @@ const (
 	ZigEventNowPlaying    uintptr = 43 // a0=cb_id a1=cmd a2=position_ns
 	ZigEventUIInput       uintptr = 44 // a0=cb_id a1=*CUIInput a2=userdata → 1 took it
 	ZigEventUIHitTest     uintptr = 45 // a0=cb_id a1=*CUIHit a2=userdata → 1 hit
+	ZigEventAudioEnd      uintptr = 46 // a0=cb_id a1=player_id
 )
 
 // CUIInput is one InputEvent as the Zig side reads it. Layout must match
@@ -78,6 +79,32 @@ type CUIInput struct {
 	TextPtr     uintptr
 	TextLen     uintptr
 }
+
+// Audio sub-ops for HostOpAudio.
+const (
+	AudioDecodeSound        uintptr = 1 // a1=ptr a2=len → sound id
+	AudioSoundDuration      uintptr = 2 // a1=id → ms
+	AudioSoundPlay          uintptr = 3 // a1=id → player id
+	AudioOpenStream         uintptr = 4 // a1=ptr a2=len → player id
+	AudioPlayerPlay         uintptr = 5 // a1=id
+	AudioPlayerPause        uintptr = 6
+	AudioPlayerStop         uintptr = 7
+	AudioPlayerClose        uintptr = 8
+	AudioPlayerPlaying      uintptr = 9  // → 1/0
+	AudioPlayerSetVolume    uintptr = 10 // a2=bits of float64
+	AudioPlayerVolume       uintptr = 11 // → bits of float64
+	AudioPlayerSetPan       uintptr = 12
+	AudioPlayerPan          uintptr = 13
+	AudioPlayerSetSpeed     uintptr = 14
+	AudioPlayerSpeed        uintptr = 15
+	AudioPlayerSetLoop      uintptr = 16 // a2=1/0
+	AudioPlayerLoop         uintptr = 17 // → 1/0
+	AudioPlayerSeek         uintptr = 18 // a2=ms
+	AudioPlayerPosition     uintptr = 19 // → ms
+	AudioPlayerDuration     uintptr = 20 // → ms
+	AudioPlayerSetLoopRange uintptr = 21 // a2=start ms a3=end ms
+	AudioPlayerOnEnd        uintptr = 22 // a2=cb_id
+)
 
 // CUIHit asks a Zig hit test whether the pointer at PX, PY hits the element,
 // whose frame is X, Y, W, H.
@@ -155,6 +182,7 @@ const (
 	HostOpDocuments      uintptr = 250 // a0=subop bytes documents
 	HostOpNetwork        uintptr = 251 // a0=subop Network.Status/OnChanged
 	HostOpNowPlaying     uintptr = 252 // a0=subop NowPlaying
+	HostOpAudio          uintptr = 253 // a0=subop (audio.Sound / audio.Player)
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -272,11 +300,12 @@ const (
 	WinCtlIsDevToolsOpened     uintptr = 54 // → 1/0
 	WinCtlToggleDevTools       uintptr = 55
 	WinCtlPrint                uintptr = 56
-	WinCtlURL                  uintptr = 57 // a2=out a3=cap → len
-	WinCtlIsLoading            uintptr = 58 // → 1/0
-	WinCtlCapturePage          uintptr = 59 // a2=out a3=cap → nbytes PNG
-	WinCtlPrintToPDF           uintptr = 60 // a2=*CPDFSpec → nbytes
-	WinCtlSetMinSize           uintptr = 61 // a2=w a3=h
+	WinCtlURL                  uintptr = 57  // a2=out a3=cap → len
+	WinCtlIsLoading            uintptr = 58  // → 1/0
+	WinCtlCapturePage          uintptr = 59  // a2=out a3=cap → nbytes PNG
+	WinCtlPrintToPDF           uintptr = 60  // a2=*CPDFSpec → nbytes
+	WinCtlSessionState         uintptr = 111 // a2=out a3=cap → nbytes
+	WinCtlSetMinSize           uintptr = 61  // a2=w a3=h
 	WinCtlSetMaxSize           uintptr = 62
 	WinCtlSetSize              uintptr = 63
 	WinCtlSetPosition          uintptr = 64 // a2=x a3=y
@@ -366,6 +395,9 @@ type CWindowOptions struct {
 	_PadTB          [4]byte
 	SessionName     CStr
 	StateKey        CStr
+	// SessionState brings back a page as its sessionState saved it.
+	SessionStatePtr uintptr
+	SessionStateLen uintptr
 }
 
 // CAssetSpec describes an embedded asset registered by Zig (`@embedFile`).

@@ -240,6 +240,7 @@ const (
 	opTransition           uint16 = 407 // flags, preset, dur, delay, exit, bounce, nonMotion
 	opContentTransition    uint16 = 408 // flags, preset, dur, delay, bounce, nonMotion
 	opCheckboxState        uint16 = 409 // key, state, label
+	opTransform            uint16 = 410 // u8 n, then (u8 kind, args)*
 )
 
 // PaintBuffer opcodes decoded by HostOpUIPaintFlush.
@@ -3759,6 +3760,76 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				out.IntVal = int64(st)
 				out.BoolVal = u8Bool(st != mygoui.CheckState(state))
 			}
+		case opTransform:
+			n, ok := r.u8()
+			if !ok {
+				return
+			}
+			var tr mygoui.Transform
+			for range int(n) {
+				kind, ok := r.u8()
+				if !ok {
+					return
+				}
+				switch kind {
+				case 0: // translate
+					x, ok1 := r.f32()
+					y, ok2 := r.f32()
+					if !ok1 || !ok2 {
+						return
+					}
+					tr = tr.Then(mygoui.Translation(x, y))
+				case 1: // translate 3D
+					x, ok1 := r.f32()
+					y, ok2 := r.f32()
+					z, ok3 := r.f32()
+					if !ok1 || !ok2 || !ok3 {
+						return
+					}
+					tr = tr.Then(mygoui.Translation3D(x, y, z))
+				case 2: // scale
+					x, ok1 := r.f32()
+					y, ok2 := r.f32()
+					if !ok1 || !ok2 {
+						return
+					}
+					tr = tr.Then(mygoui.Scaling(x, y))
+				case 3: // rotate
+					deg, ok := r.f32()
+					if !ok {
+						return
+					}
+					tr = tr.Then(mygoui.Rotation(deg))
+				case 4: // skew
+					x, ok1 := r.f32()
+					y, ok2 := r.f32()
+					if !ok1 || !ok2 {
+						return
+					}
+					tr = tr.Then(mygoui.Skewing(x, y))
+				case 5: // rotate X
+					deg, ok := r.f32()
+					if !ok {
+						return
+					}
+					tr = tr.Then(mygoui.RotationX(deg))
+				case 6: // rotate Y
+					deg, ok := r.f32()
+					if !ok {
+						return
+					}
+					tr = tr.Then(mygoui.RotationY(deg))
+				case 7: // perspective
+					d, ok := r.f32()
+					if !ok {
+						return
+					}
+					tr = tr.Then(mygoui.Perspective(d))
+				default:
+					return
+				}
+			}
+			f.cur = f.cur.Transform(tr)
 		case opAfter:
 			ms, ok := r.i32()
 			if !ok {

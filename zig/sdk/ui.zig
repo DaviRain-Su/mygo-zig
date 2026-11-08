@@ -451,6 +451,65 @@ pub const CoreOp = enum(u16) {
     transition = 407,
     content_transition = 408,
     checkbox_state = 409,
+    transform = 410,
+};
+
+/// A composed 2D/3D transform, as Element.transform applies it.
+pub const Transform = struct {
+    ops: [8]Op = undefined,
+    len: u8 = 0,
+
+    pub const Op = union(enum) {
+        translate: [2]f32,
+        translate_3d: [3]f32,
+        scale: [2]f32,
+        rotate: f32,
+        skew: [2]f32,
+        rotate_x: f32,
+        rotate_y: f32,
+        perspective: f32,
+    };
+
+    fn push(self: Transform, op: Op) Transform {
+        var out = self;
+        if (out.len < out.ops.len) {
+            out.ops[out.len] = op;
+            out.len += 1;
+        }
+        return out;
+    }
+
+    pub fn translate(self: Transform, x: f32, y: f32) Transform {
+        return self.push(.{ .translate = .{ x, y } });
+    }
+
+    pub fn translate3D(self: Transform, x: f32, y: f32, z: f32) Transform {
+        return self.push(.{ .translate_3d = .{ x, y, z } });
+    }
+
+    pub fn scale(self: Transform, x: f32, y: f32) Transform {
+        return self.push(.{ .scale = .{ x, y } });
+    }
+
+    pub fn rotate(self: Transform, degrees: f32) Transform {
+        return self.push(.{ .rotate = degrees });
+    }
+
+    pub fn rotateX(self: Transform, degrees: f32) Transform {
+        return self.push(.{ .rotate_x = degrees });
+    }
+
+    pub fn rotateY(self: Transform, degrees: f32) Transform {
+        return self.push(.{ .rotate_y = degrees });
+    }
+
+    pub fn skew(self: Transform, x: f32, y: f32) Transform {
+        return self.push(.{ .skew = .{ x, y } });
+    }
+
+    pub fn perspective(self: Transform, distance: f32) Transform {
+        return self.push(.{ .perspective = distance });
+    }
 };
 
 /// The state of a check box that may be mixed, as a "select all" box.

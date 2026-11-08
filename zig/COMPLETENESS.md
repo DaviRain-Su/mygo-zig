@@ -151,3 +151,15 @@ Still Go-only, with reasons:
 - `Audio`, `Page.SessionState`, `App.SetWindowStateStore`, `Plugin`,
   `NewDocuments[T]`, `ui/graph`, `ui/richtext`, `plugins/loading`,
   `plugins/sfsymbols`.
+
+## Phase 10 — session state, transforms, audio
+
+- `Window.sessionState(buf)` saves a page's back/forward list and form fields;
+  `WindowOptions.session_state` (and `PageOptions.SessionState` on the Go side)
+  brings them back.
+- `ui.Transform` composes translate/translate3D/scale/rotate/rotateX/rotateY/
+  skew/perspective, applied by `Element.transform`.
+- `mygo.Audio`: `decodeSound`, `openStream`, `Sound.play/durationMs`, and
+  `Player` with play/pause/stop/close/playing/volume/pan/speed/loop/seek/
+  position/duration/loop-range/onEnd (`HostOpAudio=253`, `ZigEventAudioEnd=46`).
+  Decoders come from the Go shim's blank imports (audio/vorbis, audio/mp3).

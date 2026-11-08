@@ -75,12 +75,14 @@ returns values or takes callbacks:
 | Geometry | `bounds` · `layoutBounds` · `localToWindow` · `windowToLocal` · `pointerPosition` |
 | Scroll | `inView` · `inViewAmount` · `inViewMargin` |
 | Text | `textSelection` · `textAnchorCaret` |
+| Session | `Window.sessionState` / `WindowOptions.session_state` |
 | Drag | `dragOffset` · `dragVelocity` · `dragEnded` · `dragMissed` |
 | Keys | `shortcut` · `overlayShortcut` · `keyShortcuts` |
 | Input | `observeInput` · `handleInput` · `hitTest` |
 | Scroll | `scrollSnap` · `scrollIntoView` · `droppedFiles` · `fileDragOver` |
 | Motion | `transition` · `contentTransition` |
 | Masks | `maskLinearGradient` · `maskRadialGradient` · `maskConicGradient` |
+| Transform | `transform(ui.Transform{}.translate(x, y).rotate(deg)…)` |
 
 ```zig
 const field = c.textInput("q", buf[0..], &len);
@@ -103,6 +105,20 @@ fn onInput(app: *App, ev: ui.InputEvent) void {
     if (ev.kind == .key_down and ev.key == .f1) app.help = !app.help;
 }
 ```
+
+### Audio
+
+```zig
+const beep = try mygo.Audio.decodeSound(wav_bytes);   // WAV, Ogg/MP3 with their Go plugins
+const p = try beep.play();
+_ = p.setVolume(0.4).setPan(-0.2).setSpeed(1.0).setLoop(true);
+p.onEnd(*App, &app, App.onBeepEnd);
+
+const music = try mygo.Audio.openStream(file_bytes);  // streams as it plays
+music.play();
+```
+
+`Sound.durationMs()` and `Player.{play,pause,stop,close,playing,volume,pan,speed,looping,seekMs,positionMs,durationMs,setLoopRangeMs}`.
 
 ### Menus
 

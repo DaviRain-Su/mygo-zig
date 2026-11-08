@@ -108,6 +108,46 @@ const sample_zig =
     \\}
 ;
 
+/// makeBeepWav writes a mono 16-bit WAV of a 440 Hz tone into buf.
+fn makeBeepWav(buf: []u8, ms: u32) []u8 {
+    const rate: u32 = 22050;
+    const samples = rate * ms / 1000;
+    const data_len = samples * 2;
+    const n = 44 + data_len;
+    if (buf.len < n) return buf[0..0];
+    const put32 = struct {
+        fn f(b: []u8, off: usize, v: u32) void {
+            std.mem.writeInt(u32, b[off..][0..4], v, .little);
+        }
+    }.f;
+    const put16 = struct {
+        fn f(b: []u8, off: usize, v: u16) void {
+            std.mem.writeInt(u16, b[off..][0..2], v, .little);
+        }
+    }.f;
+    @memcpy(buf[0..4], "RIFF");
+    put32(buf, 4, 36 + data_len);
+    @memcpy(buf[8..12], "WAVE");
+    @memcpy(buf[12..16], "fmt ");
+    put32(buf, 16, 16);
+    put16(buf, 20, 1); // PCM
+    put16(buf, 22, 1); // mono
+    put32(buf, 24, rate);
+    put32(buf, 28, rate * 2);
+    put16(buf, 32, 2);
+    put16(buf, 34, 16);
+    @memcpy(buf[36..40], "data");
+    put32(buf, 40, data_len);
+    var i: u32 = 0;
+    while (i < samples) : (i += 1) {
+        const t_s = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(rate));
+        const fade = 1.0 - @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(samples));
+        const v: i16 = @intFromFloat(@sin(t_s * 2 * std.math.pi * 440) * 12000 * fade);
+        put16(buf, 44 + i * 2, @bitCast(v));
+    }
+    return buf[0..n];
+}
+
 const Gallery = struct {
     tab: i32 = 0,
     theme_idx: i32 = 0,
@@ -213,6 +253,8 @@ const Gallery = struct {
     hit_text: []const u8 = "",
     reveal: bool = false,
     check_state: ui.CheckState = .mixed,
+    beep: mygo.Audio.Sound = .{ .id = 0 },
+    beep_ms: u64 = 0,
     drop_names: [8][]const u8 = @splat(""),
     drop_count: usize = 0,
     flyout_id: i32 = 0,
@@ -884,6 +926,17 @@ const Gallery = struct {
         self.input_events +%= 1;
     }
 
+    fn beepNow(self: *Gallery) void {
+        if (self.beep.id == 0) {
+            var wav: [44 + 22050 * 2 * 300 / 1000]u8 = undefined;
+            const bytes = makeBeepWav(wav[0..], 300);
+            self.beep = mygo.Audio.decodeSound(bytes) catch return;
+            self.beep_ms = self.beep.durationMs();
+        }
+        const player = self.beep.play() catch return;
+        _ = player.setVolume(0.4);
+    }
+
     fn onInputTake(self: *Gallery, ev: ui.InputEvent) bool {
         // Consume F1 to show handleInput taking one, and nothing else.
         if (ev.kind == .key_down and ev.key == .f1) {
@@ -1488,6 +1541,10 @@ const Gallery = struct {
                 self.reveal = !self.reveal;
             }
             _ = c.checkboxState("tri", &self.check_state, "Select all");
+            if (c.button("beep", "Beep").clicked()) self.beepNow();
+            if (self.beep_ms > 0) {
+                _ = c.textf("audio {d}ms", .{self.beep_ms}).fontSize(11).textColor(t.text_muted);
+            }
         }
 
         {

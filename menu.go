@@ -401,7 +401,10 @@ func prepareItem(it *MenuItem, parent *Menu) *MenuItem {
 		if it.Accelerator == "" {
 			it.Accelerator = accel
 		}
-		if it.Submenu == nil {
+		// An empty submenu is no submenu: the Zig host's menu JSON leaves
+		// it empty for items without children, and a non-nil empty slice
+		// would otherwise make every item a submenu.
+		if len(it.Submenu) == 0 {
 			it.Submenu = roleSubmenu(it.Role)
 		}
 		if runtime.GOOS != "darwin" && macOnlyRoles[it.Role] {
@@ -410,11 +413,11 @@ func prepareItem(it *MenuItem, parent *Menu) *MenuItem {
 	}
 	if it.Type == "" {
 		it.Type = MenuItemNormal
-		if it.Submenu != nil {
+		if len(it.Submenu) > 0 {
 			it.Type = MenuItemSubmenu
 		}
 	}
-	if it.Submenu != nil {
+	if len(it.Submenu) > 0 {
 		sub := &Menu{}
 		for _, child := range it.Submenu {
 			sub.items = append(sub.items, prepareItem(child, sub))

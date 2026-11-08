@@ -284,6 +284,9 @@ func ParseWindowOptions(raw *CWindowOptions) mygo.WindowOptions {
 		opts.Page.Session = mygo.NewSession(name)
 	}
 	opts.StateKey = StrField(raw.StateKey)
+	if raw.SessionStatePtr != 0 && raw.SessionStateLen != 0 {
+		opts.Page.SessionState = CopyBytes(raw.SessionStatePtr, raw.SessionStateLen)
+	}
 	return opts
 }
 
@@ -1095,6 +1098,17 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		return capturePage(w, a2, a3)
 	case WinCtlPrintToPDF:
 		return printToPDF(w, a2)
+	case WinCtlSessionState:
+		if w.Page() == nil {
+			return ^uintptr(0)
+		}
+		state, err := w.Page().SessionState()
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		return writeBytesToOut(state, a2, a3)
+
 	case WinCtlSetMinSize:
 		w.SetMinimumSize(int(a2), int(a3))
 	case WinCtlSetMaxSize:
