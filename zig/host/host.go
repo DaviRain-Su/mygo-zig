@@ -589,6 +589,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpLocale:
 		return hostLocale(a0, a1, a2, a3)
 
+	case HostOpContentRules:
+		return hostContentRules(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -774,6 +777,49 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		return 0
 	case WinCtlEval:
 		return evalInPage(w, a2)
+	case WinCtlOnContextMenu:
+		setWindowContextMenuHandler(w, a2)
+	case WinCtlContextMenuRespond:
+		return contextMenuRespond(a2)
+	case WinCtlSetContentRules:
+		return setWindowContentRules(w, a2, a3)
+	case WinCtlSetAudioMuted:
+		if w.Page() != nil {
+			w.Page().SetAudioMuted(a2 != 0)
+		}
+		return 0
+	case WinCtlIsAudioMuted:
+		if w.Page() != nil && w.Page().IsAudioMuted() {
+			return 1
+		}
+		return 0
+	case WinCtlIsAudible:
+		if w.Page() != nil && w.Page().IsAudible() {
+			return 1
+		}
+		return 0
+	case WinCtlOnPageMedia:
+		setWindowPageMediaHandler(w, a2)
+	case WinCtlCaptureState:
+		if w.Page() == nil {
+			return 0
+		}
+		return uintptr(w.Page().CaptureState(mygo.CaptureKind(a2)))
+	case WinCtlSetCaptureState:
+		if w.Page() != nil {
+			w.Page().SetCaptureState(mygo.CaptureKind(a2), mygo.CaptureState(a3))
+		}
+		return 0
+	case WinCtlTogglePiP:
+		if w.Page() != nil {
+			w.Page().TogglePictureInPicture()
+		}
+		return 0
+	case WinCtlIsPiPActive:
+		if w.Page() != nil && w.Page().IsPictureInPictureActive() {
+			return 1
+		}
+		return 0
 	}
 	return 0
 }
@@ -2681,4 +2727,223 @@ func evalInPage(w *mygo.Window, a2 uintptr) uintptr {
 	}
 	SetError(nil)
 	return writeBytesToOut(raw, spec.OutPtr, spec.OutCap)
+}
+
+var (
+	contextMenuReqsMu  sync.Mutex
+	contextMenuReqs    = map[uintptr]chan contextMenuReply{}
+	nextContextMenuReq atomic.Uintptr
+	contentRulesMu     sync.Mutex
+	contentRulesByID   = map[string]*mygo.ContentRules{}
+)
+
+type contextMenuReply struct {
+	prevent bool
+	menu    []byte // nil = keep default; non-nil replaces
+}
+
+func menuItemsToJSON(items []*mygo.MenuItem) []byte {
+	var convert func(items []*mygo.MenuItem) []menuSpecItem
+	convert = func(items []*mygo.MenuItem) []menuSpecItem {
+		out := make([]menuSpecItem, 0, len(items))
+		for _, it := range items {
+			if it == nil {
+				continue
+			}
+			s := menuSpecItem{
+				ID: it.ID, Label: it.Label, Type: string(it.Type), Role: string(it.Role),
+				Accelerator: it.Accelerator, Disabled: it.Disabled, Hidden: it.Hidden, Checked: it.Checked,
+			}
+			if len(it.Submenu) > 0 {
+				s.Submenu = convert(it.Submenu)
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+	raw, _ := json.Marshal(convert(items))
+	return raw
+}
+
+func contextMenuFromJSON(raw []byte, cbID uintptr) (*mygo.Menu, error) {
+	var spec []menuSpecItem
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		return nil, err
+	}
+	var convert func(items []menuSpecItem) []*mygo.MenuItem
+	convert = func(items []menuSpecItem) []*mygo.MenuItem {
+		out := make([]*mygo.MenuItem, len(items))
+		for i, it := range items {
+			mi := &mygo.MenuItem{
+				ID: it.ID, Label: it.Label, Type: mygo.MenuItemType(it.Type),
+				Role: mygo.MenuRole(it.Role), Accelerator: it.Accelerator,
+				Disabled: it.Disabled, Hidden: it.Hidden, Checked: it.Checked,
+				Submenu: convert(it.Submenu),
+			}
+			if cbID != 0 && mi.Role == "" && len(mi.Submenu) == 0 && mi.Type != mygo.MenuItemSeparator {
+				idCopy := mi.ID
+				if idCopy == "" {
+					idCopy = mi.Label
+				}
+				mi.Click = func(_ *mygo.MenuItem, win *mygo.Window) {
+					var wid uintptr
+					if win != nil {
+						wid = uintptr(win.ID())
+					}
+					b := []byte(idCopy)
+					ptr, n := SliceAddr(b)
+					activeCall(ZigEventMenu, cbID, wid, ptr, n)
+				}
+			}
+			out[i] = mi
+		}
+		return out
+	}
+	return mygo.NewMenu(convert(spec)), nil
+}
+
+func setWindowContextMenuHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil || cbID == 0 {
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().OnContextMenu(func(e *mygo.ContextMenuEvent) {
+		reqID := nextContextMenuReq.Add(1)
+		ch := make(chan contextMenuReply, 1)
+		contextMenuReqsMu.Lock()
+		contextMenuReqs[reqID] = ch
+		contextMenuReqsMu.Unlock()
+		defer func() {
+			contextMenuReqsMu.Lock()
+			delete(contextMenuReqs, reqID)
+			contextMenuReqsMu.Unlock()
+		}()
+		var menuJSON []byte
+		if e.Menu != nil {
+			menuJSON = menuItemsToJSON(e.Menu.Items())
+		} else {
+			menuJSON = []byte("[]")
+		}
+		linkB, textB := []byte(e.LinkURL), []byte(e.LinkText)
+		imgB, mediaB := []byte(e.ImageURL), []byte(e.MediaURL)
+		selB, frameB := []byte(e.SelectionText), []byte(e.FrameURL)
+		ev := CContextMenuEv{}
+		ev.LinkURLPtr, ev.LinkURLLen = SliceAddr(linkB)
+		ev.LinkTextPtr, ev.LinkTextLen = SliceAddr(textB)
+		ev.ImageURLPtr, ev.ImageURLLen = SliceAddr(imgB)
+		ev.MediaURLPtr, ev.MediaURLLen = SliceAddr(mediaB)
+		ev.SelectionPtr, ev.SelectionLen = SliceAddr(selB)
+		ev.FrameURLPtr, ev.FrameURLLen = SliceAddr(frameB)
+		if e.Editable {
+			ev.Editable = 1
+		}
+		ev.MenuPtr, ev.MenuLen = SliceAddr(menuJSON)
+		activeCall(ZigEventContextMenu, cbID, winID, uintptrSlicePtr(&ev), reqID)
+		select {
+		case r := <-ch:
+			if r.prevent {
+				e.PreventDefault()
+				e.Menu = nil
+				return
+			}
+			if r.menu != nil {
+				m, err := contextMenuFromJSON(r.menu, cbID)
+				if err != nil {
+					return
+				}
+				e.Menu = m
+			}
+		default:
+		}
+	})
+}
+
+func contextMenuRespond(a2 uintptr) uintptr {
+	spec := PtrTo[CContextMenuResp](a2)
+	if spec == nil {
+		return ^uintptr(0)
+	}
+	contextMenuReqsMu.Lock()
+	ch := contextMenuReqs[spec.ReqID]
+	contextMenuReqsMu.Unlock()
+	if ch == nil {
+		return 0
+	}
+	r := contextMenuReply{prevent: spec.Prevent != 0}
+	if !r.prevent && spec.MenuLen > 0 {
+		r.menu = CopyBytes(spec.MenuPtr, spec.MenuLen)
+	}
+	select {
+	case ch <- r:
+	default:
+	}
+	return 0
+}
+
+func hostContentRules(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case ContentRulesCompile:
+		spec := PtrTo[CContentRulesCompileSpec](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: content rules compile needs spec"))
+			return ^uintptr(0)
+		}
+		id := CopyString(spec.IDPtr, spec.IDLen)
+		rules := CopyString(spec.RulesPtr, spec.RulesLen)
+		r, err := mygo.CompileContentRules(id, rules)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		contentRulesMu.Lock()
+		contentRulesByID[id] = r
+		contentRulesMu.Unlock()
+		SetError(nil)
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown content rules subop"))
+		return ^uintptr(0)
+	}
+}
+
+func setWindowContentRules(w *mygo.Window, idsPtr, idsLen uintptr) uintptr {
+	if w.Page() == nil {
+		SetError(errors.New("zighost: content rules need a page"))
+		return ^uintptr(0)
+	}
+	var ids []string
+	if idsLen > 0 {
+		if err := json.Unmarshal(CopyBytes(idsPtr, idsLen), &ids); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+	}
+	contentRulesMu.Lock()
+	rules := make([]*mygo.ContentRules, 0, len(ids))
+	for _, id := range ids {
+		if r := contentRulesByID[id]; r != nil {
+			rules = append(rules, r)
+		}
+	}
+	contentRulesMu.Unlock()
+	w.Page().SetContentRules(rules...)
+	SetError(nil)
+	return 0
+}
+
+func setWindowPageMediaHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil || cbID == 0 {
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().OnAudibleChanged(func(audible bool) {
+		var flag uintptr
+		if audible {
+			flag = 1
+		}
+		activeCall(ZigEventPageMedia, cbID, winID, 1, flag)
+	})
+	w.Page().OnCaptureStateChanged(func(kind mygo.CaptureKind, state mygo.CaptureState) {
+		activeCall(ZigEventPageMedia, cbID, winID, 2, (uintptr(kind)<<16)|uintptr(state))
+	})
 }

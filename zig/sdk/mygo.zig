@@ -49,6 +49,7 @@ pub const HostOp = enum(usize) {
     cookies = 32,
     session = 33,
     locale = 34,
+    content_rules = 35,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -109,6 +110,17 @@ pub const WinCtl = enum(usize) {
     go_back = 34,
     go_forward = 35,
     eval = 36,
+    on_context_menu = 37,
+    context_menu_respond = 38,
+    set_content_rules = 39,
+    set_audio_muted = 40,
+    is_audio_muted = 41,
+    is_audible = 42,
+    on_page_media = 43,
+    capture_state = 44,
+    set_capture_state = 45,
+    toggle_pip = 46,
+    is_pip_active = 47,
 };
 
 const ZigEvent = enum(usize) {
@@ -142,6 +154,8 @@ const ZigEvent = enum(usize) {
     page = 28,
     permission = 29,
     window_open = 30,
+    context_menu = 31,
+    page_media = 32,
 };
 
 pub const CStr = extern struct {
@@ -515,6 +529,42 @@ fn registerWindowOpenHandler(h: RawWindowOpenHandler, userdata: usize) usize {
     return window_open_count;
 }
 
+pub const ContextMenuEvent = struct {
+    req_id: usize = 0,
+    link_url: []const u8 = "",
+    link_text: []const u8 = "",
+    image_url: []const u8 = "",
+    media_url: []const u8 = "",
+    selection: []const u8 = "",
+    frame_url: []const u8 = "",
+    editable: bool = false,
+    menu_json: []const u8 = "[]",
+};
+
+const RawContextMenuHandler = *const fn (win_id: i32, ev: ContextMenuEvent, userdata: usize) void;
+var context_menu_handlers: [8]RawContextMenuHandler = undefined;
+var context_menu_count: usize = 0;
+var context_menu_handler_userdata: [8]usize = undefined;
+
+fn registerContextMenuHandler(h: RawContextMenuHandler, userdata: usize) usize {
+    context_menu_handlers[context_menu_count] = h;
+    context_menu_handler_userdata[context_menu_count] = userdata;
+    context_menu_count += 1;
+    return context_menu_count;
+}
+
+const RawPageMediaHandler = *const fn (win_id: i32, kind: u8, payload: usize, userdata: usize) void;
+var page_media_handlers: [8]RawPageMediaHandler = undefined;
+var page_media_count: usize = 0;
+var page_media_handler_userdata: [8]usize = undefined;
+
+fn registerPageMediaHandler(h: RawPageMediaHandler, userdata: usize) usize {
+    page_media_handlers[page_media_count] = h;
+    page_media_handler_userdata[page_media_count] = userdata;
+    page_media_count += 1;
+    return page_media_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -839,6 +889,48 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         .user_initiated = creq.user_initiated != 0,
                     };
                     window_open_handlers[a0 - 1](win_id, a3, req, window_open_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .context_menu => {
+                    if (a0 == 0 or a0 > context_menu_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const creq: *const extern struct {
+                        link_url_ptr: usize = 0,
+                        link_url_len: usize = 0,
+                        link_text_ptr: usize = 0,
+                        link_text_len: usize = 0,
+                        image_url_ptr: usize = 0,
+                        image_url_len: usize = 0,
+                        media_url_ptr: usize = 0,
+                        media_url_len: usize = 0,
+                        selection_ptr: usize = 0,
+                        selection_len: usize = 0,
+                        frame_url_ptr: usize = 0,
+                        frame_url_len: usize = 0,
+                        editable: u8 = 0,
+                        _pad: [7]u8 = @splat(0),
+                        menu_ptr: usize = 0,
+                        menu_len: usize = 0,
+                    } = @ptrFromInt(a2);
+                    const ev = ContextMenuEvent{
+                        .req_id = a3,
+                        .link_url = if (creq.link_url_ptr != 0 and creq.link_url_len != 0) @as([*]const u8, @ptrFromInt(creq.link_url_ptr))[0..creq.link_url_len] else "",
+                        .link_text = if (creq.link_text_ptr != 0 and creq.link_text_len != 0) @as([*]const u8, @ptrFromInt(creq.link_text_ptr))[0..creq.link_text_len] else "",
+                        .image_url = if (creq.image_url_ptr != 0 and creq.image_url_len != 0) @as([*]const u8, @ptrFromInt(creq.image_url_ptr))[0..creq.image_url_len] else "",
+                        .media_url = if (creq.media_url_ptr != 0 and creq.media_url_len != 0) @as([*]const u8, @ptrFromInt(creq.media_url_ptr))[0..creq.media_url_len] else "",
+                        .selection = if (creq.selection_ptr != 0 and creq.selection_len != 0) @as([*]const u8, @ptrFromInt(creq.selection_ptr))[0..creq.selection_len] else "",
+                        .frame_url = if (creq.frame_url_ptr != 0 and creq.frame_url_len != 0) @as([*]const u8, @ptrFromInt(creq.frame_url_ptr))[0..creq.frame_url_len] else "",
+                        .editable = creq.editable != 0,
+                        .menu_json = if (creq.menu_ptr != 0 and creq.menu_len != 0) @as([*]const u8, @ptrFromInt(creq.menu_ptr))[0..creq.menu_len] else "[]",
+                    };
+                    context_menu_handlers[a0 - 1](win_id, ev, context_menu_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .page_media => {
+                    if (a0 == 0 or a0 > page_media_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const media_kind: u8 = @intCast(a2);
+                    page_media_handlers[a0 - 1](win_id, media_kind, a3, page_media_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -1244,6 +1336,80 @@ pub const Window = struct {
         if (got == std.math.maxInt(usize)) return Error.MyGoError;
         const n = @min(got, scratch.len);
         return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    /// Must call contextMenuRespond before returning.
+    /// Empty menu_json keeps the default; non-empty replaces; prevent hides it.
+    pub fn onContextMenu(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, ContextMenuEvent) void) void {
+        const S = struct {
+            fn onCM(_: i32, ev: ContextMenuEvent, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, ev);
+            }
+        };
+        const cb = registerContextMenuHandler(&S.onCM, @intFromPtr(state));
+        _ = self.ctl(.on_context_menu, cb, 0);
+    }
+
+    pub fn contextMenuRespond(self: Window, req_id: usize, prevent: bool, menu_json: []const u8) void {
+        const Spec = extern struct {
+            req_id: usize = 0,
+            prevent: u8 = 0,
+            _pad: [7]u8 = @splat(0),
+            menu_ptr: usize = 0,
+            menu_len: usize = 0,
+        };
+        var spec = Spec{
+            .req_id = req_id,
+            .prevent = if (prevent) 1 else 0,
+            .menu_ptr = sliceAddr(menu_json),
+            .menu_len = menu_json.len,
+        };
+        _ = self.ctl(.context_menu_respond, @intFromPtr(&spec), 0);
+    }
+
+    pub fn setContentRulesJSON(self: Window, ids_json: []const u8) Error!void {
+        if (self.ctl(.set_content_rules, sliceAddr(ids_json), ids_json.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn setAudioMuted(self: Window, muted: bool) void {
+        _ = self.ctl(.set_audio_muted, @intFromBool(muted), 0);
+    }
+
+    pub fn isAudioMuted(self: Window) bool {
+        return self.ctl(.is_audio_muted, 0, 0) != 0;
+    }
+
+    pub fn isAudible(self: Window) bool {
+        return self.ctl(.is_audible, 0, 0) != 0;
+    }
+
+    /// kind 1 = audible (payload 0/1); kind 2 = capture ((kind<<16)|state).
+    pub fn onPageMedia(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, u8, usize) void) void {
+        const S = struct {
+            fn onMedia(_: i32, kind: u8, payload: usize, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, kind, payload);
+            }
+        };
+        const cb = registerPageMediaHandler(&S.onMedia, @intFromPtr(state));
+        _ = self.ctl(.on_page_media, cb, 0);
+    }
+
+    pub fn captureState(self: Window, kind: usize) usize {
+        return self.ctl(.capture_state, kind, 0);
+    }
+
+    pub fn setCaptureState(self: Window, kind: usize, state: usize) void {
+        _ = self.ctl(.set_capture_state, kind, state);
+    }
+
+    pub fn togglePictureInPicture(self: Window) void {
+        _ = self.ctl(.toggle_pip, 0, 0);
+    }
+
+    pub fn isPictureInPictureActive(self: Window) bool {
+        return self.ctl(.is_pip_active, 0, 0) != 0;
     }
 
     pub fn invalidate(self: Window) void {
@@ -1772,6 +1938,25 @@ pub const SiteData = struct {
     pub const all: u64 = 0; // host treats 0 as SiteDataAll
 };
 
+
+
+pub const ContentRules = struct {
+    pub fn compile(id: []const u8, rules_json: []const u8) Error!void {
+        const Spec = extern struct {
+            id_ptr: usize = 0,
+            id_len: usize = 0,
+            rules_ptr: usize = 0,
+            rules_len: usize = 0,
+        };
+        var spec = Spec{
+            .id_ptr = sliceAddr(id),
+            .id_len = id.len,
+            .rules_ptr = sliceAddr(rules_json),
+            .rules_len = rules_json.len,
+        };
+        if (dispatch(.content_rules, 1, @intFromPtr(&spec), 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+};
 
 pub const Locale = struct {
     pub fn get(allocator: std.mem.Allocator) Error![]u8 {

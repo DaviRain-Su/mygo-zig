@@ -623,6 +623,30 @@ const Gallery = struct {
 
 
 
+
+    fn onContextMenu(self: *Gallery, ev: mygo.ContextMenuEvent) void {
+        const src = if (ev.link_url.len > 0) ev.link_url else if (ev.selection.len > 0) ev.selection else "context-menu";
+        const n = @min(src.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], src[0..n]);
+        self.path_len = n;
+        if (self.web_win_id != 0) {
+            const win = mygo.Window{ .id = self.web_win_id };
+            // Keep default menu.
+            win.contextMenuRespond(ev.req_id, false, "");
+        }
+    }
+
+    fn onPageMedia(self: *Gallery, kind: u8, payload: usize) void {
+        var buf: [64]u8 = undefined;
+        const msg = if (kind == 1)
+            std.fmt.bufPrint(&buf, "audible={d}", .{payload}) catch "media"
+        else
+            std.fmt.bufPrint(&buf, "capture kind={d} state={d}", .{ payload >> 16, payload & 0xffff }) catch "media";
+        const n = @min(msg.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], msg[0..n]);
+        self.path_len = n;
+    }
+
     fn onPermission(self: *Gallery, req: mygo.PermissionRequest) bool {
         const n = @min(req.origin.len, self.path_buf.len);
         @memcpy(self.path_buf[0..n], req.origin[0..n]);
@@ -1435,6 +1459,25 @@ const Gallery = struct {
                     self.path_len = n;
                 } else |_| {}
             }
+            if (c.button("compile-rules", "Compile ad-block rules").clicked()) {
+                const rules =
+                    \\[{"trigger":{"url-filter":"ads\.example\.com"},"action":{"type":"block"}}]
+                ;
+                mygo.ContentRules.compile("ads", rules) catch {};
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    const ids =
+                        \\["ads"]
+                    ;
+                    win.setContentRulesJSON(ids) catch {};
+                }
+            }
+            if (c.button("toggle-mute", "Toggle page mute").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    win.setAudioMuted(!win.isAudioMuted());
+                }
+            }
             if (c.button("eval-title", "Eval document.title").clicked()) {
                 if (self.web_win_id != 0) {
                     const win = mygo.Window{ .id = self.web_win_id };
@@ -1471,6 +1514,8 @@ const Gallery = struct {
                     w.onPage(*Gallery, self, Gallery.onPageEvent);
                     w.setPermissionHandler(*Gallery, self, Gallery.onPermission);
                     w.setWindowOpenHandler(*Gallery, self, Gallery.onWindowOpen);
+                    w.onContextMenu(*Gallery, self, Gallery.onContextMenu);
+                    w.onPageMedia(*Gallery, self, Gallery.onPageMedia);
                 } else |_| {}
             }
             if (c.button("clear-browsing", "Clear browsing data").clicked()) {

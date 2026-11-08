@@ -37,6 +37,8 @@ const (
 	ZigEventPage          uintptr = 28 // a0=cb_id a1=win_id a2=kind a3=*CPageEvent
 	ZigEventPermission    uintptr = 29 // a0=cb_id a1=win_id a2=*CPermReq; return !=0 grant
 	ZigEventWindowOpen    uintptr = 30 // a0=cb_id a1=win_id a2=*CWindowOpenReq a3=req_id
+	ZigEventContextMenu   uintptr = 31 // a0=cb_id a1=win_id a2=*CContextMenuEv a3=req_id
+	ZigEventPageMedia     uintptr = 32 // a0=cb_id a1=win_id a2=kind(1 audible/2 capture) a3=payload
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -72,6 +74,7 @@ const (
 	HostOpCookies       uintptr = 32 // a0=subop
 	HostOpSession       uintptr = 33 // a0=subop
 	HostOpLocale        uintptr = 34 // a0=subop
+	HostOpContentRules  uintptr = 35 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -189,6 +192,17 @@ const (
 	WinCtlGoBack               uintptr = 34
 	WinCtlGoForward            uintptr = 35
 	WinCtlEval                 uintptr = 36 // a2=*CEvalSpec → nbytes JSON
+	WinCtlOnContextMenu        uintptr = 37 // a2=cb_id
+	WinCtlContextMenuRespond   uintptr = 38 // a2=*CContextMenuResp
+	WinCtlSetContentRules      uintptr = 39 // a2=ids_json ("[]" clears)
+	WinCtlSetAudioMuted        uintptr = 40 // a2=1/0
+	WinCtlIsAudioMuted         uintptr = 41 // → 1/0
+	WinCtlIsAudible            uintptr = 42 // → 1/0
+	WinCtlOnPageMedia          uintptr = 43 // a2=cb_id audible+capture
+	WinCtlCaptureState         uintptr = 44 // a2=kind → state
+	WinCtlSetCaptureState      uintptr = 45 // a2=kind a3=state
+	WinCtlTogglePiP            uintptr = 46
+	WinCtlIsPiPActive          uintptr = 47 // → 1/0
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -728,4 +742,33 @@ const (
 type CEvalSpec struct {
 	CodePtr, CodeLen uintptr
 	OutPtr, OutCap   uintptr
+}
+
+type CContextMenuEv struct {
+	LinkURLPtr, LinkURLLen     uintptr
+	LinkTextPtr, LinkTextLen   uintptr
+	ImageURLPtr, ImageURLLen   uintptr
+	MediaURLPtr, MediaURLLen   uintptr
+	SelectionPtr, SelectionLen uintptr
+	FrameURLPtr, FrameURLLen   uintptr
+	Editable                   uint8
+	_                          [7]byte
+	MenuPtr, MenuLen           uintptr // default menu JSON
+}
+
+type CContextMenuResp struct {
+	ReqID            uintptr
+	Prevent          uint8
+	_                [7]byte
+	MenuPtr, MenuLen uintptr // empty → keep default; non-empty replaces
+}
+
+// ContentRules sub-ops for HostOpContentRules.
+const (
+	ContentRulesCompile uintptr = 1 // a1=*CContentRulesCompileSpec
+)
+
+type CContentRulesCompileSpec struct {
+	IDPtr, IDLen       uintptr
+	RulesPtr, RulesLen uintptr
 }
