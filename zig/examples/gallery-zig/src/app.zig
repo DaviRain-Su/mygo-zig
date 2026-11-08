@@ -7,7 +7,22 @@ const ui = mygo.ui;
 
 const waves_gif = @embedFile("waves.gif");
 const tray_png = @embedFile("tray.png");
-const tray_menu_json = "[{\"id\":\"show\",\"label\":\"Show Gallery\"},{\"type\":\"separator\"},{\"id\":\"quit\",\"label\":\"Quit\"}]";
+const tray_menu_items = [_]mygo.MenuItem{
+    .{
+        .id = "show",
+        .label = "Show Gallery",
+        .tooltip = "Bring the gallery forward",
+        .subtitle = "⌘↩",
+        .icon_png = tray_png,
+        .icon_template = true,
+    },
+    .{ .kind = .separator },
+    .{ .id = "quit", .label = "Quit", .role = "quit" },
+};
+const dock_menu_items = [_]mygo.MenuItem{
+    .{ .id = "dock-new", .label = "New Gallery Window", .subtitle = "⌘N" },
+    .{ .id = "dock-about", .label = "About Gallery Zig", .tooltip = "Version 0.1.0" },
+};
 
 const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor", "Term" };
 const edit_submenu = [_]ui.MenuEntry{
@@ -349,9 +364,9 @@ const Gallery = struct {
     }
 
     fn planGroup(self: *Gallery, c: *ui.Context) void {
-        _ = c.radio("plan", &self.radio, 0, "Free");
-        _ = c.radio("plan", &self.radio, 1, "Pro");
-        _ = c.radio("plan", &self.radio, 2, "Team");
+        _ = c.radio("plan/free", &self.radio, 0, "Free");
+        _ = c.radio("plan/pro", &self.radio, 1, "Pro");
+        _ = c.radio("plan/team", &self.radio, 2, "Team");
     }
 
     fn styleGroup(self: *Gallery, c: *ui.Context) void {
@@ -818,10 +833,11 @@ const Gallery = struct {
             .icon_png = tray_png,
             .title = "Zig",
             .tooltip = "MyGo Zig Gallery",
-            .menu_json = tray_menu_json,
+            .menu_json = "",
             .menu_cb = menu_cb,
         }) catch return;
         self.tray_id = tr.id;
+        tr.setMenu(&tray_menu_items) catch {};
         tr.onClick(*Gallery, self, Gallery.onTrayClick);
     }
 
@@ -2320,10 +2336,7 @@ fn init() !void {
 
 fn onReady() void {
     mygo.Protocol.handle(*Gallery, &app_state, "galleryzig", Gallery.onProtocol) catch {};
-    const dock_menu =
-        \\[{"id":"dock-new","label":"New Gallery Window"},{"id":"dock-about","label":"About Gallery Zig"}]
-    ;
-    mygo.Desktop.setDockMenuJSON(*Gallery, &app_state, dock_menu, Gallery.onDockMenu) catch {};
+    mygo.Desktop.setDockMenu(*Gallery, &app_state, &dock_menu_items, Gallery.onDockMenu) catch {};
     const jump_tasks =
         \\[{"title":"Open Gallery","args":["galleryzig://localhost/hello"]}]
     ;

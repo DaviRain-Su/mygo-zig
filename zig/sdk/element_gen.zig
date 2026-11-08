@@ -87,8 +87,8 @@ pub const Element = struct {
     }
 
     /// Free-move drag of this element; updates *x/*y each frame.
-    pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds: ?ui.DragBounds, snap: []const [2]f32) Element {
-        self.ctx.draggable(x, y, axis, bounds, snap);
+    pub fn draggable(self: Element, x: *f32, y: *f32, axis: ui.DragAxis, bounds_arg: ?ui.DragBounds, snap: []const [2]f32) Element {
+        self.ctx.draggable(x, y, axis, bounds_arg, snap);
         return self;
     }
 
@@ -1534,6 +1534,255 @@ pub const Element = struct {
     pub fn zIndex(self: Element, z: i32) Element {
         self.ctx.writeOp(301);
         self.ctx.writeI32(z);
+        return self;
+    }
+
+    // --- Queries and hooks beyond the generated modifiers ---------------
+
+    /// A pointer that pressed the element, with its pressure.
+    pub const PressedPointer = struct {
+        pointer: ui.PointerType,
+        pressure: f32,
+    };
+
+    /// A range of text, in bytes, as TextSelection reports it.
+    pub const TextSpan = struct {
+        start: i32,
+        end: i32,
+    };
+
+    fn queryBool(self: Element, op: CoreOp) bool {
+        self.ctx.writeOp(@intFromEnum(op));
+        return self.ctx.flushQuery().bool_val != 0;
+    }
+
+    fn queryPoint(self: Element, op: CoreOp) ui.Point {
+        self.ctx.writeOp(@intFromEnum(op));
+        const q = self.ctx.flushQuery();
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    fn queryRect(self: Element, op: CoreOp) Rect {
+        self.ctx.writeOp(@intFromEnum(op));
+        const q = self.ctx.flushQuery();
+        return .{
+            .x = @floatCast(q.num_val),
+            .y = @floatCast(q.num_val2),
+            .w = @floatCast(q.num_val3),
+            .h = @floatCast(q.num_val4),
+        };
+    }
+
+    fn querySpan(self: Element, op: CoreOp) TextSpan {
+        self.ctx.writeOp(@intFromEnum(op));
+        const q = self.ctx.flushQuery();
+        return .{ .start = @intCast(q.int_val), .end = @intCast(q.int_val2) };
+    }
+
+    fn queryShortcutOp(self: Element, op: CoreOp, mods: ui.Modifiers, key: ui.Key) bool {
+        self.ctx.writeOp(@intFromEnum(op));
+        self.ctx.writeU8(@bitCast(mods));
+        self.ctx.writeU16(@intFromEnum(key));
+        return self.ctx.flushQuery().bool_val != 0;
+    }
+
+    pub fn focused(self: Element) bool {
+        return self.queryBool(.query_focused);
+    }
+
+    pub fn focusVisible(self: Element) bool {
+        return self.queryBool(.query_focus_visible);
+    }
+
+    pub fn focusWithin(self: Element) bool {
+        return self.queryBool(.query_focus_within);
+    }
+
+    /// The keyboard focus left the element since the last frame.
+    pub fn focusLeft(self: Element) bool {
+        return self.queryBool(.query_focus_left);
+    }
+
+    pub fn isDisabled(self: Element) bool {
+        return self.queryBool(.query_is_disabled);
+    }
+
+    pub fn highlighted(self: Element) bool {
+        return self.queryBool(.query_highlighted);
+    }
+
+    pub fn dismissed(self: Element) bool {
+        return self.queryBool(.query_dismissed);
+    }
+
+    pub fn doubleClicked(self: Element) bool {
+        return self.queryBool(.query_double_clicked);
+    }
+
+    pub fn rightClicked(self: Element) bool {
+        return self.queryBool(.query_right_clicked);
+    }
+
+    pub fn clicks(self: Element) i32 {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_clicks));
+        return @intCast(self.ctx.flushQuery().int_val);
+    }
+
+    pub fn clickModifiers(self: Element) ui.Modifiers {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_click_modifiers));
+        return @bitCast(@as(u8, @intCast(self.ctx.flushQuery().int_val)));
+    }
+
+    /// The mouse button pressing the element, if any.
+    pub fn pressedButton(self: Element) ?i32 {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_pressed_button));
+        const q = self.ctx.flushQuery();
+        if (q.bool_val == 0) return null;
+        return @intCast(q.int_val);
+    }
+
+    pub fn pressedInside(self: Element) bool {
+        return self.queryBool(.query_pressed_inside);
+    }
+
+    pub fn pressedOutside(self: Element) bool {
+        return self.queryBool(.query_pressed_outside);
+    }
+
+    pub fn pressedPointer(self: Element) ?PressedPointer {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_pressed_pointer));
+        const q = self.ctx.flushQuery();
+        if (q.bool_val == 0) return null;
+        return .{
+            .pointer = @enumFromInt(@as(u8, @intCast(q.int_val))),
+            .pressure = @floatCast(q.num_val),
+        };
+    }
+
+    pub fn pressCanceled(self: Element) bool {
+        return self.queryBool(.query_press_canceled);
+    }
+
+    pub fn composing(self: Element) bool {
+        return self.queryBool(.query_composing);
+    }
+
+    /// The element's frame in the window, after transforms and scrolling.
+    pub fn bounds(self: Element) Rect {
+        return self.queryRect(.query_bounds);
+    }
+
+    /// The frame the layout gave the element, before transforms.
+    pub fn layoutBounds(self: Element) Rect {
+        return self.queryRect(.query_layout_bounds);
+    }
+
+    pub fn localToWindow(self: Element, x: f32, y: f32) ui.Point {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_local_to_window));
+        self.ctx.writeF32(x);
+        self.ctx.writeF32(y);
+        const q = self.ctx.flushQuery();
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    pub fn windowToLocal(self: Element, x: f32, y: f32) ?ui.Point {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_window_to_local));
+        self.ctx.writeF32(x);
+        self.ctx.writeF32(y);
+        const q = self.ctx.flushQuery();
+        if (q.bool_val == 0) return null;
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    pub fn pointerPosition(self: Element) ?ui.Point {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_pointer_position));
+        const q = self.ctx.flushQuery();
+        if (q.bool_val == 0) return null;
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    pub fn inView(self: Element) bool {
+        return self.queryBool(.query_in_view);
+    }
+
+    /// Whether at least amount (0..1) of the element shows, grown by margin.
+    pub fn inViewAmount(self: Element, amount: f32, margins: []const f32) bool {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_in_view_amount));
+        self.ctx.writeF32(amount);
+        self.writeMargin(margins);
+        return self.ctx.flushQuery().bool_val != 0;
+    }
+
+    pub fn inViewMargin(self: Element, margins: []const f32) bool {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_in_view_margin));
+        self.writeMargin(margins);
+        return self.ctx.flushQuery().bool_val != 0;
+    }
+
+    fn writeMargin(self: Element, margins: []const f32) void {
+        self.ctx.writeU8(@intCast(margins.len));
+        for (margins) |v| self.ctx.writeF32(v);
+    }
+
+    pub fn textSelection(self: Element) TextSpan {
+        return self.querySpan(.query_text_selection);
+    }
+
+    pub fn textAnchorCaret(self: Element) TextSpan {
+        return self.querySpan(.query_text_anchor_caret);
+    }
+
+    pub fn dragging(self: Element) bool {
+        return self.queryBool(.query_dragging);
+    }
+
+    pub fn dragOffset(self: Element) ui.Point {
+        return self.queryPoint(.query_drag_offset);
+    }
+
+    pub fn dragVelocity(self: Element) ui.Point {
+        return self.queryPoint(.query_drag_velocity);
+    }
+
+    /// The throw of a drag that ended this frame, if it did.
+    pub fn dragEnded(self: Element) ?ui.Point {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_drag_ended));
+        const q = self.ctx.flushQuery();
+        if (q.bool_val == 0) return null;
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    /// Where a drag that missed its target ended, if it did.
+    pub fn dragMissed(self: Element) ?ui.Point {
+        self.ctx.writeOp(@intFromEnum(CoreOp.query_drag_missed));
+        const q = self.ctx.flushQuery();
+        if (q.bool_val == 0) return null;
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    pub fn transitioning(self: Element) bool {
+        return self.queryBool(.query_transitioning);
+    }
+
+    pub fn overlayShortcut(self: Element, mods: ui.Modifiers, key: ui.Key) bool {
+        return self.queryShortcutOp(.query_overlay_shortcut, mods, key);
+    }
+
+    /// A shortcut of the element and what is inside it.
+    pub fn shortcut(self: Element, mods: ui.Modifiers, key: ui.Key) bool {
+        return self.queryShortcutOp(.element_shortcut, mods, key);
+    }
+
+    pub fn focusGroup(self: Element, o: ui.Orientation) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.focus_group));
+        self.ctx.writeU8(@bitCast(o));
+        return self;
+    }
+
+    pub fn keyShortcuts(self: Element, mods: ui.Modifiers, key: ui.Key) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.key_shortcuts));
+        self.ctx.writeU8(@bitCast(mods));
+        self.ctx.writeU16(@intFromEnum(key));
         return self;
     }
 };

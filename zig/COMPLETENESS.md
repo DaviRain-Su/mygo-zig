@@ -111,3 +111,18 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 - Documents `isReadOnly` / `hasConflict`
 - `HostOpNetwork=251`, `ZigEventNetwork=42` — Status JSON + OnChanged
 - `HostOpNowPlaying=252`, `ZigEventNowPlaying=43` — Set/Clear/Info/SetPlayback/OnCommand
+
+## Phase 8 — Element queries, hooks, menus
+
+- Fixed the dispatcher: opcodes >= 302 (drag, video, toast, routes, gradients,
+  bitmap, canvas, motion) were sent to the generated-modifier switch and
+  aborted the frame. `isGeneratedModifier` now confines uigen to 100..301.
+- 37 Element queries/hooks at opcodes 360..396: focus, press/click, state,
+  geometry (Rect through `CQuery.num_val3/4`), scroll, text, drag, shortcuts,
+  `focusGroup`, `keyShortcuts`.
+- `CQuery` grew `num_val3`, `num_val4`, `int_val2` (host and SDK together).
+- Menus: JSON gained `tooltip`, `subtitle`, `iconPng`, `iconTemplate`;
+  `mygo.MenuItem` + `menuJSON` build the wire in Zig, with
+  `Desktop.setAppMenu` / `Desktop.setDockMenu` / `Tray.setMenu`.
+- Still Go-only: `OnTextKey` (its `TextKey` needs the live editor),
+  `HandleTextInput` (IME client), `ObserveInput`/`HandleInput`, `HitTest`.

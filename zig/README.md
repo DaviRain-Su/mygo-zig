@@ -60,7 +60,53 @@ Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView
 `markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game
 
 ### 202 Element modifiers (generated)
-padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, `draggable`, …
+padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, `draggable`, …
+
+### Element queries and hooks (hand-written)
+
+Beyond the generated modifiers, `element_gen.zig` carries the Element API that
+returns values or takes callbacks:
+
+| Group | Methods |
+| --- | --- |
+| Focus | `focused` · `focusVisible` · `focusWithin` · `focusLeft` · `focusGroup` |
+| Press/click | `clicks` · `clickModifiers` · `pressedButton` · `pressedInside` · `pressedOutside` · `pressedPointer` · `pressCanceled` · `doubleClicked` · `rightClicked` |
+| State | `isDisabled` · `highlighted` · `dismissed` · `composing` · `transitioning` · `dragging` |
+| Geometry | `bounds` · `layoutBounds` · `localToWindow` · `windowToLocal` · `pointerPosition` |
+| Scroll | `inView` · `inViewAmount` · `inViewMargin` |
+| Text | `textSelection` · `textAnchorCaret` |
+| Drag | `dragOffset` · `dragVelocity` · `dragEnded` · `dragMissed` |
+| Keys | `shortcut` · `overlayShortcut` · `keyShortcuts` |
+
+```zig
+const field = c.textInput("q", buf[0..], &len);
+if (field.focused()) { ... }
+const r = field.bounds();      // ui.Rect in window coordinates
+if (field.shortcut(.{ .super = true }, .k)) { ... }
+```
+
+`Rect` queries fill `CQuery.num_val..num_val4`; optional results come back as
+`?ui.Point` / `?i32`.
+
+### Menus
+
+Menus are JSON on the wire, with a Zig builder in front of it:
+
+```zig
+const items = [_]mygo.MenuItem{
+    .{ .id = "open", .label = "Open…", .accelerator = "CmdOrCtrl+O",
+       .tooltip = "Open a file", .subtitle = "⌘O", .icon_png = icon, .icon_template = true },
+    .{ .kind = .separator },
+    .{ .id = "quit", .label = "Quit", .role = "quit" },
+};
+mygo.Desktop.setAppMenu(*App, &app, &items, App.onMenu) catch {};
+tray.setMenu(&tray_items) catch {};
+```
+
+`MenuItem` supports `id`, `label`, `kind` (`normal` / `separator` / `checkbox` /
+`radio`), `role`, `accelerator`, `disabled`, `hidden`, `checked`, `tooltip`,
+`subtitle`, `icon_png` (PNG bytes, base64 on the wire), `icon_template`, and
+nested `submenu`.
 
 ### Scaffold
 

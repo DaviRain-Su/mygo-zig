@@ -2332,6 +2332,14 @@ pub const Tray = struct {
         _ = dispatch(.tray, @intFromEnum(Sub.set_tooltip), self.id, sliceAddr(tip), tip.len);
     }
 
+    /// Tray menu from MenuItem values. Empty clears.
+    pub fn setMenu(self: Tray, items: []const MenuItem) Error!void {
+        const allocator = std.heap.page_allocator;
+        const json = try menuJSON(allocator, items);
+        defer allocator.free(json);
+        try self.setMenuJSON(json);
+    }
+
     pub fn setMenuJSON(self: Tray, json: []const u8) Error!void {
         if (dispatch(.tray, @intFromEnum(Sub.set_menu), self.id, sliceAddr(json), json.len) == std.math.maxInt(usize))
             return Error.MyGoError;
@@ -2682,6 +2690,128 @@ pub const Secrets = struct {
     }
 };
 
+/// A menu item, the JSON menu wire in a Zig type: `Desktop.setAppMenu`,
+/// `Tray.setMenu` and `Desktop.setDockMenu` take them.
+pub const MenuItem = struct {
+    pub const Kind = enum {
+        normal,
+        separator,
+        checkbox,
+        radio,
+
+        fn wire(self: Kind) []const u8 {
+            return switch (self) {
+                .normal => "",
+                .separator => "separator",
+                .checkbox => "checkbox",
+                .radio => "radio",
+            };
+        }
+    };
+
+    id: []const u8 = "",
+    label: []const u8 = "",
+    kind: Kind = .normal,
+    role: []const u8 = "",
+    accelerator: []const u8 = "",
+    disabled: bool = false,
+    hidden: bool = false,
+    checked: bool = false,
+    tooltip: []const u8 = "",
+    subtitle: []const u8 = "",
+    /// PNG bytes shown beside the label; empty shows none.
+    icon_png: []const u8 = "",
+    /// Draws the icon in the menu's text color (macOS).
+    icon_template: bool = false,
+    submenu: []const MenuItem = &.{},
+};
+
+/// menuJSON encodes items for `Desktop.setAppMenuJSON`, `Tray.setMenuJSON`
+/// and `Desktop.setDockMenuJSON`. The caller frees the result.
+pub fn menuJSON(allocator: std.mem.Allocator, items: []const MenuItem) Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try writeMenuItems(allocator, &out, items);
+    return try out.toOwnedSlice(allocator);
+}
+
+fn writeMenuItems(allocator: std.mem.Allocator, out: *std.ArrayList(u8), items: []const MenuItem) Error!void {
+    try out.append(allocator, '[');
+    for (items, 0..) |item, i| {
+        if (i > 0) try out.append(allocator, ',');
+        try writeMenuItem(allocator, out, item);
+    }
+    try out.append(allocator, ']');
+}
+
+fn writeMenuItem(allocator: std.mem.Allocator, out: *std.ArrayList(u8), item: MenuItem) Error!void {
+    try out.appendSlice(allocator, "{\"id\":");
+    try writeJsonString(allocator, out, item.id);
+    try out.appendSlice(allocator, ",\"label\":");
+    try writeJsonString(allocator, out, item.label);
+    if (item.kind != .normal) {
+        try out.appendSlice(allocator, ",\"type\":");
+        try writeJsonString(allocator, out, item.kind.wire());
+    }
+    if (item.role.len > 0) {
+        try out.appendSlice(allocator, ",\"role\":");
+        try writeJsonString(allocator, out, item.role);
+    }
+    if (item.accelerator.len > 0) {
+        try out.appendSlice(allocator, ",\"accelerator\":");
+        try writeJsonString(allocator, out, item.accelerator);
+    }
+    if (item.disabled) try out.appendSlice(allocator, ",\"disabled\":true");
+    if (item.hidden) try out.appendSlice(allocator, ",\"hidden\":true");
+    if (item.checked) try out.appendSlice(allocator, ",\"checked\":true");
+    if (item.tooltip.len > 0) {
+        try out.appendSlice(allocator, ",\"tooltip\":");
+        try writeJsonString(allocator, out, item.tooltip);
+    }
+    if (item.subtitle.len > 0) {
+        try out.appendSlice(allocator, ",\"subtitle\":");
+        try writeJsonString(allocator, out, item.subtitle);
+    }
+    if (item.icon_png.len > 0) {
+        const enc = std.base64.standard.Encoder;
+        const n = enc.calcSize(item.icon_png.len);
+        const b64 = try allocator.alloc(u8, n);
+        defer allocator.free(b64);
+        _ = enc.encode(b64, item.icon_png);
+        try out.appendSlice(allocator, ",\"iconPng\":");
+        try writeJsonString(allocator, out, b64);
+        if (item.icon_template) try out.appendSlice(allocator, ",\"iconTemplate\":true");
+    }
+    if (item.submenu.len > 0) {
+        try out.appendSlice(allocator, ",\"submenu\":");
+        try writeMenuItems(allocator, out, item.submenu);
+    }
+    try out.append(allocator, '}');
+}
+
+fn writeJsonString(allocator: std.mem.Allocator, out: *std.ArrayList(u8), s: []const u8) Error!void {
+    try out.append(allocator, '"');
+    for (s) |ch| {
+        switch (ch) {
+            '"' => try out.appendSlice(allocator, "\\\""),
+            '\\' => try out.appendSlice(allocator, "\\\\"),
+            '\n' => try out.appendSlice(allocator, "\\n"),
+            '\r' => try out.appendSlice(allocator, "\\r"),
+            '\t' => try out.appendSlice(allocator, "\\t"),
+            else => {
+                if (ch < 0x20) {
+                    var tmp: [6]u8 = undefined;
+                    const esc = std.fmt.bufPrint(&tmp, "\\u{x:0>4}", .{ch}) catch unreachable;
+                    try out.appendSlice(allocator, esc);
+                } else {
+                    try out.append(allocator, ch);
+                }
+            },
+        }
+    }
+    try out.append(allocator, '"');
+}
+
 pub const Desktop = struct {
     /// Set Windows jump-list tasks. Pass JSON array of task objects. "[]" clears.
     pub fn setJumpListTasksJSON(json: []const u8) Error!void {
@@ -2725,6 +2855,22 @@ pub const Desktop = struct {
 
     pub fn showDock() void {
         _ = dispatch(.desktop, 7, 0, 0, 0);
+    }
+
+    /// Application menu bar from MenuItem values.
+    pub fn setAppMenu(comptime StatePtr: type, state: StatePtr, items: []const MenuItem, comptime handler: fn (StatePtr, []const u8) void) Error!void {
+        const allocator = std.heap.page_allocator;
+        const json = try menuJSON(allocator, items);
+        defer allocator.free(json);
+        try setAppMenuJSON(StatePtr, state, json, handler);
+    }
+
+    /// Dock menu from MenuItem values. Empty clears.
+    pub fn setDockMenu(comptime StatePtr: type, state: StatePtr, items: []const MenuItem, comptime handler: fn (StatePtr, []const u8) void) Error!void {
+        const allocator = std.heap.page_allocator;
+        const json = try menuJSON(allocator, items);
+        defer allocator.free(json);
+        try setDockMenuJSON(StatePtr, state, json, handler);
     }
 
     /// Application menu bar JSON (same shape as Tray menus).

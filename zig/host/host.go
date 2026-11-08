@@ -1347,15 +1347,71 @@ func windowOnEvent(winID int, kind int32, cbID uintptr) uintptr {
 }
 
 type menuSpecItem struct {
-	ID          string         `json:"id"`
-	Label       string         `json:"label"`
-	Type        string         `json:"type"`
-	Role        string         `json:"role"`
-	Accelerator string         `json:"accelerator"`
-	Disabled    bool           `json:"disabled"`
-	Hidden      bool           `json:"hidden"`
-	Checked     bool           `json:"checked"`
-	Submenu     []menuSpecItem `json:"submenu"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Type        string `json:"type"`
+	Role        string `json:"role"`
+	Accelerator string `json:"accelerator"`
+	Disabled    bool   `json:"disabled"`
+	Hidden      bool   `json:"hidden"`
+	Checked     bool   `json:"checked"`
+	ToolTip     string `json:"tooltip"`
+	Subtitle    string `json:"subtitle"`
+	// IconPNG is a base64 PNG image shown beside the label.
+	IconPNG      string         `json:"iconPng"`
+	IconTemplate bool           `json:"iconTemplate"`
+	Submenu      []menuSpecItem `json:"submenu"`
+}
+
+// hostMenuIcons shares the icons of menus built from JSON by their hash.
+var hostMenuIcons sync.Map // string → *mygo.MenuIcon
+
+func menuIconFromSpec(it menuSpecItem) *mygo.MenuIcon {
+	if it.IconPNG == "" {
+		return nil
+	}
+	key := it.IconPNG + "|" + fmt.Sprintf("%t", it.IconTemplate)
+	if v, ok := hostMenuIcons.Load(key); ok {
+		return v.(*mygo.MenuIcon)
+	}
+	raw, err := base64.StdEncoding.DecodeString(it.IconPNG)
+	if err != nil {
+		return nil
+	}
+	icon, err := mygo.NewMenuIcon(raw, it.IconTemplate)
+	if err != nil {
+		return nil
+	}
+	hostMenuIcons.Store(key, icon)
+	return icon
+}
+
+// convertMenuSpec builds menu items from the JSON shape the Zig SDK sends.
+// onClick, when not nil, is called for items that have no role or submenu.
+func convertMenuSpec(items []menuSpecItem, onClick func(item *mygo.MenuItem)) []*mygo.MenuItem {
+	out := make([]*mygo.MenuItem, len(items))
+	for i, it := range items {
+		mi := &mygo.MenuItem{
+			ID:          it.ID,
+			Label:       it.Label,
+			Type:        mygo.MenuItemType(it.Type),
+			Role:        mygo.MenuRole(it.Role),
+			Accelerator: it.Accelerator,
+			Disabled:    it.Disabled,
+			Hidden:      it.Hidden,
+			Checked:     it.Checked,
+			ToolTip:     it.ToolTip,
+			Subtitle:    it.Subtitle,
+			Icon:        menuIconFromSpec(it),
+			Submenu:     convertMenuSpec(it.Submenu, onClick),
+		}
+		if onClick != nil && mi.Role == "" && len(mi.Submenu) == 0 && mi.Type != mygo.MenuItemSeparator {
+			item := mi
+			mi.Click = func(_ *mygo.MenuItem, win *mygo.Window) { onClick(item) }
+		}
+		out[i] = mi
+	}
+	return out
 }
 
 func setAppMenu(raw []byte, cbID uintptr) uintptr {
@@ -1364,41 +1420,19 @@ func setAppMenu(raw []byte, cbID uintptr) uintptr {
 		SetError(err)
 		return ^uintptr(0)
 	}
-	var convert func(items []menuSpecItem) []*mygo.MenuItem
-	convert = func(items []menuSpecItem) []*mygo.MenuItem {
-		out := make([]*mygo.MenuItem, len(items))
-		for i, it := range items {
-			mi := &mygo.MenuItem{
-				ID:          it.ID,
-				Label:       it.Label,
-				Type:        mygo.MenuItemType(it.Type),
-				Role:        mygo.MenuRole(it.Role),
-				Accelerator: it.Accelerator,
-				Disabled:    it.Disabled,
-				Hidden:      it.Hidden,
-				Checked:     it.Checked,
-				Submenu:     convert(it.Submenu),
+	var onClick func(item *mygo.MenuItem)
+	if cbID != 0 {
+		onClick = func(item *mygo.MenuItem) {
+			idCopy := item.ID
+			if idCopy == "" {
+				idCopy = item.Label
 			}
-			if cbID != 0 && mi.Role == "" && len(mi.Submenu) == 0 && mi.Type != mygo.MenuItemSeparator {
-				idCopy := mi.ID
-				if idCopy == "" {
-					idCopy = mi.Label
-				}
-				mi.Click = func(_ *mygo.MenuItem, win *mygo.Window) {
-					var wid uintptr
-					if win != nil {
-						wid = uintptr(win.ID())
-					}
-					idBytes := []byte(idCopy)
-					ptr, n := SliceAddr(idBytes)
-					activeCall(ZigEventMenu, cbID, wid, ptr, n)
-				}
-			}
-			out[i] = mi
+			idBytes := []byte(idCopy)
+			ptr, n := SliceAddr(idBytes)
+			activeCall(ZigEventMenu, cbID, 0, ptr, n)
 		}
-		return out
 	}
-	mygo.App.SetMenu(mygo.NewMenu(convert(spec)))
+	mygo.App.SetMenu(mygo.NewMenu(convertMenuSpec(spec, onClick)))
 	return 0
 }
 
@@ -1911,40 +1945,21 @@ func menuFromJSON(raw []byte, cbID, trayID uintptr) (*mygo.Menu, error) {
 	if err := json.Unmarshal(raw, &spec); err != nil {
 		return nil, err
 	}
-	var convert func(items []menuSpecItem) []*mygo.MenuItem
-	convert = func(items []menuSpecItem) []*mygo.MenuItem {
-		out := make([]*mygo.MenuItem, len(items))
-		for i, it := range items {
-			mi := &mygo.MenuItem{
-				ID:          it.ID,
-				Label:       it.Label,
-				Type:        mygo.MenuItemType(it.Type),
-				Role:        mygo.MenuRole(it.Role),
-				Accelerator: it.Accelerator,
-				Disabled:    it.Disabled,
-				Hidden:      it.Hidden,
-				Checked:     it.Checked,
-				Submenu:     convert(it.Submenu),
+	var onClick func(item *mygo.MenuItem)
+	if cbID != 0 {
+		onClick = func(item *mygo.MenuItem) {
+			idCopy := item.ID
+			if idCopy == "" {
+				idCopy = item.Label
 			}
-			if cbID != 0 && mi.Role == "" && len(mi.Submenu) == 0 && mi.Type != mygo.MenuItemSeparator {
-				idCopy := mi.ID
-				if idCopy == "" {
-					idCopy = mi.Label
-				}
-				mi.Click = func(_ *mygo.MenuItem, win *mygo.Window) {
-					_ = win
-					idBytes := []byte(idCopy)
-					cs := CStr{Data: 0, Len: 0}
-					ptr, n := SliceAddr(idBytes)
-					cs.Data, cs.Len = ptr, n
-					activeCall(ZigEventTray, cbID, trayID, 4, uintptrSlicePtr(&cs))
-				}
-			}
-			out[i] = mi
+			idBytes := []byte(idCopy)
+			cs := CStr{Data: 0, Len: 0}
+			ptr, n := SliceAddr(idBytes)
+			cs.Data, cs.Len = ptr, n
+			activeCall(ZigEventTray, cbID, trayID, 4, uintptrSlicePtr(&cs))
 		}
-		return out
 	}
-	return mygo.NewMenu(convert(spec)), nil
+	return mygo.NewMenu(convertMenuSpec(spec, onClick)), nil
 }
 
 // TrayByID returns the live *mygo.Tray for a Zig tray id, or nil.
@@ -2600,7 +2615,6 @@ func flatHeaders(h http.Header) map[string]string {
 	}
 	return out
 }
-
 
 // CClipboardMIMESpec reads custom MIME clipboard data as JSON map.
 type CClipboardMIMESpec struct {

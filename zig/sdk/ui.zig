@@ -47,6 +47,13 @@ pub const Direction = enum(u8) {
     rtl = 1,
 };
 
+/// Which arrows move the focus in a `FocusGroup`.
+pub const Orientation = packed struct(u8) {
+    horizontal: bool = false,
+    vertical: bool = false,
+    _pad: u6 = 0,
+};
+
 pub const Cursor = enum(u8) {
     default = 0,
     pointer = 1,
@@ -126,6 +133,14 @@ pub const Key = enum(u16) {
     right = 13,
     up = 14,
     down = 15,
+    _,
+};
+
+/// The device moving the pointer (`float` events' pointerType).
+pub const PointerType = enum(u8) {
+    mouse = 0,
+    pen = 1,
+    touch = 2,
     _,
 };
 
@@ -276,6 +291,45 @@ pub const CoreOp = enum(u16) {
     linear_grad_stops = 337,
     conic_gradient = 338,
     radial_gradient = 339,
+
+    // 360+ = hand-written Element queries and hooks (see element_gen.zig).
+    query_focused = 360,
+    query_focus_visible = 361,
+    query_focus_within = 362,
+    query_focus_left = 363,
+    query_is_disabled = 364,
+    query_highlighted = 365,
+    query_dismissed = 366,
+    query_double_clicked = 367,
+    query_right_clicked = 368,
+    query_clicks = 369,
+    query_click_modifiers = 370,
+    query_pressed_button = 371,
+    query_pressed_inside = 372,
+    query_pressed_outside = 373,
+    query_pressed_pointer = 374,
+    query_press_canceled = 375,
+    query_composing = 376,
+    query_bounds = 377,
+    query_layout_bounds = 378,
+    query_local_to_window = 379,
+    query_window_to_local = 380,
+    query_pointer_position = 381,
+    query_in_view = 382,
+    query_in_view_amount = 383,
+    query_text_selection = 384,
+    query_text_anchor_caret = 385,
+    query_dragging = 386,
+    query_drag_offset = 387,
+    query_drag_velocity = 388,
+    query_drag_ended = 389,
+    query_drag_missed = 390,
+    query_transitioning = 391,
+    query_overlay_shortcut = 392,
+    element_shortcut = 393,
+    focus_group = 394,
+    key_shortcuts = 395,
+    query_in_view_margin = 396,
 };
 
 const PaintOp = enum(u8) {
@@ -459,6 +513,9 @@ pub const CQuery = extern struct {
     text_buf_ptr: usize = 0,
     text_buf_cap: usize = 0,
     text_len: usize = 0,
+    num_val3: f64 = 0,
+    num_val4: f64 = 0,
+    int_val2: i64 = 0,
 };
 
 const CEditorSpec = extern struct {
