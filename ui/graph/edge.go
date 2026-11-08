@@ -169,3 +169,35 @@ func edgeMidpoint(style EdgeStyle, x0, y0, x1, y1 float32, outSide, inSide Side)
 	y := u*u*u*y0 + 3*u*u*t*cy0 + 3*u*t*t*cy1 + t*t*t*y1
 	return x, y
 }
+
+func polylineMidpoint(pts [][2]float32) (float32, float32) {
+	if len(pts) == 0 {
+		return 0, 0
+	}
+	var total float32
+	for i := 0; i+1 < len(pts); i++ {
+		dx := pts[i+1][0] - pts[i][0]
+		dy := pts[i+1][1] - pts[i][1]
+		total += float32(math.Sqrt(float64(dx*dx + dy*dy)))
+	}
+	if total == 0 {
+		return pts[0][0], pts[0][1]
+	}
+	half := total / 2
+	var acc float32
+	for i := 0; i+1 < len(pts); i++ {
+		dx := pts[i+1][0] - pts[i][0]
+		dy := pts[i+1][1] - pts[i][1]
+		seg := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+		if acc+seg >= half {
+			t := float32(0)
+			if seg > 0 {
+				t = (half - acc) / seg
+			}
+			return pts[i][0] + t*dx, pts[i][1] + t*dy
+		}
+		acc += seg
+	}
+	last := pts[len(pts)-1]
+	return last[0], last[1]
+}

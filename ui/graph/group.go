@@ -12,6 +12,8 @@ import (
 type Group struct {
 	ID, Title string
 	Members   []string // node ids
+	// Parent is an optional parent group id (nested groups).
+	Parent string
 }
 
 func groupSelID(id string) string { return "group:" + id }
@@ -45,32 +47,46 @@ func (b *Board) ensureGroupSeq() {
 }
 
 func (b *Board) groupBounds(g Group) (ui.Rect, bool) {
+	return b.groupBoundsDepth(g, 0)
+}
+
+func (b *Board) groupBoundsDepth(g Group, depth int) (ui.Rect, bool) {
+	if depth > 8 {
+		return ui.Rect{}, false
+	}
 	var (
-		ok                 bool
+		ok                    bool
 		minX, minY, maxX, maxY float32
 	)
-	for _, id := range g.Members {
-		n := b.NodeByID(id)
-		if n == nil {
-			continue
-		}
+	include := func(r ui.Rect) {
 		if !ok {
-			minX, minY = n.X, n.Y
-			maxX, maxY = n.X+n.W, n.Y+n.H
+			minX, minY, maxX, maxY = r.X, r.Y, r.X+r.W, r.Y+r.H
 			ok = true
-			continue
+			return
 		}
-		if n.X < minX {
-			minX = n.X
+		if r.X < minX {
+			minX = r.X
 		}
-		if n.Y < minY {
-			minY = n.Y
+		if r.Y < minY {
+			minY = r.Y
 		}
-		if n.X+n.W > maxX {
-			maxX = n.X + n.W
+		if r.X+r.W > maxX {
+			maxX = r.X + r.W
 		}
-		if n.Y+n.H > maxY {
-			maxY = n.Y + n.H
+		if r.Y+r.H > maxY {
+			maxY = r.Y + r.H
+		}
+	}
+	for _, id := range g.Members {
+		if n := b.NodeByID(id); n != nil {
+			include(ui.Rect{X: n.X, Y: n.Y, W: n.W, H: n.H})
+		}
+	}
+	for _, child := range b.Groups {
+		if child.Parent == g.ID {
+			if r, okc := b.groupBoundsDepth(child, depth+1); okc {
+				include(r)
+			}
 		}
 	}
 	if !ok {
@@ -101,24 +117,31 @@ func (b *Board) hitGroup(wx, wy float32) string {
 // GroupSelection creates a group from the currently selected nodes.
 func (b *Board) GroupSelection() string {
 	var members []string
+	var childGroups []string
 	for _, id := range b.Selection {
 		if _, isEdge := parseEdgeSel(id); isEdge {
 			continue
 		}
-		if _, isGroup := parseGroupSel(id); isGroup {
+		if gid, isGroup := parseGroupSel(id); isGroup {
+			childGroups = append(childGroups, gid)
 			continue
 		}
 		if b.NodeByID(id) != nil {
 			members = append(members, id)
 		}
 	}
-	if len(members) < 2 {
+	if len(members)+len(childGroups) < 2 {
 		return ""
 	}
 	b.pushUndo()
 	b.ensureGroupSeq()
 	b.groupSeq++
 	id := fmt.Sprintf("g%d", b.groupSeq)
+	for _, gid := range childGroups {
+		if g := b.GroupByID(gid); g != nil {
+			g.Parent = id
+		}
+	}
 	b.Groups = append(b.Groups, Group{
 		ID:      id,
 		Title:   fmt.Sprintf("Group %d", b.groupSeq),
@@ -140,6 +163,11 @@ func (b *Board) UngroupSelection() bool {
 		return false
 	}
 	b.pushUndo()
+	for i := range b.Groups {
+		if slices.Contains(remove, b.Groups[i].Parent) {
+			b.Groups[i].Parent = ""
+		}
+	}
 	b.Groups = slices.DeleteFunc(b.Groups, func(g Group) bool {
 		return slices.Contains(remove, g.ID)
 	})
@@ -148,7 +176,32 @@ func (b *Board) UngroupSelection() bool {
 }
 
 func (b *Board) paintGroups(p *ui.Painter, t *ui.Theme) {
-	for _, g := range b.Groups {
+	order := make([]Group, len(b.Groups))
+	copy(order, b.Groups)
+	// Parents behind children: lower depth first.
+	depthOf := map[string]int{}
+	var depth func(id string) int
+	depth = func(id string) int {
+		if d, ok := depthOf[id]; ok {
+			return d
+		}
+		g := b.GroupByID(id)
+		if g == nil || g.Parent == "" {
+			depthOf[id] = 0
+			return 0
+		}
+		d := depth(g.Parent) + 1
+		depthOf[id] = d
+		return d
+	}
+	for i := 0; i < len(order); i++ {
+		for j := i + 1; j < len(order); j++ {
+			if depth(order[j].ID) < depth(order[i].ID) {
+				order[i], order[j] = order[j], order[i]
+			}
+		}
+	}
+	for _, g := range order {
 		r, ok := b.groupBounds(g)
 		if !ok {
 			continue
@@ -174,33 +227,51 @@ func (b *Board) paintGroups(p *ui.Painter, t *ui.Theme) {
 	}
 }
 
-func (b *Board) expandSelectionForDrag() {
-	// When a group is selected, include its members in drag origins.
+// dragNodeIDs returns node ids that should move with the current selection
+// (selected nodes plus members of selected groups), without mutating Selection.
+func (b *Board) dragNodeIDs() []string {
 	seen := map[string]bool{}
-	for _, id := range b.Selection {
+	var out []string
+	add := func(id string) {
+		if seen[id] {
+			return
+		}
 		seen[id] = true
+		out = append(out, id)
 	}
-	var extra []string
-	for _, id := range b.Selection {
-		gid, ok := parseGroupSel(id)
-		if !ok {
-			continue
+	var walk func(gid string, depth int)
+	walk = func(gid string, depth int) {
+		if depth > 8 {
+			return
 		}
 		g := b.GroupByID(gid)
 		if g == nil {
-			continue
+			return
 		}
 		for _, mid := range g.Members {
-			if !seen[mid] {
-				extra = append(extra, mid)
-				seen[mid] = true
+			add(mid)
+		}
+		for _, child := range b.Groups {
+			if child.Parent == gid {
+				walk(child.ID, depth+1)
 			}
 		}
 	}
-	if len(extra) > 0 {
-		b.Selection = append(b.Selection, extra...)
+	for _, id := range b.Selection {
+		if _, ok := parseEdgeSel(id); ok {
+			continue
+		}
+		if gid, ok := parseGroupSel(id); ok {
+			walk(gid, 0)
+			continue
+		}
+		add(id)
 	}
+	return out
 }
+
+// expandSelectionForDrag is kept as a no-op alias for older call sites.
+func (b *Board) expandSelectionForDrag() {}
 
 func (b *Board) scrubGroupsAfterNodeDelete(nodeIDs []string) {
 	if len(nodeIDs) == 0 {

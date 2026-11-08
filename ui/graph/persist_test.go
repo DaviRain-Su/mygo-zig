@@ -3,6 +3,8 @@ package graph
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestExportImportRoundTrip(t *testing.T) {
@@ -73,5 +75,38 @@ func TestAutoLayoutOrdersByEdges(t *testing.T) {
 	a, bb, c := b.NodeByID("a"), b.NodeByID("b"), b.NodeByID("c")
 	if !(a.X < bb.X && bb.X < c.X) {
 		t.Fatalf("order a=%v b=%v c=%v", a.X, bb.X, c.X)
+	}
+}
+
+func TestNestedGroupPersistAndFlags(t *testing.T) {
+	b := &Board{
+		SnapGrid: 24,
+		Nodes: []Node{
+			{ID: "a", Title: "A", X: 0, Y: 0, W: 40, H: 40, Locked: true, Color: ui.Color{R: 10, G: 20, B: 30, A: 255}},
+			{ID: "b", Title: "B", X: 80, Y: 0, W: 40, H: 40},
+			{ID: "c", Title: "C", X: 160, Y: 0, W: 40, H: 40},
+		},
+		Groups: []Group{
+			{ID: "g1", Title: "Outer", Members: []string{"a", "b"}},
+			{ID: "g2", Title: "Inner", Members: []string{"c"}, Parent: "g1"},
+		},
+	}
+	raw, err := b.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2 := &Board{}
+	if err := b2.UnmarshalJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if b2.SnapGrid != 24 {
+		t.Fatalf("snap=%v", b2.SnapGrid)
+	}
+	if !b2.NodeByID("a").Locked || b2.NodeByID("a").Color.R != 10 {
+		t.Fatalf("a=%+v", b2.NodeByID("a"))
+	}
+	g2 := b2.GroupByID("g2")
+	if g2 == nil || g2.Parent != "g1" {
+		t.Fatalf("g2=%+v", g2)
 	}
 }

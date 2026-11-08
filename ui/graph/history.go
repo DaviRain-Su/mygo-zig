@@ -13,6 +13,8 @@ type snapshot struct {
 	groups    []Group
 	selection []string
 	cam       Camera
+	edgeStyle EdgeStyle
+	snapGrid  float32
 	edgeSeq   int
 	nodeSeq   int
 	groupSeq  int
@@ -40,6 +42,8 @@ func (b *Board) capture() snapshot {
 		groups:    groups,
 		selection: append([]string(nil), b.Selection...),
 		cam:       b.Camera,
+		edgeStyle: b.EdgeStyle,
+		snapGrid:  b.SnapGrid,
 		edgeSeq:   b.edgeSeq,
 		nodeSeq:   b.nodeSeq,
 		groupSeq:  b.groupSeq,
@@ -61,6 +65,8 @@ func (b *Board) restore(s snapshot) {
 	b.Groups = s.groups
 	b.Selection = append([]string(nil), s.selection...)
 	b.Camera = s.cam
+	b.EdgeStyle = s.edgeStyle
+	b.SnapGrid = s.snapGrid
 	b.edgeSeq = s.edgeSeq
 	b.nodeSeq = s.nodeSeq
 	b.groupSeq = s.groupSeq

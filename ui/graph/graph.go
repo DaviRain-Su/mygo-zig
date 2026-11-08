@@ -60,7 +60,11 @@ type Node struct {
 	X, Y      float32
 	W, H      float32
 	Ports     []Port
-	Content   func(c *ui.Context)
+	// Locked prevents drag/resize/nudge (still selectable).
+	Locked bool
+	// Color, when non-zero alpha, tints the card background.
+	Color ui.Color
+	Content func(c *ui.Context)
 }
 
 // Edge connects two ports. ID may be empty; the board assigns one on connect.
@@ -84,6 +88,8 @@ type Board struct {
 
 	// Minimap draws a corner overview when true.
 	Minimap bool
+	// SnapGrid, when > 0, snaps node positions to that spacing.
+	SnapGrid float32
 
 	// Events (optional).
 	OnSelection func(ids []string)
@@ -118,6 +124,16 @@ type Board struct {
 	dragOrigins   map[string][2]float32
 
 	groupDragging bool // pointer-drag of a selected group frame
+
+	editingEdge   string // edge id being renamed
+	editingLabel  string
+	editingStarted bool
+
+	clip clipboard
+
+	resizingID string
+	resizeStartW, resizeStartH float32
+	resizeStartX, resizeStartY float32
 
 	lastMods ui.Modifiers
 
@@ -225,7 +241,13 @@ func (b *Board) hitEdge(wx, wy float32, zoom float32) string {
 		}
 		x0, y0 := b.portWorld(sn, sp)
 		x1, y1 := b.portWorld(tn, tp)
-		if distToEdge(b.EdgeStyle, wx, wy, x0, y0, x1, y1, sp.Side, tp.Side) <= thresh {
+		var d float32
+		if b.EdgeStyle == EdgeOrthogonal {
+			d = distToPolyline(wx, wy, b.edgePoints(e, x0, y0, x1, y1, sp.Side, tp.Side))
+		} else {
+			d = distToEdge(b.EdgeStyle, wx, wy, x0, y0, x1, y1, sp.Side, tp.Side)
+		}
+		if d <= thresh {
 			return e.ID
 		}
 	}
@@ -283,6 +305,7 @@ func View(c *ui.Context, b *Board) ui.Element {
 				}
 				b.buildNode(c, n, vr, t)
 			}
+			b.buildEdgeLabelEditor(c, vr, t)
 		})
 	})
 	return root
@@ -309,7 +332,7 @@ func (b *Board) buildNode(c *ui.Context, n *Node, vr ui.Rect, t *ui.Theme) {
 		Size(n.W, n.H).
 		Scale(z, z).
 		TransformOrigin(0, 0).
-		Background(t.Surface).
+		Background(nodeFill(n, t)).
 		Border(1, t.Border).
 		Radius(8).
 		Clip()
@@ -328,7 +351,7 @@ func (b *Board) buildNode(c *ui.Context, n *Node, vr ui.Rect, t *ui.Theme) {
 			}
 			b.bringToFront(n.ID)
 		}
-		if dx, dy, ok := card.Dragged(); ok {
+		if dx, dy, ok := card.Dragged(); ok && !n.Locked {
 			if !b.draggingGroup {
 				b.beginGroupDrag(n.ID)
 			}
@@ -340,6 +363,9 @@ func (b *Board) buildNode(c *ui.Context, n *Node, vr ui.Rect, t *ui.Theme) {
 				b.moveSelectionBy(dx, dy)
 			}
 		} else if b.draggingGroup {
+			if b.dragMoved {
+				b.snapSelection()
+			}
 			b.draggingGroup = false
 			b.dragMoved = false
 			b.dragOrigins = nil
@@ -347,7 +373,11 @@ func (b *Board) buildNode(c *ui.Context, n *Node, vr ui.Rect, t *ui.Theme) {
 	}
 	card.Children(func() {
 		ui.Row(c).Height(28).Padding(0, 8).AlignItems(ui.Center).Background(t.Surface).Children(func() {
-			ui.Text(c, n.Title).FontSize(12).Bold().Grow(1)
+			title := n.Title
+			if n.Locked {
+				title = "[lock] " + n.Title
+			}
+			ui.Text(c, title).FontSize(12).Bold().Grow(1)
 		})
 		body := ui.Column(c).Grow(1).Padding(8).Gap(4)
 		body.Children(func() {
@@ -358,23 +388,55 @@ func (b *Board) buildNode(c *ui.Context, n *Node, vr ui.Rect, t *ui.Theme) {
 			}
 		})
 	})
+	if b.Tool == ToolSelect && b.selected(n.ID) && !n.Locked {
+		b.buildResizeHandle(c, n, vr, t, z)
+	}
+}
+
+func (b *Board) buildResizeHandle(c *ui.Context, n *Node, vr ui.Rect, t *ui.Theme, z float32) {
+	vx, vy := b.Camera.ToView(vr, n.X+n.W, n.Y+n.H)
+	const hs = float32(10)
+	handle := ui.Box(c).Key(n.ID+"/resize").Absolute().
+		Left(vx-hs/2).Top(vy-hs/2).Size(hs, hs).
+		Background(t.Accent).Radius(2).Cursor(ui.CursorResizeNWSE)
+	if dx, dy, ok := handle.Dragged(); ok {
+		if b.resizingID != n.ID {
+			b.pushUndo()
+			b.resizingID = n.ID
+			b.resizeStartW, b.resizeStartH = n.W, n.H
+		}
+		// Dragged is in handle local space (= view DIPs); convert to world.
+		n.W += dx / z
+		n.H += dy / z
+		if n.W < 80 {
+			n.W = 80
+		}
+		if n.H < 56 {
+			n.H = 56
+		}
+		if b.snapEnabled() {
+			n.W = b.snap(n.W)
+			n.H = b.snap(n.H)
+			if n.W < 80 {
+				n.W = 80
+			}
+			if n.H < 56 {
+				n.H = 56
+			}
+		}
+	} else if b.resizingID == n.ID {
+		b.resizingID = ""
+	}
 }
 
 func (b *Board) beginGroupDrag(id string) {
 	if !b.selected(id) {
 		b.setSelection([]string{id})
 	}
-	b.expandSelectionForDrag()
 	b.draggingGroup = true
 	b.dragMoved = false
 	b.dragOrigins = make(map[string][2]float32)
-	for _, sid := range b.Selection {
-		if _, ok := parseEdgeSel(sid); ok {
-			continue
-		}
-		if _, ok := parseGroupSel(sid); ok {
-			continue
-		}
+	for _, sid := range b.dragNodeIDs() {
 		if n := b.NodeByID(sid); n != nil {
 			b.dragOrigins[sid] = [2]float32{n.X, n.Y}
 		}
@@ -383,7 +445,7 @@ func (b *Board) beginGroupDrag(id string) {
 
 func (b *Board) moveSelectionBy(dx, dy float32) {
 	for id := range b.dragOrigins {
-		if n := b.NodeByID(id); n != nil {
+		if n := b.NodeByID(id); n != nil && !n.Locked {
 			n.X += dx
 			n.Y += dy
 			if b.OnMove != nil {
@@ -419,16 +481,20 @@ func (b *Board) paintWorld(p *ui.Painter, r ui.Rect, t *ui.Theme) {
 			if e.ID != "" && slices.Contains(b.Selection, "edge:"+e.ID) {
 				col = t.Danger
 			}
-			strokeEdge(p, b.EdgeStyle, x0, y0, x1, y1, sp.Side, tp.Side, col, 2)
-			if e.Label != "" {
-				b.paintEdgeLabel(p, t, e.Label, x0, y0, x1, y1, sp.Side, tp.Side)
+			b.strokeBoardEdge(p, e, x0, y0, x1, y1, sp.Side, tp.Side, col, 2)
+			label := e.Label
+			if b.editingEdge == e.ID {
+				label = b.editingLabel
+			}
+			if label != "" || b.editingEdge == e.ID {
+				b.paintEdgeLabel(p, t, e, label, x0, y0, x1, y1, sp.Side, tp.Side)
 			}
 		}
 
 		if b.connecting {
 			if sn, sp, ok := b.findPort(b.connFromN, b.connFromP); ok {
 				x0, y0 := b.portWorld(sn, sp)
-				strokeEdge(p, b.EdgeStyle, x0, y0, b.connWX, b.connWY, sp.Side, Left, t.Accent, 1.5)
+				strokeEdge(p, b.EdgeStyle, x0, y0, b.connWX, b.connWY, sp.Side, Left, t.Accent, 1.5) // preview ignores obstacles
 			}
 		}
 
@@ -521,8 +587,8 @@ func (b *Board) contentBounds() ui.Rect {
 	return ui.Rect{X: minX, Y: minY, W: maxX - minX, H: maxY - minY}
 }
 
-func (b *Board) paintEdgeLabel(p *ui.Painter, t *ui.Theme, label string, x0, y0, x1, y1 float32, outSide, inSide Side) {
-	mx, my := edgeMidpoint(b.EdgeStyle, x0, y0, x1, y1, outSide, inSide)
+func (b *Board) paintEdgeLabel(p *ui.Painter, t *ui.Theme, e Edge, label string, x0, y0, x1, y1 float32, outSide, inSide Side) {
+	mx, my := b.edgeLabelAnchor(e, x0, y0, x1, y1, outSide, inSide)
 	const size float32 = 11
 	// Approximate width; good enough for short labels.
 	w := float32(len(label)) * size * 0.55
@@ -534,4 +600,106 @@ func (b *Board) paintEdgeLabel(p *ui.Painter, t *ui.Theme, label string, x0, y0,
 		MoveTo(r.X, r.Y).LineTo(r.X+r.W, r.Y).LineTo(r.X+r.W, r.Y+r.H).LineTo(r.X, r.Y+r.H).Close(),
 		1, t.Border)
 	p.Text(r.X+pad, r.Y+h-5, label, size, t.TextMuted)
+}
+
+func (b *Board) edgeLabelAnchor(e Edge, x0, y0, x1, y1 float32, outSide, inSide Side) (float32, float32) {
+	if b.EdgeStyle == EdgeOrthogonal {
+		return polylineMidpoint(b.edgePoints(e, x0, y0, x1, y1, outSide, inSide))
+	}
+	return edgeMidpoint(EdgeBezier, x0, y0, x1, y1, outSide, inSide)
+}
+
+func (b *Board) strokeBoardEdge(p *ui.Painter, e Edge, x0, y0, x1, y1 float32, outSide, inSide Side, c ui.Color, width float32) {
+	if b.EdgeStyle == EdgeOrthogonal {
+		pts := b.edgePoints(e, x0, y0, x1, y1, outSide, inSide)
+		strokeOrthogonal(p, pts, c, width)
+		return
+	}
+	strokeCubic(p, x0, y0, x1, y1, c, width)
+}
+
+func (b *Board) buildEdgeLabelEditor(c *ui.Context, vr ui.Rect, t *ui.Theme) {
+	if b.editingEdge == "" {
+		return
+	}
+	var edge *Edge
+	for i := range b.Edges {
+		if b.Edges[i].ID == b.editingEdge {
+			edge = &b.Edges[i]
+			break
+		}
+	}
+	if edge == nil {
+		b.editingEdge = ""
+		return
+	}
+	sn, sp, ok1 := b.findPort(edge.Source, edge.SourcePort)
+	tn, tp, ok2 := b.findPort(edge.Target, edge.TargetPort)
+	if !ok1 || !ok2 {
+		return
+	}
+	x0, y0 := b.portWorld(sn, sp)
+	x1, y1 := b.portWorld(tn, tp)
+	mx, my := b.edgeLabelAnchor(*edge, x0, y0, x1, y1, sp.Side, tp.Side)
+	vx, vy := b.Camera.ToView(vr, mx, my)
+	w := float32(120)
+	editor := ui.Box(c).Key("edge-label-editor").Absolute().
+		Left(vx - w/2).Top(vy - 14).Size(w, 28).
+		Background(t.Surface).Border(1, t.Accent).Radius(6).Padding(2, 6)
+	editor.Children(func() {
+		in := ui.TextInput(c.Key("edge-label-input"), &b.editingLabel).Fill()
+		if !b.editingStarted {
+			in.Focus()
+			b.editingStarted = true
+		}
+		if in.Submitted() {
+			b.commitEdgeLabel()
+		}
+		if in.Shortcut(0, ui.KeyEscape) {
+			b.cancelEdgeLabelEdit()
+		}
+	})
+}
+
+func (b *Board) beginEdgeLabelEdit(id string) {
+	for i := range b.Edges {
+		if b.Edges[i].ID == id {
+			b.editingEdge = id
+			b.editingLabel = b.Edges[i].Label
+			b.editingStarted = false
+			b.setSelection([]string{"edge:" + id})
+			return
+		}
+	}
+}
+
+func (b *Board) commitEdgeLabel() {
+	if b.editingEdge == "" {
+		return
+	}
+	for i := range b.Edges {
+		if b.Edges[i].ID == b.editingEdge {
+			if b.Edges[i].Label != b.editingLabel {
+				b.pushUndo()
+				b.Edges[i].Label = b.editingLabel
+			}
+			break
+		}
+	}
+	b.editingEdge = ""
+	b.editingLabel = ""
+	b.editingStarted = false
+}
+
+func (b *Board) cancelEdgeLabelEdit() {
+	b.editingEdge = ""
+	b.editingLabel = ""
+	b.editingStarted = false
+}
+
+func nodeFill(n *Node, t *ui.Theme) ui.Color {
+	if n.Color.A != 0 {
+		return n.Color
+	}
+	return t.Surface
 }

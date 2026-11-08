@@ -61,6 +61,10 @@ func (b *Board) handleInput(ev ui.InputEvent) bool {
 			return true
 		default: // ToolSelect
 			if eid := b.hitEdge(wx, wy, b.Camera.zoom()); eid != "" {
+				if ev.Clicks >= 2 {
+					b.beginEdgeLabelEdit(eid)
+					return true
+				}
 				id := "edge:" + eid
 				if ev.Mods&ui.Shift != 0 {
 					b.toggleSelection(id)
@@ -151,6 +155,9 @@ func (b *Board) handleInput(ev ui.InputEvent) bool {
 			return true
 		}
 		if b.groupDragging {
+			if b.dragMoved {
+				b.snapSelection()
+			}
 			b.groupDragging = false
 			b.draggingGroup = false
 			b.dragMoved = false
@@ -168,6 +175,14 @@ func (b *Board) handleInput(ev ui.InputEvent) bool {
 }
 
 func (b *Board) handleKey(ev ui.InputEvent) bool {
+	if b.editingEdge != "" {
+		if ev.Key == ui.KeyEscape {
+			b.cancelEdgeLabelEdit()
+			return true
+		}
+		// Let the text input handle typing.
+		return false
+	}
 	cmd := ev.Mods&ui.Cmd != 0
 	if cmd && ev.Key == ui.KeyZ {
 		if ev.Mods&ui.Shift != 0 {
@@ -189,7 +204,7 @@ func (b *Board) handleKey(ev ui.InputEvent) bool {
 	if ev.Key == ui.KeyBackspace || ev.Key == ui.KeyDelete {
 		return b.deleteSelection()
 	}
-	if ev.Key == ui.KeyV {
+	if ev.Key == ui.KeyV && !cmd {
 		b.Tool = ToolSelect
 		return true
 	}
@@ -223,8 +238,61 @@ func (b *Board) handleKey(ev ui.InputEvent) bool {
 		return true
 	}
 	if ev.Key == ui.KeyF && !cmd && b.viewR.W > 0 {
-		b.FitCamera(b.viewR, 48)
+		if ev.Mods&ui.Shift != 0 {
+			b.FitSelection(b.viewR, 48)
+		} else {
+			b.FitCamera(b.viewR, 48)
+		}
 		return true
+	}
+	if ev.Key == ui.KeyK && !cmd {
+		return b.ToggleLockSelection()
+	}
+	if ev.Key == ui.KeyEnter {
+		for _, id := range b.Selection {
+			if eid, ok := parseEdgeSel(id); ok {
+				b.beginEdgeLabelEdit(eid)
+				return true
+			}
+		}
+	}
+	if cmd {
+		switch ev.Key {
+		case ui.KeyLeft:
+			return b.AlignSelection(AlignLeft)
+		case ui.KeyRight:
+			return b.AlignSelection(AlignRight)
+		case ui.KeyUp:
+			return b.AlignSelection(AlignTop)
+		case ui.KeyDown:
+			return b.AlignSelection(AlignBottom)
+		case ui.KeyC:
+			return b.CopySelection()
+		case ui.KeyV:
+			return b.PasteClipboard()
+		case ui.KeyX:
+			if b.CopySelection() {
+				return b.deleteSelection()
+			}
+			return false
+		}
+	}
+	step := float32(1)
+	if b.SnapGrid > 0 {
+		step = b.SnapGrid
+	}
+	if ev.Mods&ui.Shift != 0 {
+		step *= 10
+	}
+	switch ev.Key {
+	case ui.KeyLeft:
+		return b.nudgeSelection(-step, 0)
+	case ui.KeyRight:
+		return b.nudgeSelection(step, 0)
+	case ui.KeyUp:
+		return b.nudgeSelection(0, -step)
+	case ui.KeyDown:
+		return b.nudgeSelection(0, step)
 	}
 	return false
 }
@@ -384,4 +452,23 @@ func (b *Board) AddNode(n Node) string {
 	b.Nodes = append(b.Nodes, n)
 	b.setSelection([]string{n.ID})
 	return n.ID
+}
+
+func (b *Board) ToggleLockSelection() bool {
+	nodes := b.selectedNodes()
+	if len(nodes) == 0 {
+		return false
+	}
+	b.pushUndo()
+	lock := false
+	for _, n := range nodes {
+		if !n.Locked {
+			lock = true
+			break
+		}
+	}
+	for _, n := range nodes {
+		n.Locked = lock
+	}
+	return true
 }

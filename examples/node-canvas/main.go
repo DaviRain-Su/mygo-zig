@@ -2,8 +2,9 @@
 //
 //	go run ./examples/node-canvas
 //
-// Keys: V select · H pan · C connect · O edges · G/⇧G group · L layout · F fit
-// Delete · ⌘Z undo · ⌘A/⌘D select all/duplicate · Shift/marquee multi-select
+// Keys: V/H/C tools · O edges · G group · L layout · F fit · ⇧F fit selection
+// Arrows nudge · ⌘←↑↓→ align · K lock · edge label: double-click/Enter
+// ⌘C/X/V copy/cut/paste · Delete · ⌘Z undo
 // Wheel pans; Ctrl/⌘+wheel or pinch zooms. Middle-drag pans any tool.
 package main
 
@@ -28,6 +29,7 @@ func main() {
 			Tool:      graph.ToolSelect,
 			EdgeStyle: graph.EdgeBezier,
 			Minimap:   true,
+			SnapGrid:  16,
 			Nodes: []graph.Node{
 				{
 					ID: "note", Title: "Note", X: -120, Y: -40, W: 180, H: 110,
@@ -78,8 +80,8 @@ func main() {
 	mygo.App.WhenReady(func() {
 		mygo.NewWindow(mygo.WindowOptions{
 			Title:   "Node Canvas",
-			Width:   960,
-			Height:  640,
+			Width:   1080,
+			Height:  700,
 			Content: ui.View(a.view),
 		})
 	})
@@ -90,7 +92,7 @@ func main() {
 
 func (a *app) view(c *ui.Context) {
 	ui.Column(c).Fill().Children(func() {
-		ui.Row(c).Height(40).Padding(0, 12).Gap(8).AlignItems(ui.Center).Background(c.Theme().Surface).Children(func() {
+		ui.Row(c).Height(40).Padding(0, 12).Gap(6).AlignItems(ui.Center).Background(c.Theme().Surface).Children(func() {
 			toolBtn(c, a, graph.ToolSelect, "Select (V)")
 			toolBtn(c, a, graph.ToolPan, "Pan (H)")
 			toolBtn(c, a, graph.ToolConnect, "Connect (C)")
@@ -120,11 +122,8 @@ func (a *app) view(c *ui.Context) {
 			}
 			if ui.Button(c.Key("layout"), "Layout").Clicked() {
 				a.board.AutoLayout(graph.LayoutOptions{})
-				if a.board.Camera.Zoom > 0 {
-					// Fit uses last view from Draw; Approximate with window.
-					w, h := c.Size()
-					a.board.FitCamera(ui.Rect{W: w, H: h - 40}, 48)
-				}
+				w, h := c.Size()
+				a.board.FitCamera(ui.Rect{W: w, H: h - 80}, 48)
 			}
 			if ui.Button(c.Key("save"), "Copy JSON").Clicked() {
 				if raw, err := a.board.MarshalJSON(); err == nil {
@@ -135,6 +134,51 @@ func (a *app) view(c *ui.Context) {
 			ui.Text(c, a.status).FontSize(12).TextColor(c.Theme().TextMuted).Grow(1)
 			if ui.Button(c.Key("add"), "+ Node").Clicked() {
 				addNode(a.board)
+			}
+		})
+		ui.Row(c).Height(36).Padding(0, 12).Gap(6).AlignItems(ui.Center).Background(c.Theme().SurfaceHover).Children(func() {
+			if ui.Button(c.Key("align-l"), "Align L").Clicked() {
+				a.board.AlignSelection(graph.AlignLeft)
+			}
+			if ui.Button(c.Key("align-hc"), "Align ǁ").Clicked() {
+				a.board.AlignSelection(graph.AlignHCenter)
+			}
+			if ui.Button(c.Key("align-r"), "Align R").Clicked() {
+				a.board.AlignSelection(graph.AlignRight)
+			}
+			if ui.Button(c.Key("align-t"), "Align T").Clicked() {
+				a.board.AlignSelection(graph.AlignTop)
+			}
+			if ui.Button(c.Key("align-vc"), "Align =").Clicked() {
+				a.board.AlignSelection(graph.AlignVCenter)
+			}
+			if ui.Button(c.Key("align-b"), "Align B").Clicked() {
+				a.board.AlignSelection(graph.AlignBottom)
+			}
+			if ui.Button(c.Key("dist-h"), "Dist H").Clicked() {
+				a.board.DistributeSelection(true)
+			}
+			if ui.Button(c.Key("dist-v"), "Dist V").Clicked() {
+				a.board.DistributeSelection(false)
+			}
+			snapLabel := "Snap 16"
+			if a.board.SnapGrid == 0 {
+				snapLabel = "Snap Off"
+			}
+			if ui.Button(c.Key("snap"), snapLabel).Clicked() {
+				if a.board.SnapGrid == 0 {
+					a.board.SnapGrid = 16
+				} else {
+					a.board.SnapGrid = 0
+				}
+				a.status = fmt.Sprintf("snap=%v", a.board.SnapGrid)
+			}
+			if ui.Button(c.Key("lock"), "Lock (K)").Clicked() {
+				a.board.ToggleLockSelection()
+			}
+			if ui.Button(c.Key("fit-sel"), "Fit Sel").Clicked() {
+				w, h := c.Size()
+				a.board.FitSelection(ui.Rect{W: w, H: h - 80}, 48)
 			}
 		})
 		graph.View(c, a.board).Grow(1).Fill()

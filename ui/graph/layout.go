@@ -130,3 +130,52 @@ func (b *Board) FitCamera(view ui.Rect, padding float32) {
 	b.Camera.Y = bounds.Y + bounds.H/2
 	b.emitViewport()
 }
+
+
+// FitSelection frames the current selection (or all content if empty).
+func (b *Board) FitSelection(view ui.Rect, padding float32) {
+	nodes := b.selectedNodes()
+	if len(nodes) == 0 {
+		b.FitCamera(view, padding)
+		return
+	}
+	if padding == 0 {
+		padding = 40
+	}
+	minX, minY := nodes[0].X, nodes[0].Y
+	maxX, maxY := minX+nodes[0].W, minY+nodes[0].H
+	for _, n := range nodes[1:] {
+		if n.X < minX {
+			minX = n.X
+		}
+		if n.Y < minY {
+			minY = n.Y
+		}
+		if n.X+n.W > maxX {
+			maxX = n.X + n.W
+		}
+		if n.Y+n.H > maxY {
+			maxY = n.Y + n.H
+		}
+	}
+	bounds := ui.Rect{X: minX, Y: minY, W: maxX - minX, H: maxY - minY}
+	if bounds.W < 1 {
+		bounds.W = 1
+	}
+	if bounds.H < 1 {
+		bounds.H = 1
+	}
+	zx := (view.W - 2*padding) / bounds.W
+	zy := (view.H - 2*padding) / bounds.H
+	z := float32(math.Min(float64(zx), float64(zy)))
+	if z < 0.1 {
+		z = 0.1
+	}
+	if z > 4 {
+		z = 4
+	}
+	b.Camera.Zoom = z
+	b.Camera.X = bounds.X + bounds.W/2
+	b.Camera.Y = bounds.Y + bounds.H/2
+	b.emitViewport()
+}
