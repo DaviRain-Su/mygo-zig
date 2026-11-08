@@ -85,3 +85,17 @@ pub const SpanStyle = extern struct {
     /// 1 italic, 2 underline, 4 strikethrough, 8 color, 16 background.
     flags: u32 = 0,
 };
+
+/// What an effect paints over (ZigEventUIEffect).
+pub const EffectPaint = extern struct {
+    box_x: f32 = 0,
+    box_y: f32 = 0,
+    box_w: f32 = 0,
+    box_h: f32 = 0,
+    inset_x: f32 = 0,
+    inset_y: f32 = 0,
+    margin_x: f32 = 0,
+    margin_y: f32 = 0,
+    /// The content bitmap, drawn with Painter.imageBitmap.
+    bitmap: usize = 0,
+};

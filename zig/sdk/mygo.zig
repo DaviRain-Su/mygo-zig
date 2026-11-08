@@ -268,6 +268,7 @@ const ZigEvent = enum(usize) {
     richtext_tag = 57,
     window_states_load = 58,
     window_states_save = 59,
+    ui_effect = 60,
 };
 
 pub const CStr = extern struct {
@@ -421,6 +422,21 @@ pub fn registerGraphNode(handler: RawGraphNode, userdata: usize) usize {
     graph_node_ud[graph_node_count] = userdata;
     graph_node_count += 1;
     return graph_node_count;
+}
+
+/// Element effect paint callbacks (Element.effect).
+pub const RawUIEffect = *const fn (painter: usize, spec: *abi.EffectPaint, userdata: usize) void;
+pub var ui_effect_handlers: [64]RawUIEffect = undefined;
+pub var ui_effect_ud: [64]usize = undefined;
+pub var ui_effect_count: usize = 0;
+
+/// registerUIEffect adds an effect paint callback, returning its id.
+pub fn registerUIEffect(handler: RawUIEffect, userdata: usize) usize {
+    if (ui_effect_count >= ui_effect_handlers.len) return 0;
+    ui_effect_handlers[ui_effect_count] = handler;
+    ui_effect_ud[ui_effect_count] = userdata;
+    ui_effect_count += 1;
+    return ui_effect_count;
 }
 
 /// Window state store: load writes JSON into a buffer, save reads it.
@@ -1048,6 +1064,12 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     if (a0 == 0 or a0 > graph_count) return 0;
                     const slice: []const u8 = if (a1 != 0 and a2 > 0) @as([*]const u8, @ptrFromInt(a1))[0..a2] else "";
                     graph_handlers[a0 - 1](slice, graph_ud[a0 - 1]);
+                    return 0;
+                },
+                .ui_effect => {
+                    if (a0 == 0 or a0 > ui_effect_count) return 0;
+                    const spec: *abi.EffectPaint = @ptrFromInt(a2);
+                    ui_effect_handlers[a0 - 1](a1, spec, ui_effect_ud[a0 - 1]);
                     return 0;
                 },
                 .window_states_load => {

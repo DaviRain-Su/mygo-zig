@@ -154,6 +154,31 @@ doc = doc.onLink(*App, &app, App.openLink)          // a URL was clicked
 `onTagStyle` fills a `ui.RichText.Style` (color, background, weight, italic,
 underline, strikethrough, radius, padding).
 
+### Effects
+
+`ui.Effect` draws an element from what it renders: the element and its
+children render into a bitmap, and Zig paints it.
+
+```zig
+_ = c.box().size(150, 56).background(t.surface)
+    .effect(ui.effectOf(*App, &app, .{ .x = 6, .y = 6 }, App.wash))
+    .begin();
+
+fn wash(app: *App, p: *ui.Painter, box: ui.Rect, content: ui.Bitmap, inset: ui.Point) void {
+    content.draw(p, .{
+        .x = box.x - inset.x,
+        .y = box.y - inset.y,
+        .w = box.w + 2 * inset.x,
+        .h = box.h + 2 * inset.y,
+    }, .fill_box);
+    p.fillRect(box.x, box.y, box.w, box.h, ui.Color.rgba(99, 102, 241, 70), 8);
+}
+```
+
+The margin says how far beyond the box the effect reads; `inset` is where the
+box corner lies in the content bitmap. `bitmap.draw` paints the content, and
+any `Painter` operation works over it.
+
 ### Window state
 
 Windows with a `state_key` remember their bounds. Zig can own that storage:

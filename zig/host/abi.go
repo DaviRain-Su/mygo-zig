@@ -66,6 +66,7 @@ const (
 	ZigEventRichTextTag         uintptr = 57 // a0=cb_id a1=tag a2=len a3=*CSpanStyle
 	ZigEventWindowStatesLoad    uintptr = 58 // a0=cb_id a1=out a2=cap → bytes of JSON
 	ZigEventWindowStatesSave    uintptr = 59 // a0=cb_id a1=JSON a2=len
+	ZigEventUIEffect            uintptr = 60 // a0=cb_id a1=painter a2=*CEffectPaint a3=ud
 )
 
 // CUIInput is one InputEvent as the Zig side reads it. Layout must match
@@ -169,6 +170,15 @@ type CTextClientReq struct {
 	TextLen  uintptr
 	InPtr    uintptr
 	InLen    uintptr
+}
+
+// CEffectPaint is what a Zig effect paints over: the box, the margin inset
+// of the content bitmap, and the bitmap itself by handle.
+type CEffectPaint struct {
+	BoxX, BoxY, BoxW, BoxH float32
+	InsetX, InsetY         float32
+	MarginX, MarginY       float32
+	Bitmap                 uintptr
 }
 
 // CSpanStyle styles the runs of a tag (ui/richtext's EditorOptions.TagStyle).

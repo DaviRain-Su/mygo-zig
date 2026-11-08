@@ -550,6 +550,24 @@ const Gallery = struct {
         if (self.last_alert != -1) {
             _ = c.textf("last alert result={d}", .{self.last_alert}).fontSize(12).textColor(t.text_muted);
         }
+            self.viewEffects(c);
+}
+
+    fn viewEffects(self: *Gallery, c: *ui.Context) void {
+        const t = c.theme();
+        const row = c.row().fillWidth().gap(12).center().begin();
+        defer row.end();
+        const card = c.box().width(150).height(56).radius(10).background(t.surface)
+            .effect(ui.effectOf(*Gallery, self, .{ .x = 6, .y = 6 }, Gallery.washEffect));
+        {
+            const b = card.begin();
+            defer b.end();
+            _ = c.text("Zig effect").fontSize(12).center().textColor(t.accent);
+        }
+        _ = c.text("the element renders into a bitmap; Zig paints it")
+            .fontSize(11)
+            .textColor(t.text_muted)
+            .grow(1.0);
     }
 
     fn viewInputs(self: *Gallery, c: *ui.Context) void {
@@ -1323,6 +1341,17 @@ const Gallery = struct {
         const n = @min(json.len, self.win_states.len);
         @memcpy(self.win_states[0..n], json[0..n]);
         self.win_states_len = n;
+    }
+
+    fn washEffect(self: *Gallery, p: *ui.Painter, box: ui.Rect, content: ui.Bitmap, inset: ui.Point) void {
+        _ = self;
+        content.draw(p, .{
+            .x = box.x - inset.x,
+            .y = box.y - inset.y,
+            .w = box.w + 2 * inset.x,
+            .h = box.h + 2 * inset.y,
+        }, .fill_box);
+        p.fillRect(box.x, box.y, box.w, box.h, ui.Color.rgba(99, 102, 241, 70), 8);
     }
 
     fn onRichLink(self: *Gallery, url: []const u8) void {

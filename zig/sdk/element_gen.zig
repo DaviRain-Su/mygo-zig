@@ -2005,6 +2005,16 @@ pub const Element = struct {
         return self;
     }
 
+    /// Draws the element, with its children, through a Zig effect.
+    pub fn effect(self: Element, fx: ui.Effect) Element {
+        self.ctx.writeOp(@intFromEnum(CoreOp.effect));
+        self.ctx.writeF32(fx.margin.x);
+        self.ctx.writeF32(fx.margin.y);
+        self.ctx.writeU64(@intCast(fx.cb_id));
+        self.ctx.writeU64(@intCast(fx.ud));
+        return self;
+    }
+
     /// Masks the element and what is inside it by layers of masks.
     pub fn masks(self: Element, layers: []const ui.Mask) Element {
         self.ctx.writeOp(@intFromEnum(CoreOp.masks));

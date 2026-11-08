@@ -249,3 +249,15 @@ What stays Go-only, and why it is not a gap:
   are opt-in host imports instead; there is nothing to call.
 - `NewDocuments[T]` is a generic wrapper over the byte-level `Documents`
   API the SDK already has; Zig types its own content.
+
+## Phase 15 — effects
+
+- `Element.effect(ui.effectOf(StatePtr, state, margin, paintFn))` (op 422,
+  `ZigEventUIEffect=60`): the element and its children render into a content
+  bitmap, and the Zig paint function draws it with a `ui.Painter`.
+- `ui.Bitmap.draw(p, rect, fit)` paints the content through the new
+  `paintImageHandle` painter op, so effects can offset, scale, tile or
+  overlay the element's pixels.
+- The margin is fixed at registration (`EffectMargin` on the Go side), so no
+  round trip happens unless the element paints.
+- The gallery draws a card through an effect on the Controls tab.

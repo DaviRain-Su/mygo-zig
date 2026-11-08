@@ -248,6 +248,7 @@ const (
 	opTimelineQuery        uint16 = 419 // id, kind → num/bool
 	opOnTextKey            uint16 = 420 // cb, userdata
 	opHandleTextInput      uint16 = 421 // cb, userdata
+	opEffect               uint16 = 422 // margin x/y, cb, userdata
 )
 
 // PaintBuffer opcodes decoded by HostOpUIPaintFlush.
@@ -275,6 +276,7 @@ const (
 	paintCanvasBegin    uint8 = 21 // key
 	paintCanvasEnd      uint8 = 22
 	paintImage          uint8 = 23 // key, x,y,w,h, fit
+	paintImageHandle    uint8 = 24 // bitmap handle, x,y,w,h, fit
 )
 
 type cUITheme struct {
@@ -542,6 +544,7 @@ func (d *streamDecoder) Close() error {
 var (
 	activeFrames   []*uiFrame
 	activePainters []*mygoui.Painter
+	activeBitmaps  []*mygoui.Bitmap
 )
 
 // BindFrameElement builds an element inside the active frame for opt-in sibling
@@ -1380,6 +1383,47 @@ func (wh *uiWindowHost) textKeyBuf() []byte {
 		wh.textKeyOut = make([]byte, 256<<10)
 	}
 	return wh.textKeyOut
+}
+
+// zigFit maps the wire's fit byte to ui.Fit.
+func zigFit(fit uint8) mygoui.Fit {
+	switch fit {
+	case 1:
+		return mygoui.Cover
+	case 2:
+		return mygoui.FillBox
+	case 3:
+		return mygoui.ScaleDown
+	}
+	return mygoui.Contain
+}
+
+// zigEffect draws an element through a Zig paint callback, as ui.Effect does.
+type zigEffect struct {
+	call   host.CallZigFn
+	cbID   uintptr
+	ud     uintptr
+	margin mygoui.Point
+}
+
+func (e zigEffect) EffectMargin() mygoui.Point { return e.margin }
+
+func (e zigEffect) PaintEffect(p *mygoui.Painter, box mygoui.Rect, content *mygoui.Bitmap, inset mygoui.Point) {
+	activePainters = append(activePainters, p)
+	pHandle := uintptr(len(activePainters))
+	activeBitmaps = append(activeBitmaps, content)
+	bHandle := uintptr(len(activeBitmaps))
+	spec := host.CEffectPaint{
+		BoxX: box.X, BoxY: box.Y, BoxW: box.W, BoxH: box.H,
+		InsetX: inset.X, InsetY: inset.Y,
+		MarginX: e.margin.X, MarginY: e.margin.Y,
+		Bitmap: bHandle,
+	}
+	e.call(host.ZigEventUIEffect, e.cbID, pHandle, uintptr(unsafe.Pointer(&spec)), e.ud)
+	activeBitmaps[len(activeBitmaps)-1] = nil
+	activeBitmaps = activeBitmaps[:len(activeBitmaps)-1]
+	activePainters[len(activePainters)-1] = nil
+	activePainters = activePainters[:len(activePainters)-1]
 }
 
 // zigTextClient asks a Zig text-input client about its document through
@@ -4278,6 +4322,20 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				},
 				buf: make([]byte, 64<<10),
 			})
+		case opEffect:
+			mx, ok1 := r.f32()
+			my, ok2 := r.f32()
+			cbID, ok3 := r.u64()
+			ud, ok4 := r.u64()
+			if !ok1 || !ok2 || !ok3 || !ok4 {
+				return
+			}
+			f.cur = f.cur.Effect(zigEffect{
+				call:   f.host.callZig,
+				cbID:   uintptr(cbID),
+				ud:     uintptr(ud),
+				margin: mygoui.Point{X: mx, Y: my},
+			})
 		case opAfter:
 			ms, ok := r.i32()
 			if !ok {
@@ -4787,6 +4845,22 @@ func flushPaintTape(p *mygoui.Painter, r *tapeReader, stopOnCanvasEnd bool) {
 			})
 		case paintCanvasEnd:
 			// Unmatched end: ignore.
+		case paintImageHandle:
+			handle, ok0 := r.u32()
+			x, ok1 := r.f32()
+			y, ok2 := r.f32()
+			w, ok3 := r.f32()
+			h, ok4 := r.f32()
+			fit, ok5 := r.u8()
+			if !ok0 || !ok1 || !ok2 || !ok3 || !ok4 || !ok5 {
+				return
+			}
+			idx := int(handle) - 1
+			if idx < 0 || idx >= len(activeBitmaps) || activeBitmaps[idx] == nil {
+				continue
+			}
+			p.Image(activeBitmaps[idx], mygoui.Rect{X: x, Y: y, W: w, H: h}, zigFit(fit))
+
 		case paintImage:
 			key, ok1 := r.str()
 			x, ok2 := r.f32()

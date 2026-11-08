@@ -467,6 +467,7 @@ pub const CoreOp = enum(u16) {
     timeline_query = 419,
     on_text_key = 420,
     handle_text_input = 421,
+    effect = 422,
 };
 
 /// A layer of a mask: the alpha of a gradient across the element's box.
@@ -1191,6 +1192,55 @@ pub const RichText = struct {
     }
 };
 
+/// The element's content, rendered into a bitmap, as an effect paints it.
+pub const Bitmap = struct {
+    handle: usize = 0,
+
+    pub fn draw(self: Bitmap, p: *Painter, r: Rect, fit: Fit) void {
+        if (self.handle == 0) return;
+        p.imageBitmap(self.handle, r.x, r.y, r.w, r.h, fit);
+    }
+};
+
+/// An effect that draws an element from what it renders, as SwiftUI's
+/// colorEffect does: the element and its children render into a bitmap,
+/// and `draw` paints it.
+pub const Effect = struct {
+    margin: Point = .{},
+    cb_id: usize = 0,
+    ud: usize = 0,
+};
+
+pub const CEffectPaint = abi.EffectPaint;
+
+/// effectOf makes an effect of a Zig paint function.
+pub fn effectOf(
+    comptime StatePtr: type,
+    state: StatePtr,
+    margin: Point,
+    comptime paintFn: fn (StatePtr, *Painter, Rect, Bitmap, Point) void,
+) Effect {
+    const S = struct {
+        fn onPaint(painter: usize, spec: *abi.EffectPaint, ud: usize) void {
+            const s: StatePtr = @ptrFromInt(ud);
+            var p = Painter{ .handle = painter };
+            paintFn(
+                s,
+                &p,
+                .{ .x = spec.box_x, .y = spec.box_y, .w = spec.box_w, .h = spec.box_h },
+                .{ .handle = spec.bitmap },
+                .{ .x = spec.inset_x, .y = spec.inset_y },
+            );
+            p.flush();
+        }
+    };
+    return .{
+        .margin = margin,
+        .cb_id = mygo.registerUIEffect(&S.onPaint, @intFromPtr(state)),
+        .ud = @intFromPtr(state),
+    };
+}
+
 /// One key a text input takes, as OnTextKey sees it.
 pub const TextKey = struct {
     key: Key = .unknown,
@@ -1492,6 +1542,7 @@ const PaintOp = enum(u8) {
     canvas_begin = 21,
     canvas_end = 22,
     image = 23,
+    image_handle = 24,
 };
 
 pub const FillRule = enum(u8) {
@@ -2326,6 +2377,18 @@ pub const Painter = struct {
         self.ensure(22 + key.len);
         self.writeU8(@intFromEnum(PaintOp.image));
         self.writeStr(key);
+        self.writeF32(x);
+        self.writeF32(y);
+        self.writeF32(w);
+        self.writeF32(h);
+        self.writeU8(@intFromEnum(fit));
+    }
+
+    /// imageBitmap draws a bitmap by handle, as an effect paints its content.
+    pub fn imageBitmap(self: *Painter, handle: usize, x: f32, y: f32, w: f32, h: f32, fit: Fit) void {
+        self.ensure(31);
+        self.writeU8(@intFromEnum(PaintOp.image_handle));
+        self.writeU32(@intCast(handle));
         self.writeF32(x);
         self.writeF32(y);
         self.writeF32(w);
