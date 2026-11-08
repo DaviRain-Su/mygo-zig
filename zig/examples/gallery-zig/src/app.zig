@@ -1488,6 +1488,11 @@ const Gallery = struct {
                     win.setContentRulesJSON(ids) catch {};
                 }
             }
+            _ = c.box().height(48).fill().radius(12).glass(.{ .style = .regular, .clarity = 0.3 });
+            _ = c.text("glass (Liquid Glass material)").fontSize(12).textColor(t.text_muted);
+            if (c.button("apps-demo", "List installed apps").clicked()) {
+                self.runAppsDemo();
+            }
             if (c.button("fetch-demo", "HTTP GET example.com").clicked()) {
                 self.runFetchDemo();
             }
@@ -2018,6 +2023,21 @@ const Gallery = struct {
     
 
 
+
+
+    fn runAppsDemo(self: *Gallery) void {
+        const alloc = std.heap.page_allocator;
+        const raw = mygo.Shell.installedAppsJSON(alloc) catch {
+            const msg = "apps: failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        defer alloc.free(raw);
+        const n = @min(raw.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], raw[0..n]);
+        self.path_len = n;
+    }
 
     fn runFetchDemo(self: *Gallery) void {
         const alloc = std.heap.page_allocator;

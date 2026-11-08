@@ -28,6 +28,9 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 | `host/fetch/` | Opt-in HTTP (`netproxy`) for Zig |
 | `host/websocket/` | Opt-in WebSocket dial + events |
 | `host/updater/` | Opt-in auto-update (`mygo.Use` on import) |
+| `host/glass/` | Opt-in Liquid Glass / Blur / ScrollEdge |
+| `host/game/` | Opt-in fixed-step game View |
+| `host/automation/` | Opt-in MYGO_AUTOMATION (inspector builds) |
 | `sdk/mygo.zig` | Idiomatic Zig SDK (`exportApp`, `bind`, `declareEvent`, `Window`, …) |
 | `sdk/ui.zig` | Zero-alloc CommandBuffer client + rich controls |
 | `sdk/element_gen.zig` | Generated style / layout / query modifiers |
@@ -50,7 +53,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
 ### Opt-in rich text & charts
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater`
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater` · glass · game
 
 ### 202 Element modifiers (generated)
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, `draggable`, …

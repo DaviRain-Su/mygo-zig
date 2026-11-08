@@ -1160,6 +1160,25 @@ fn registerSubview(comptime StatePtr: type, comptime fnPtr: fn (StatePtr, *Conte
     return S.id;
 }
 
+
+pub const GlassStyle = enum(u8) { regular = 0, clear = 1 };
+
+pub const GlassOptions = struct {
+    style: GlassStyle = .regular,
+    tint: u32 = 0,
+    interactive: bool = false,
+    native: bool = false,
+    clarity: f32 = 0,
+};
+
+pub const BlurOptions = struct {
+    radius: f32 = 12,
+    mask_from: u32 = 0,
+    mask_to: u32 = 0,
+    mask_angle: f32 = 180,
+    has_mask: bool = false,
+};
+
 pub const Context = struct {
     frame_handle: usize,
     window: mygo.Window,
@@ -3414,6 +3433,118 @@ pub const Context = struct {
             .pad = pad,
         };
         _ = mygo.dispatch(.pie_chart, self.frame_handle, @intFromPtr(&spec), 0, 0);
+        return .{ .ctx = self };
+    }
+
+
+
+    // =========================================================================
+    // Opt-in glass (`zig/host/glass`) & game (`zig/host/game`)
+    // =========================================================================
+
+    /// Applies Liquid Glass material to the current element.
+    pub fn glass(self: *Context, opts: GlassOptions) Element {
+        self.flush();
+        const Spec = extern struct {
+            style: u8 = 0,
+            interactive: u8 = 0,
+            native: u8 = 0,
+            _pad: u8 = 0,
+            clarity: f32 = 0,
+            tint: u32 = 0,
+        };
+        var spec = Spec{
+            .style = @intFromEnum(opts.style),
+            .interactive = @intFromBool(opts.interactive),
+            .native = @intFromBool(opts.native),
+            .clarity = opts.clarity,
+            .tint = opts.tint,
+        };
+        _ = mygo.dispatch(.glass, 1, self.frame_handle, @intFromPtr(&spec), 0);
+        return .{ .ctx = self };
+    }
+
+    pub fn glassBlur(self: *Context, opts: BlurOptions) Element {
+        self.flush();
+        const Spec = extern struct {
+            radius: f32 = 0,
+            has_mask: u8 = 0,
+            _pad: [3]u8 = .{ 0, 0, 0 },
+            from: u32 = 0,
+            to: u32 = 0,
+            angle: f32 = 0,
+        };
+        var spec = Spec{
+            .radius = opts.radius,
+            .has_mask = @intFromBool(opts.has_mask),
+            .from = opts.mask_from,
+            .to = opts.mask_to,
+            .angle = opts.mask_angle,
+        };
+        _ = mygo.dispatch(.glass, 2, self.frame_handle, @intFromPtr(&spec), 0);
+        return .{ .ctx = self };
+    }
+
+    pub fn scrollEdge(self: *Context, hard: bool, at_bottom: bool, bg: u32) Element {
+        self.flush();
+        const Spec = extern struct {
+            hard: u8 = 0,
+            bottom: u8 = 0,
+            has_bg: u8 = 0,
+            _pad: u8 = 0,
+            background: u32 = 0,
+        };
+        var spec = Spec{
+            .hard = @intFromBool(hard),
+            .bottom = @intFromBool(at_bottom),
+            .has_bg = @intFromBool(bg != 0),
+            .background = bg,
+        };
+        _ = mygo.dispatch(.glass, 3, self.frame_handle, @intFromPtr(&spec), 0);
+        return .{ .ctx = self };
+    }
+
+    /// Fixed-step game view. Requires `_ "github.com/egoist/mygo/zig/host/game"`.
+    pub fn gameView(
+        self: *Context,
+        comptime StatePtr: type,
+        state: StatePtr,
+        rate: i32,
+        comptime onUpdate: fn (StatePtr, *const mygo.GameInput) void,
+        comptime onDraw: fn (StatePtr, *Painter, *const mygo.GameDrawInfo) void,
+    ) Element {
+        self.flush();
+        const S = struct {
+            var upd_cb: usize = 0;
+            var draw_cb: usize = 0;
+            fn upd(inp: *const mygo.GameInput, ud: usize) void {
+                onUpdate(@ptrFromInt(ud), inp);
+            }
+            fn draw(painter_handle: usize, info: *const mygo.GameDrawInfo, ud: usize) void {
+                var p = Painter{ .handle = painter_handle };
+                onDraw(@ptrFromInt(ud), &p, info);
+            }
+        };
+        if (S.upd_cb == 0) {
+            S.upd_cb = mygo.registerGameUpdate(&S.upd, 0);
+            S.draw_cb = mygo.registerGameDraw(&S.draw, 0);
+        }
+        const Spec = extern struct {
+            update_cb: u64 = 0,
+            update_ud: u64 = 0,
+            draw_cb: u64 = 0,
+            draw_ud: u64 = 0,
+            rate: i32 = 0,
+            _pad: i32 = 0,
+        };
+        var spec = Spec{
+            .update_cb = S.upd_cb,
+            .update_ud = @intFromPtr(state),
+            .draw_cb = S.draw_cb,
+            .draw_ud = @intFromPtr(state),
+            .rate = rate,
+        };
+        _ = mygo.dispatch(.game, 1, self.frame_handle, @intFromPtr(&spec), 0);
         return .{ .ctx = self };
     }
 

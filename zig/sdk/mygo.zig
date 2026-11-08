@@ -76,6 +76,8 @@ pub const HostOp = enum(usize) {
     fetch = 243,
     websocket = 244,
     updater = 245,
+    glass = 246,
+    game = 247,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -234,6 +236,8 @@ const ZigEvent = enum(usize) {
     watch = 36,
     perm_flow = 37,
     websocket = 38,
+    game_update = 39,
+    game_draw = 40,
 };
 
 pub const CStr = extern struct {
@@ -717,6 +721,66 @@ fn registerWSHandler(h: RawWSHandler, userdata: usize) usize {
     return ws_count;
 }
 
+const RawGameUpdate = *const fn (input: *const GameInput, userdata: usize) void;
+const RawGameDraw = *const fn (painter: usize, draw: *const GameDrawInfo, userdata: usize) void;
+var game_update_handlers: [32]RawGameUpdate = undefined;
+var game_draw_handlers: [32]RawGameDraw = undefined;
+var game_update_ud: [32]usize = undefined;
+var game_draw_ud: [32]usize = undefined;
+var game_update_count: usize = 0;
+var game_draw_count: usize = 0;
+
+pub fn registerGameUpdate(h: RawGameUpdate, userdata: usize) usize {
+    game_update_handlers[game_update_count] = h;
+    game_update_ud[game_update_count] = userdata;
+    game_update_count += 1;
+    return game_update_count;
+}
+pub fn registerGameDraw(h: RawGameDraw, userdata: usize) usize {
+    game_draw_handlers[game_draw_count] = h;
+    game_draw_ud[game_draw_count] = userdata;
+    game_draw_count += 1;
+    return game_draw_count;
+}
+
+pub const GameInput = extern struct {
+    keys_down: u64 = 0,
+    keys_pressed: u64 = 0,
+    keys_released: u64 = 0,
+    pointer_x: f32 = 0,
+    pointer_y: f32 = 0,
+    pointer_over: u8 = 0,
+    focused: u8 = 0,
+    buttons: u8 = 0,
+    buttons_pressed: u8 = 0,
+    buttons_released: u8 = 0,
+    _pad0: u8 = 0,
+    wheel_x: f32 = 0,
+    wheel_y: f32 = 0,
+    width: f32 = 0,
+    height: f32 = 0,
+    key_w: u8 = 0,
+    key_a: u8 = 0,
+    key_s: u8 = 0,
+    key_d: u8 = 0,
+    key_left: u8 = 0,
+    key_right: u8 = 0,
+    key_up: u8 = 0,
+    key_down: u8 = 0,
+    key_space: u8 = 0,
+    key_escape: u8 = 0,
+    _pad1: [2]u8 = .{ 0, 0 },
+};
+
+pub const GameDrawInfo = extern struct {
+    x: f32 = 0,
+    y: f32 = 0,
+    w: f32 = 0,
+    h: f32 = 0,
+    alpha: f32 = 0,
+    _pad: f32 = 0,
+};
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -1125,6 +1189,18 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                 .websocket => {
                     if (a0 == 0 or a0 > ws_count) return 0;
                     ws_handlers[a0 - 1](a1, @truncate(a2), a3, ws_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .game_update => {
+                    if (a0 == 0 or a0 > game_update_count) return 0;
+                    const inp: *const GameInput = @ptrFromInt(a1);
+                    game_update_handlers[a0 - 1](inp, game_update_ud[a0 - 1]);
+                    return 0;
+                },
+                .game_draw => {
+                    if (a0 == 0 or a0 > game_draw_count) return 0;
+                    const info: *const GameDrawInfo = @ptrFromInt(a2);
+                    game_draw_handlers[a0 - 1](a1, info, game_draw_ud[a0 - 1]);
                     return 0;
                 },
             }
@@ -2554,6 +2630,13 @@ pub const Desktop = struct {
         if (dispatch(.desktop, 3, 0, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
 
+    pub fn recentDocumentsJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [65536]u8 = undefined;
+        const got = dispatch(.desktop, 8, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
     /// Dock menu as JSON array (same shape as Tray.setMenuJSON). Empty clears.
     pub fn setDockMenuJSON(comptime StatePtr: type, state: StatePtr, json: []const u8, comptime handler: fn (StatePtr, []const u8) void) Error!void {
         const S = struct {
@@ -3676,6 +3759,44 @@ pub const Clipboard = struct {
     pub fn writeFilesJSON(paths_json: []const u8) Error!void {
         if (dispatch(.clipboard, 8, sliceAddr(paths_json), paths_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
+
+    pub fn writeHTML(markup: []const u8) void {
+        _ = dispatch(.clipboard, 9, sliceAddr(markup), markup.len, 0);
+    }
+
+    pub fn readHTML(allocator: std.mem.Allocator) Error![]u8 {
+        return readBytes(allocator, 10);
+    }
+
+    pub fn flush() Error!void {
+        if (dispatch(.clipboard, 11, 0, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    /// Write custom MIME: JSON object `{ "text/plain": "<base64>", ... }`.
+    pub fn writeMIMEJSON(map_json: []const u8) Error!void {
+        if (dispatch(.clipboard, 12, sliceAddr(map_json), map_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    /// Read MIME formats. `formats_json` is a JSON array of format strings; "[]" reads all.
+    /// Returns JSON object format→base64. Caller owns the slice.
+    pub fn readMIMEJSON(allocator: std.mem.Allocator, formats_json: []const u8) Error![]u8 {
+        const Spec = extern struct {
+            formats_ptr: usize = 0,
+            formats_len: usize = 0,
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [1024 * 1024]u8 = undefined;
+        var spec = Spec{
+            .formats_ptr = sliceAddr(formats_json),
+            .formats_len = formats_json.len,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.clipboard, 13, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
 };
 
 pub const Shell = struct {
@@ -3741,6 +3862,19 @@ pub const Shell = struct {
         const got = dispatch(.shell, 7, @intFromPtr(&spec), 0, 0);
         if (got == std.math.maxInt(usize)) return Error.MyGoError;
         return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    /// JSON array of {name,id,path}. Call from a worker if the list is large.
+    pub fn installedAppsJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [1024 * 1024]u8 = undefined;
+        const got = dispatch(.shell, 8, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    /// `app_json` is one InstalledApp object, typically `{ "path": "..." }`.
+    pub fn launchAppJSON(app_json: []const u8) Error!void {
+        if (dispatch(.shell, 9, sliceAddr(app_json), app_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
 };
 

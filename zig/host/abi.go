@@ -45,6 +45,8 @@ const (
 	ZigEventWatch         uintptr = 36 // a0=cb_id a1=watch_id a2=kind a3=payload
 	ZigEventPermFlow      uintptr = 37 // a0=cb_id a1=req_id a2=status a3=*CStr err
 	ZigEventWebSocket     uintptr = 38 // a0=cb_id a1=conn_id a2=kind a3=payload
+	ZigEventGameUpdate    uintptr = 39 // a0=cb_id a1=*CGameInput a2=0 a3=userdata
+	ZigEventGameDraw      uintptr = 40 // a0=cb_id a1=painter a2=*CGameDraw a3=userdata
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -109,6 +111,8 @@ const (
 	HostOpFetch          uintptr = 243 // a0=subop HTTP for Zig
 	HostOpWebSocket      uintptr = 244 // a0=subop
 	HostOpUpdater        uintptr = 245 // a0=subop
+	HostOpGlass          uintptr = 246 // a0=subop (material)
+	HostOpGame           uintptr = 247 // a0=subop
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -372,6 +376,8 @@ var PermissionFlowDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uint
 var FetchDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 var WebSocketDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 var UpdaterDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+var GlassDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+var GameDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
@@ -708,6 +714,7 @@ const (
 	DesktopJumpListSet uintptr = 1 // a1=json_ptr a2=json_len (array of tasks)
 	DesktopRecentAdd   uintptr = 2 // a1=path_ptr a2=path_len
 	DesktopRecentClear uintptr = 3
+	DesktopRecentList  uintptr = 8 // → JSON paths via a1=out a2=cap
 	DesktopDockSetMenu uintptr = 4 // a1=json_ptr a2=json_len a3=cb_id
 	DesktopDockSetIcon uintptr = 5 // a1=png_ptr a2=png_len
 	DesktopDockHide    uintptr = 6

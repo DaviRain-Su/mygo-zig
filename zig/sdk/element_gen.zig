@@ -1520,4 +1520,20 @@ pub const Element = struct {
         self.ctx.writeI32(z);
         return self;
     }
+
+    /// Liquid Glass material (`_ "…/zig/host/glass"`).
+    pub fn glass(self: Element, opts: ui.GlassOptions) Element {
+        _ = self.ctx.glass(opts);
+        return self;
+    }
+
+    pub fn glassBlur(self: Element, opts: ui.BlurOptions) Element {
+        _ = self.ctx.glassBlur(opts);
+        return self;
+    }
+
+    pub fn scrollEdge(self: Element, hard: bool, at_bottom: bool, bg: u32) Element {
+        _ = self.ctx.scrollEdge(hard, at_bottom, bg);
+        return self;
+    }
 };

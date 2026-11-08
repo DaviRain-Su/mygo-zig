@@ -11,6 +11,7 @@ import (
 	_ "github.com/egoist/mygo/zig/host/permissionflow"
 	_ "github.com/egoist/mygo/zig/host/fetch"
 	_ "github.com/egoist/mygo/zig/host/websocket"
+	_ "github.com/egoist/mygo/zig/host/glass"
 	_ "github.com/egoist/mygo/zig/host/ui"
 )
 

@@ -70,6 +70,9 @@ opcode map and status matrix.
 | `zig/host/fetch` | `mygo.Fetch.request` (HTTP + system proxy) |
 | `zig/host/websocket` | `mygo.WebSocket` (headers browsers forbid) |
 | `zig/host/updater` | `mygo.Updater` (+ `mygo.Use` on import) |
+| `zig/host/glass` | `c.glass` / `glassBlur` / `scrollEdge` |
+| `zig/host/game` | `c.gameView` (fixed-step Update/Draw) |
+| `zig/host/automation` | blank-import `plugins/automation` |
 
 `Fetch` / `WebSocket` exist because Zig's ecosystem HTTP and WebSocket
 clients are often incomplete for desktop apps (proxies, forbidden headers,

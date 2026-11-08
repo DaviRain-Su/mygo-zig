@@ -47,12 +47,12 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 | Item | Why |
 |------|-----|
 | Standalone docs site / go.mod branding | packaging (in-tree `docs/zig.md` Done) |
-| `Shell.InstalledApps` / `LaunchApp` | heavy, rare |
+| ~~`Shell.InstalledApps` / `LaunchApp`~~ | **Done** (Shell 8/9) |
 | `Shell.WriteShortcutLink` | Windows-only |
-| Arbitrary MIME `Clipboard.Write` | text/image/files enough |
+| ~~Arbitrary MIME `Clipboard.Write`~~ | **Done** (Clipboard 12/13) |
 | Full Documents / NSDocument | Go-first document apps |
 | First-class Zig `WebView` type | Page + UI WebView already |
-| glass / game / automation Zig | low demand or already indirect |
+| ~~glass / game / automation Zig~~ | **Done** (HostOp 246/247 + blank-import) |
 
 ## Roadmap
 
@@ -61,6 +61,7 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 3. **Phase 2** — `sqlite` minimal Open/Execute/Query/Transaction — Done
 4. **Phase 3** — watch + permissionflow — Done
 5. **Phase 4** — docs/zig.md + fetch/websocket/updater — Done
+6. **Phase 5** — edge FFI (apps/MIME/glass/game/automation/recent list) — Done
 
 ## Terminal ABI notes
 
@@ -87,3 +88,11 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 - `HostOpWebSocket = 244`, `ZigEventWebSocket = 38` — open/text/binary/close
 - `HostOpUpdater = 245` — check + automatic checks/downloads prefs
 - `plugins/websocket.Dial` is the shared Go API for native / Zig callers
+
+## Phase 5 edge ABI
+
+- Shell 8/9: InstalledApps JSON, LaunchApp JSON
+- Clipboard 9–13: HTML, Flush, MIME map (format→base64)
+- Desktop 8: RecentDocuments JSON list
+- HostOpGlass=246, HostOpGame=247, ZigEventGameUpdate/Draw=39/40
+- Still Go-only: NewDocuments[T], first-class WebView type, Win shortcut API (none public), go.mod branding

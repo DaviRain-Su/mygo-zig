@@ -508,6 +508,35 @@ func zigAnim(preset uint8, durMS, delayMS int32, bounce float32, nonMotion, okla
 	return a
 }
 
+
+// BindFrameModifier applies a Material (or other) transform to the current
+// element of an active frame. Used by opt-in packages such as glass.
+
+// WithPainter exposes a Painter handle to Zig for the duration of fn
+// (same registry as DrawObjects / Draw callbacks).
+func WithPainter(p *mygoui.Painter, fn func(handle uintptr)) {
+	activePainters = append(activePainters, p)
+	handle := uintptr(len(activePainters))
+	defer func() {
+		activePainters[len(activePainters)-1] = nil
+		activePainters = activePainters[:len(activePainters)-1]
+	}()
+	fn(handle)
+}
+
+func BindFrameModifier(frameHandle uintptr, mod func(e mygoui.Element) mygoui.Element) bool {
+	idx := int(frameHandle) - 1
+	if idx < 0 || idx >= len(activeFrames) {
+		return false
+	}
+	f := activeFrames[idx]
+	if f == nil {
+		return false
+	}
+	f.cur = mod(f.cur)
+	return true
+}
+
 func BindFrameElement(frameHandle uintptr, build func(c *mygoui.Context, winID int32) mygoui.Element) bool {
 	idx := int(frameHandle) - 1
 	if idx < 0 || idx >= len(activeFrames) {

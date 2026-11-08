@@ -7,6 +7,7 @@ package host
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json/v2"
 	"errors"
@@ -29,6 +30,7 @@ import (
 	"unsafe"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 )
 
 var (
@@ -375,6 +377,20 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return UpdaterDispatch(op, a0, a1, a2, a3)
 	}
+	if op == HostOpGlass {
+		if GlassDispatch == nil {
+			SetError(errors.New("zighost: glass not linked (import _ \"github.com/egoist/mygo/zig/host/glass\")"))
+			return ^uintptr(0)
+		}
+		return GlassDispatch(op, a0, a1, a2, a3)
+	}
+	if op == HostOpGame {
+		if GameDispatch == nil {
+			SetError(errors.New("zighost: game not linked (import _ \"github.com/egoist/mygo/zig/host/game\")"))
+			return ^uintptr(0)
+		}
+		return GameDispatch(activeCall, op, a0, a1, a2, a3)
+	}
 	if op == HostOpSQLite {
 		if SQLiteDispatch == nil {
 			SetError(errors.New("zighost: sqlite not linked (import _ \"github.com/egoist/mygo/zig/host/sqlite\")"))
@@ -686,6 +702,39 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 				return ^uintptr(0)
 			}
 			SetError(nil)
+		case 9: // write_html
+			mygo.Clipboard.WriteHTML(CopyString(a1, a2))
+		case 10: // read_html: a1=cb_id a2=userdata
+			txt := []byte(mygo.Clipboard.ReadHTML())
+			ptr, n := SliceAddr(txt)
+			activeCall(ZigEventBytes, a1, ptr, n, a2)
+		case 11: // flush
+			if err := mygo.Clipboard.Flush(); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+		case 12: // write_mime JSON map[format]base64
+			if err := clipboardWriteMIME(CopyBytes(a1, a2)); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+		case 13: // read_mime: a1=formats_json a2=len → a3 unused; use ZigEventBytes?
+			// a1=formats JSON ptr, a2=len, a3 packed as outPtr| wait:
+			// Convention: a1=*CClipboardMIMESpec {FormatsPtr,FormatsLen,OutPtr,OutCap}
+			spec := PtrTo[CClipboardMIMESpec](a1)
+			if spec == nil {
+				SetError(errors.New("zighost: clipboard read_mime needs spec"))
+				return ^uintptr(0)
+			}
+			raw, err := clipboardReadMIME(CopyBytes(spec.FormatsPtr, spec.FormatsLen))
+			if err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+			return writeBytesToOut(raw, spec.OutPtr, spec.OutCap)
 		}
 		return 0
 
@@ -737,6 +786,26 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 			}
 			SetError(nil)
 			return writeBytesToOut(png, spec.OutPtr, spec.OutCap)
+		case 8: // InstalledApps JSON → a1=out a2=cap
+			apps, err := mygo.Shell.InstalledApps()
+			if err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			raw, _ := json.Marshal(apps)
+			SetError(nil)
+			return writeBytesToOut(raw, a1, a2)
+		case 9: // LaunchApp JSON {name,id,path}
+			var app mygo.InstalledApp
+			if err := json.Unmarshal(CopyBytes(a1, a2), &app); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			if err := mygo.Shell.LaunchApp(app); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
 		default:
 			SetError(errors.New("zighost: unknown shell subop"))
 			return ^uintptr(0)
@@ -2493,6 +2562,58 @@ func flatHeaders(h http.Header) map[string]string {
 	return out
 }
 
+
+// CClipboardMIMESpec reads custom MIME clipboard data as JSON map.
+type CClipboardMIMESpec struct {
+	FormatsPtr, FormatsLen uintptr // JSON array of format strings; empty = all
+	OutPtr, OutCap         uintptr
+}
+
+func clipboardWriteMIME(raw []byte) error {
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return err
+	}
+	if len(m) == 0 {
+		mygo.Clipboard.Clear()
+		return nil
+	}
+	reps := make([]transfer.Representation, 0, len(m))
+	for format, b64 := range m {
+		b, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return err
+		}
+		reps = append(reps, transfer.Bytes(transfer.Format(format), b))
+	}
+	return mygo.Clipboard.Write(transfer.New(transfer.NewItem(reps...)))
+}
+
+func clipboardReadMIME(formatsJSON []byte) ([]byte, error) {
+	var formats []string
+	if len(formatsJSON) > 0 {
+		if err := json.Unmarshal(formatsJSON, &formats); err != nil {
+			return nil, err
+		}
+	}
+	var fs []transfer.Format
+	for _, f := range formats {
+		fs = append(fs, transfer.Format(f))
+	}
+	d, err := mygo.Clipboard.Read(fs...)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, f := range d.Formats() {
+		b, err := d.Read(f)
+		if err != nil {
+			continue
+		}
+		out[string(f)] = base64.StdEncoding.EncodeToString(b)
+	}
+	return json.Marshal(out)
+}
 func hostDesktop(sub, a1, a2, a3 uintptr) uintptr {
 	switch sub {
 	case DesktopJumpListSet:
@@ -2523,6 +2644,10 @@ func hostDesktop(sub, a1, a2, a3 uintptr) uintptr {
 		}
 		SetError(nil)
 		return 0
+	case DesktopRecentList:
+		raw, _ := json.Marshal(mygo.App.RecentDocuments())
+		SetError(nil)
+		return writeBytesToOut(raw, a1, a2)
 	case DesktopDockSetMenu:
 		return setDockMenu(CopyBytes(a1, a2), a3)
 	case DesktopDockSetIcon:
