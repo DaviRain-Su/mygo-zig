@@ -200,6 +200,11 @@ const Gallery = struct {
     notif_click_cb: usize = 0,
     win_vibrancy: bool = false,
     content_protect: bool = false,
+    hotkey_hits: u32 = 0,
+    path_buf: [256]u8 = undefined,
+    path_len: usize = 0,
+    cursor_x: i32 = 0,
+    cursor_y: i32 = 0,
     dock_progress: f64 = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
@@ -597,6 +602,11 @@ const Gallery = struct {
         self.flyout_id = fl.id;
     }
 
+
+
+    fn onHotkey(self: *Gallery) void {
+        self.hotkey_hits +%= 1;
+    }
 
     fn onNotifClick(self: *Gallery, id: []const u8) void {
         self.notif_clicks +%= 1;
@@ -1274,6 +1284,22 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("path-user", "Path userData").clicked()) {
+                if (mygo.Path.get(std.heap.page_allocator, "userData")) |path| {
+                    defer std.heap.page_allocator.free(path);
+                    const n = @min(path.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..n], path[0..n]);
+                    self.path_len = n;
+                } else |_| {}
+                const pt = mygo.Screen.cursor();
+                self.cursor_x = pt.x;
+                self.cursor_y = pt.y;
+            }
+            if (self.path_len > 0) {
+                _ = c.textf("userData={s}", .{self.path_buf[0..self.path_len]}).fontSize(11).textColor(t.text_muted);
+            }
+            _ = c.textf("cursor=({d},{d}) hotkey={d}", .{ self.cursor_x, self.cursor_y, self.hotkey_hits }).fontSize(11).textColor(t.text_muted);
+
             if (c.button("protect-toggle", "Toggle content protect").clicked()) {
                 if (self.main_win_id != 0) {
                     const win = mygo.Window{ .id = self.main_win_id };
@@ -1636,6 +1662,7 @@ fn onReady() void {
     app_state.notif_supported = mygo.Notification.supported();
     app_state.notif_click_cb = mygo.Notification.registerClickHandler(*Gallery, &app_state, Gallery.onNotifClick);
     mygo.Notification.onAppClick(*Gallery, &app_state, Gallery.onNotifClick);
+    mygo.Hotkey.register(*Gallery, &app_state, "CmdOrCtrl+Shift+G", Gallery.onHotkey) catch {};
     const win = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,

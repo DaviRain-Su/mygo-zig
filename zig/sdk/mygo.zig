@@ -37,6 +37,9 @@ pub const HostOp = enum(usize) {
     dialog = 20,
     tray = 21,
     notification = 22,
+    path = 23,
+    screen = 24,
+    hotkey = 25,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -103,6 +106,7 @@ const ZigEvent = enum(usize) {
     ui_provide = 17,
     tray = 18,
     notification = 19,
+    hotkey = 20,
 };
 
 pub const CStr = extern struct {
@@ -259,6 +263,18 @@ fn registerNotifHandler(h: RawNotifHandler, userdata: usize) usize {
     return notif_count;
 }
 
+const RawHotkeyHandler = *const fn (userdata: usize) void;
+var hotkey_handlers: [32]RawHotkeyHandler = undefined;
+var hotkey_count: usize = 0;
+var hotkey_handler_userdata: [32]usize = undefined;
+
+fn registerHotkeyHandler(h: RawHotkeyHandler, userdata: usize) usize {
+    hotkey_handlers[hotkey_count] = h;
+    hotkey_handler_userdata[hotkey_count] = userdata;
+    hotkey_count += 1;
+    return hotkey_count;
+}
+
 fn registerBytesHandler(h: RawBytesHandler) usize {
     bytes_handlers[bytes_count] = h;
     bytes_count += 1;
@@ -395,6 +411,11 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         break :blk cs.toSlice();
                     } else "";
                     notif_handlers[a0 - 1](notif_kind, id, notif_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .hotkey => {
+                    if (a0 == 0 or a0 > hotkey_count) return 0;
+                    hotkey_handlers[a0 - 1](hotkey_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -1090,6 +1111,77 @@ pub const Notification = struct {
         };
         const cb = registerNotifHandler(&S.onNotif, @intFromPtr(state));
         _ = dispatch(.notification, @intFromEnum(Sub.on_app_click), cb, 0, 0);
+    }
+};
+
+
+pub const Path = struct {
+    /// Well-known directory name: home, appData, userData, cache, logs,
+    /// resources, temp, exe, desktop, documents, downloads, music, pictures, videos.
+    pub fn get(allocator: std.mem.Allocator, name: []const u8) Error![]u8 {
+        var name_cs = CStr.fromSlice(name);
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.path, 1, @intFromPtr(&name_cs), @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn set(name: []const u8, path: []const u8) void {
+        var name_cs = CStr.fromSlice(name);
+        var path_cs = CStr.fromSlice(path);
+        _ = dispatch(.path, 2, @intFromPtr(&name_cs), @intFromPtr(&path_cs), 0);
+    }
+};
+
+pub const Point = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+};
+
+pub const Screen = struct {
+    const CPoint = extern struct { x: i32 = 0, y: i32 = 0 };
+
+    /// JSON array of displays (caller owns). Fields: id,label,bounds,workArea,scaleFactor,rotation,internal,primary.
+    pub fn displaysJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [16384]u8 = undefined;
+        const got = dispatch(.screen, 1, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn cursor() Point {
+        var p: CPoint = .{};
+        _ = dispatch(.screen, 2, @intFromPtr(&p), 0, 0);
+        return .{ .x = p.x, .y = p.y };
+    }
+};
+
+pub const Hotkey = struct {
+    pub fn register(comptime StatePtr: type, state: StatePtr, accelerator: []const u8, comptime handler: fn (StatePtr) void) Error!void {
+        const S = struct {
+            fn onHotkey(ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+            }
+        };
+        const cb = registerHotkeyHandler(&S.onHotkey, @intFromPtr(state));
+        if (dispatch(.hotkey, 1, sliceAddr(accelerator), accelerator.len, cb) == std.math.maxInt(usize)) {
+            return Error.MyGoError;
+        }
+    }
+
+    pub fn unregister(accelerator: []const u8) void {
+        _ = dispatch(.hotkey, 2, sliceAddr(accelerator), accelerator.len, 0);
+    }
+
+    pub fn unregisterAll() void {
+        _ = dispatch(.hotkey, 3, 0, 0, 0);
+    }
+
+    pub fn isRegistered(accelerator: []const u8) bool {
+        return dispatch(.hotkey, 4, sliceAddr(accelerator), accelerator.len, 0) != 0;
     }
 };
 

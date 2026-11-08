@@ -548,6 +548,15 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpNotification:
 		return hostNotification(a0, a1, a2, a3)
 
+	case HostOpPath:
+		return hostPath(a0, a1, a2, a3)
+
+	case HostOpScreen:
+		return hostScreen(a0, a1, a2, a3)
+
+	case HostOpHotkey:
+		return hostHotkey(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1431,6 +1440,104 @@ func hostNotification(sub, a1, a2, a3 uintptr) uintptr {
 
 	default:
 		SetError(errors.New("zighost: unknown notification subop"))
+		return ^uintptr(0)
+	}
+}
+
+func hostPath(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case 1: // get: a1=*CStr name, a2=out_ptr, a3=out_cap
+		cs := PtrTo[CStr](a1)
+		if cs == nil {
+			SetError(errors.New("zighost: path get needs name"))
+			return ^uintptr(0)
+		}
+		path, err := mygo.App.Path(mygo.PathName(StrField(*cs)))
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut([]byte(path), a2, a3)
+	case 2: // set: a1=*CStr name, a2=*CStr path
+		n := PtrTo[CStr](a1)
+		p := PtrTo[CStr](a2)
+		if n == nil || p == nil {
+			SetError(errors.New("zighost: path set needs name and path"))
+			return ^uintptr(0)
+		}
+		mygo.App.SetPath(mygo.PathName(StrField(*n)), StrField(*p))
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown path subop"))
+		return ^uintptr(0)
+	}
+}
+
+func hostScreen(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case ScreenDisplaysJSON:
+		type dJSON struct {
+			ID          int64          `json:"id"`
+			Label       string         `json:"label"`
+			Bounds      mygo.Rectangle `json:"bounds"`
+			WorkArea    mygo.Rectangle `json:"workArea"`
+			ScaleFactor float64        `json:"scaleFactor"`
+			Rotation    int            `json:"rotation"`
+			Internal    bool           `json:"internal"`
+			Primary     bool           `json:"primary"`
+		}
+		ds := mygo.Screen.Displays()
+		out := make([]dJSON, len(ds))
+		for i, d := range ds {
+			out[i] = dJSON{d.ID, d.Label, d.Bounds, d.WorkArea, d.ScaleFactor, d.Rotation, d.Internal, d.Primary}
+		}
+		raw, err := json.Marshal(out)
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(raw, a1, a2)
+	case ScreenCursor:
+		if out := PtrTo[CPoint](a1); out != nil {
+			p := mygo.Screen.CursorScreenPoint()
+			*out = CPoint{X: int32(p.X), Y: int32(p.Y)}
+		}
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown screen subop"))
+		return ^uintptr(0)
+	}
+}
+
+func hostHotkey(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case HotkeyRegister:
+		acc := CopyString(a1, a2)
+		cbID := a3
+		err := mygo.GlobalShortcut.Register(acc, func() {
+			activeCall(ZigEventHotkey, cbID, 0, 0, 0)
+		})
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case HotkeyUnregister:
+		mygo.GlobalShortcut.Unregister(CopyString(a1, a2))
+		return 0
+	case HotkeyUnregisterAll:
+		mygo.GlobalShortcut.UnregisterAll()
+		return 0
+	case HotkeyIsRegistered:
+		if mygo.GlobalShortcut.IsRegistered(CopyString(a1, a2)) {
+			return 1
+		}
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown hotkey subop"))
 		return ^uintptr(0)
 	}
 }

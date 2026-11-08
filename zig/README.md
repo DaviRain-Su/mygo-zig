@@ -92,6 +92,7 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| Path / Screen / Hotkey | Done | `Path.get`/`set`, `Screen.displaysJSON`/`cursor`, `Hotkey.register` |
 | Window vibrancy/progress | Done | `setVibrancy`/`setVibrancyTint`/`setProgressBar`/`setContentProtection` + title bar opts/insets |
 | Notification | Done | `Notification.show`/`close`/`clearAll`/`onAppClick` |
 | Flyout | Done | `newFlyoutUi` + vibrancy + `Window.setAnchor` |

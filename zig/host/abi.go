@@ -26,6 +26,7 @@ const (
 	ZigEventUIProvide     uintptr = 17 // a0 = cb_id, a1 = out_buf_ptr, a2 = out_buf_cap, a3 = userdata → bytes written
 	ZigEventTray          uintptr = 18 // a0=cb_id a1=tray_id a2=kind(1 click/2 right/3 appearance/4 menu) a3=*CStr menu id when kind=4
 	ZigEventNotification  uintptr = 19 // a0=cb_id a1=kind(1 note click / 2 app click) a2=*CStr id
+	ZigEventHotkey        uintptr = 20 // a0=cb_id a1=hotkey_id
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -49,6 +50,9 @@ const (
 	HostOpDialog        uintptr = 20 // a0=kind, a1=*spec, a2=out_ptr, a3=out_cap
 	HostOpTray          uintptr = 21 // a0=subop, a1=tray_id|spec, a2, a3
 	HostOpNotification  uintptr = 22 // a0=subop, a1=spec|id, a2, a3
+	HostOpPath          uintptr = 23 // a0=1 get / 2 set, a1=name, a2=path/out
+	HostOpScreen        uintptr = 24 // a0=subop
+	HostOpHotkey        uintptr = 25 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -443,4 +447,22 @@ type CNotificationShowSpec struct {
 	Silent                   uint8
 	_                        [7]byte
 	ClickCbID                uintptr
+}
+
+// Screen sub-ops for HostOpScreen.
+const (
+	ScreenDisplaysJSON uintptr = 1 // a1=out_ptr a2=out_cap → JSON array of displays
+	ScreenCursor       uintptr = 2 // a1=*CPoint
+)
+
+// Hotkey sub-ops for HostOpHotkey.
+const (
+	HotkeyRegister      uintptr = 1 // a1=acc_ptr a2=acc_len a3=cb_id → 0 ok
+	HotkeyUnregister    uintptr = 2 // a1=acc_ptr a2=acc_len
+	HotkeyUnregisterAll uintptr = 3
+	HotkeyIsRegistered  uintptr = 4 // → 1/0
+)
+
+type CPoint struct {
+	X, Y int32
 }
