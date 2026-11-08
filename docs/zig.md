@@ -1,11 +1,11 @@
-# Zig apps (external `mygo-zig`)
+# Zig apps (this fork: `myzig`)
 
 MyGo's core is Go-authored apps. Zig (and other languages) sit **outside**
-core on the [Model A](https://github.com/DaviRain-Su/mygo-zig) host: a
+core on the [Model A](https://github.com/DaviRain-Su/myzig) host: a
 `CGO_ENABLED=0` purego process loads your Zig dylib and talks over one
 callback. Official inclusion of Zig-authored apps in `egoist/mygo` was
 declined; maintain apps against [`DaviRain-Su/myzig`](https://github.com/DaviRain-Su/myzig)
-(canonical rename of `mygo-zig`) and merge `upstream/main` periodically.
+and merge `upstream/main` periodically.
 
 Module path in this tree is still `github.com/egoist/mygo/...` so pure-Go
 apps and upstream stay compatible; a standalone `go.mod` rename is optional

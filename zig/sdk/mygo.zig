@@ -998,7 +998,7 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     host_fn = @ptrFromInt(a0);
                     if (cfg.init) |init_fn| {
                         init_fn() catch |err| {
-                            std.debug.print("[mygo-zig] init error: {s}\n", .{@errorName(err)});
+                            std.debug.print("[myzig] init error: {s}\n", .{@errorName(err)});
                             return -1;
                         };
                     }
