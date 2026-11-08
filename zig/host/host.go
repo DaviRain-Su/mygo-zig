@@ -541,6 +541,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpTray:
 		return hostTray(a0, a1, a2, a3)
 
+	case HostOpNotification:
+		return hostNotification(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1337,4 +1340,74 @@ func parseDialogFilters(blobPtr, blobLen, namePtr, nameLen, extPtr, extLen uintp
 		return []mygo.FileFilter{{Name: name, Extensions: splitCSV(CopyString(extPtr, extLen))}}
 	}
 	return nil
+}
+
+func hostNotification(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case NotifSupported:
+		if mygo.NotificationsSupported() {
+			return 1
+		}
+		return 0
+
+	case NotifShow:
+		spec := PtrTo[CNotificationShowSpec](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: notification show needs spec"))
+			return ^uintptr(0)
+		}
+		opts := mygo.NotificationOptions{
+			ID:       CopyString(spec.IDPtr, spec.IDLen),
+			Title:    CopyString(spec.TitlePtr, spec.TitleLen),
+			Subtitle: CopyString(spec.SubtitlePtr, spec.SubtitleLen),
+			Body:     CopyString(spec.BodyPtr, spec.BodyLen),
+			Group:    CopyString(spec.GroupPtr, spec.GroupLen),
+			Silent:   spec.Silent != 0,
+			Image:    CopyBytes(spec.ImagePtr, spec.ImageLen),
+		}
+		n := mygo.NewNotification(opts)
+		if spec.ClickCbID != 0 {
+			cbID := spec.ClickCbID
+			idCopy := n.ID()
+			n.OnClick(func() {
+				cs := CStr{}
+				ptr, ln := SliceAddr([]byte(idCopy))
+				cs.Data, cs.Len = ptr, ln
+				activeCall(ZigEventNotification, cbID, 1, uintptrSlicePtr(&cs), 0)
+			})
+		}
+		if err := n.Show(); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		id := []byte(n.ID())
+		return writeBytesToOut(id, a2, a3)
+
+	case NotifClose:
+		id := CopyString(a1, a2)
+		// Close by creating a handle with the same ID and calling Close,
+		// or use Clear on that ID via NewNotification + Close without Show.
+		n := mygo.NewNotification(mygo.NotificationOptions{ID: id})
+		n.Close()
+		return 0
+
+	case NotifClear:
+		mygo.ClearNotifications()
+		return 0
+
+	case NotifOnAppClick:
+		cbID := a1
+		mygo.App.OnNotificationClick(func(id string) {
+			cs := CStr{}
+			ptr, ln := SliceAddr([]byte(id))
+			cs.Data, cs.Len = ptr, ln
+			activeCall(ZigEventNotification, cbID, 2, uintptrSlicePtr(&cs), 0)
+		})
+		return 0
+
+	default:
+		SetError(errors.New("zighost: unknown notification subop"))
+		return ^uintptr(0)
+	}
 }

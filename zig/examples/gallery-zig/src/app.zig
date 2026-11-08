@@ -193,6 +193,11 @@ const Gallery = struct {
     tray_menu_len: usize = 0,
     flyout_id: i32 = 0,
     main_win_id: i32 = 0,
+    notif_id_buf: [64]u8 = undefined,
+    notif_id_len: usize = 0,
+    notif_clicks: u32 = 0,
+    notif_supported: bool = false,
+    notif_click_cb: usize = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
     mime_drop: [256]u8 = undefined,
@@ -587,6 +592,14 @@ const Gallery = struct {
             .vibrancy = "popover",
         }, Gallery.viewFlyout) catch return;
         self.flyout_id = fl.id;
+    }
+
+
+    fn onNotifClick(self: *Gallery, id: []const u8) void {
+        self.notif_clicks +%= 1;
+        const n = @min(id.len, self.notif_id_buf.len);
+        @memcpy(self.notif_id_buf[0..n], id[0..n]);
+        self.notif_id_len = n;
     }
 
     fn onTrayMenu(self: *Gallery, id: []const u8) void {
@@ -1192,7 +1205,7 @@ const Gallery = struct {
 
     fn viewMore(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
-        _ = c.text("Toolbar · Toasts · Dialogs · RichText · MIME drag").fontSize(16).bold();
+        _ = c.text("Toolbar · Toasts · Dialogs · Tray · Notify · RichText").fontSize(16).bold();
 
                 _ = c.box().fillWidth().height(36).radius(8).linearGradient(90, t.accent, t.success, false);
 
@@ -1256,6 +1269,35 @@ const Gallery = struct {
             }
             if (self.dialog_len > 0) {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
+            }
+
+            if (self.notif_supported) {
+                if (c.button("notif-show", "Notify…").clicked()) {
+                    if (mygo.Notification.show(std.heap.page_allocator, .{
+                        .id = "gallery-zig-demo",
+                        .title = "Gallery Zig",
+                        .subtitle = "Desktop notification",
+                        .body = "Clicked from the Zig binding.",
+                        .click_cb = self.notif_click_cb,
+                    })) |id| {
+                        defer std.heap.page_allocator.free(id);
+                        const n = @min(id.len, self.notif_id_buf.len);
+                        @memcpy(self.notif_id_buf[0..n], id[0..n]);
+                        self.notif_id_len = n;
+                    } else |_| {}
+                }
+                if (self.notif_id_len > 0) {
+                    if (c.button("notif-close", "Close notify").clicked()) {
+                        mygo.Notification.close(self.notif_id_buf[0..self.notif_id_len]);
+                    }
+                    if (c.button("notif-clear", "Clear all").clicked()) {
+                        mygo.Notification.clearAll();
+                        self.notif_id_len = 0;
+                    }
+                    _ = c.textf("notif id={s} clicks={d}", .{ self.notif_id_buf[0..self.notif_id_len], self.notif_clicks }).fontSize(11).textColor(t.text_muted);
+                }
+            } else {
+                _ = c.text("Notifications unsupported here").fontSize(11).textColor(t.text_muted);
             }
 
             if (c.button("flyout-open", if (self.flyout_id != 0) "Close flyout" else "Flyout…").clicked()) {
@@ -1544,6 +1586,9 @@ fn init() !void {
 
 fn onReady() void {
     app_state.ensureTray();
+    app_state.notif_supported = mygo.Notification.supported();
+    app_state.notif_click_cb = mygo.Notification.registerClickHandler(*Gallery, &app_state, Gallery.onNotifClick);
+    mygo.Notification.onAppClick(*Gallery, &app_state, Gallery.onNotifClick);
     const win = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,

@@ -36,6 +36,7 @@ pub const HostOp = enum(usize) {
     app_set_menu = 16,
     dialog = 20,
     tray = 21,
+    notification = 22,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -97,6 +98,7 @@ const ZigEvent = enum(usize) {
     ui_outline_cell = 16,
     ui_provide = 17,
     tray = 18,
+    notification = 19,
 };
 
 pub const CStr = extern struct {
@@ -236,6 +238,18 @@ fn registerTrayHandler(h: RawTrayHandler, userdata: usize) usize {
     return tray_count;
 }
 
+const RawNotifHandler = *const fn (kind: u8, id: []const u8, userdata: usize) void;
+var notif_handlers: [32]RawNotifHandler = undefined;
+var notif_count: usize = 0;
+var notif_handler_userdata: [32]usize = undefined;
+
+fn registerNotifHandler(h: RawNotifHandler, userdata: usize) usize {
+    notif_handlers[notif_count] = h;
+    notif_handler_userdata[notif_count] = userdata;
+    notif_count += 1;
+    return notif_count;
+}
+
 fn registerBytesHandler(h: RawBytesHandler) usize {
     bytes_handlers[bytes_count] = h;
     bytes_count += 1;
@@ -362,6 +376,16 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         break :blk "";
                     };
                     tray_handlers[a0 - 1](a1, tray_kind, menu_id, tray_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .notification => {
+                    if (a0 == 0 or a0 > notif_count) return 0;
+                    const notif_kind: u8 = @intCast(a1);
+                    const id: []const u8 = if (a2 != 0) blk: {
+                        const cs: *const CStr = @ptrFromInt(a2);
+                        break :blk cs.toSlice();
+                    } else "";
+                    notif_handlers[a0 - 1](notif_kind, id, notif_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -920,6 +944,107 @@ pub const Tray = struct {
     }
 };
 
+
+
+pub const Notification = struct {
+    const Sub = enum(usize) {
+        supported = 1,
+        show = 2,
+        close = 3,
+        clear = 4,
+        on_app_click = 5,
+    };
+
+    const CShowSpec = extern struct {
+        id_ptr: usize = 0,
+        id_len: usize = 0,
+        title_ptr: usize = 0,
+        title_len: usize = 0,
+        subtitle_ptr: usize = 0,
+        subtitle_len: usize = 0,
+        body_ptr: usize = 0,
+        body_len: usize = 0,
+        group_ptr: usize = 0,
+        group_len: usize = 0,
+        image_ptr: usize = 0,
+        image_len: usize = 0,
+        silent: u8 = 0,
+        _pad: [7]u8 = @splat(0),
+        click_cb_id: usize = 0,
+    };
+
+    pub fn supported() bool {
+        return dispatch(.notification, @intFromEnum(Sub.supported), 0, 0, 0) != 0;
+    }
+
+    /// Show a desktop notification. Returns the notification id (caller owns).
+    /// Pass `click_cb` from `registerClickHandler` to receive clicks.
+    pub fn show(allocator: std.mem.Allocator, opts: struct {
+        id: []const u8 = "",
+        title: []const u8 = "",
+        subtitle: []const u8 = "",
+        body: []const u8 = "",
+        group: []const u8 = "",
+        image: []const u8 = "",
+        silent: bool = false,
+        click_cb: usize = 0,
+    }) Error![]u8 {
+        var spec = CShowSpec{
+            .id_ptr = sliceAddr(opts.id),
+            .id_len = opts.id.len,
+            .title_ptr = sliceAddr(opts.title),
+            .title_len = opts.title.len,
+            .subtitle_ptr = sliceAddr(opts.subtitle),
+            .subtitle_len = opts.subtitle.len,
+            .body_ptr = sliceAddr(opts.body),
+            .body_len = opts.body.len,
+            .group_ptr = sliceAddr(opts.group),
+            .group_len = opts.group.len,
+            .image_ptr = sliceAddr(opts.image),
+            .image_len = opts.image.len,
+            .silent = if (opts.silent) 1 else 0,
+            .click_cb_id = opts.click_cb,
+        };
+        var scratch: [256]u8 = undefined;
+        const got = dispatch(.notification, @intFromEnum(Sub.show), @intFromPtr(&spec), @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn close(id: []const u8) void {
+        _ = dispatch(.notification, @intFromEnum(Sub.close), sliceAddr(id), id.len, 0);
+    }
+
+    pub fn clearAll() void {
+        _ = dispatch(.notification, @intFromEnum(Sub.clear), 0, 0, 0);
+    }
+
+    /// Register a per-notification click handler; pass returned id as `click_cb` to `show`.
+    pub fn registerClickHandler(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) usize {
+        const S = struct {
+            fn onNotif(kind: u8, id: []const u8, ud: usize) void {
+                if (kind != 1) return;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, id);
+            }
+        };
+        return registerNotifHandler(&S.onNotif, @intFromPtr(state));
+    }
+
+    /// App-level click handler (also for notifications from earlier runs).
+    pub fn onAppClick(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onNotif(kind: u8, id: []const u8, ud: usize) void {
+                if (kind != 2) return;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, id);
+            }
+        };
+        const cb = registerNotifHandler(&S.onNotif, @intFromPtr(state));
+        _ = dispatch(.notification, @intFromEnum(Sub.on_app_click), cb, 0, 0);
+    }
+};
 
 pub const Clipboard = struct {
     pub fn writeText(text: []const u8) void {

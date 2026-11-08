@@ -25,6 +25,7 @@ const (
 	ZigEventUIOutlineCell uintptr = 16 // a0 = cb_id, a1 = frame_handle, a2 = *CUIOutlineCellInfo, a3 = userdata
 	ZigEventUIProvide     uintptr = 17 // a0 = cb_id, a1 = out_buf_ptr, a2 = out_buf_cap, a3 = userdata → bytes written
 	ZigEventTray          uintptr = 18 // a0=cb_id a1=tray_id a2=kind(1 click/2 right/3 appearance/4 menu) a3=*CStr menu id when kind=4
+	ZigEventNotification  uintptr = 19 // a0=cb_id a1=kind(1 note click / 2 app click) a2=*CStr id
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -47,6 +48,7 @@ const (
 	HostOpAppSetMenu    uintptr = 16
 	HostOpDialog        uintptr = 20 // a0=kind, a1=*spec, a2=out_ptr, a3=out_cap
 	HostOpTray          uintptr = 21 // a0=subop, a1=tray_id|spec, a2, a3
+	HostOpNotification  uintptr = 22 // a0=subop, a1=spec|id, a2, a3
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -404,4 +406,26 @@ type CFlyoutSpec struct {
 	PlacementPtr, PlacementLen uintptr
 	Flags                      uint32 // 1=focusable 2=hidden 4=shadow 8=popover 16=fit_content
 	VibrancyPtr, VibrancyLen   uintptr
+}
+
+// Notification sub-ops for HostOpNotification.
+const (
+	NotifSupported  uintptr = 1 // → 1/0
+	NotifShow       uintptr = 2 // a1=*CNotificationShowSpec, a2=out_id_ptr, a3=out_id_cap → id len
+	NotifClose      uintptr = 3 // a1=id_ptr, a2=id_len
+	NotifClear      uintptr = 4
+	NotifOnAppClick uintptr = 5 // a1=cb_id
+)
+
+// CNotificationShowSpec shows a desktop notification.
+type CNotificationShowSpec struct {
+	IDPtr, IDLen             uintptr
+	TitlePtr, TitleLen       uintptr
+	SubtitlePtr, SubtitleLen uintptr
+	BodyPtr, BodyLen         uintptr
+	GroupPtr, GroupLen       uintptr
+	ImagePtr, ImageLen       uintptr
+	Silent                   uint8
+	_                        [7]byte
+	ClickCbID                uintptr
 }

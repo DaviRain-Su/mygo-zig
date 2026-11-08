@@ -64,6 +64,9 @@ go run ./zig/cmd/scaffold -dir ./apps/x demo
 
 File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 
+### Notification
+`Notification.supported` · `show` · `close` · `clearAll` · click handlers
+
 ### Flyout
 `newFlyoutUi` · parent/tray · vibrancy · placement/gap/flags · `Window.setAnchor` · `Context.hasVibrancy`
 
@@ -89,6 +92,7 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| Notification | Done | `Notification.show`/`close`/`clearAll`/`onAppClick` |
 | Flyout | Done | `newFlyoutUi` + vibrancy + `Window.setAnchor` |
 | Bitmap / Canvas / Fonts | Done | `registerBitmap`/`bitmap`, `registerFont`, `registerCanvas` + Painter `canvasBegin`/`End`/`image` |
 | File dialogs / tray | Open | only if/when host `mygo` exposes them to Zig |
