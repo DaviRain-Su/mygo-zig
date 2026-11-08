@@ -261,3 +261,18 @@ What stays Go-only, and why it is not a gap:
 - The margin is fixed at registration (`EffectMargin` on the Go side), so no
   round trip happens unless the element paints.
 - The gallery draws a card through an effect on the Controls tab.
+
+## Phase 16 — the last two
+
+- `mygo.DocumentsOf(T, cfg)` is `NewDocuments[T]` for Zig: a controller whose
+  documents hold T, with `read` / `write` codecs over the byte wire, plus
+  `new` / `open` / `openDialog` / `list` / `forWindow` and the full Document
+  surface. `zig/examples/documents-zig` now uses it (a Note with a title
+  line and a body).
+- `host.Use(plugins...)` registers Go plugins from a Zig app's shim, so a
+  plugin's Setup runs and its services bind; the Zig side then calls the
+  feature through its zig/host package.
+
+Both were the last items on the parity list. What stays Go is by
+construction: a plugin's JavaScript service (pages call it, Zig does not)
+and Go's type parameters themselves (DocumentsOf is the Zig spelling).

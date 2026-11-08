@@ -1,12 +1,63 @@
-//! Bytes Documents demo: open/save/revert + edited state via Zig FFI.
+//! Documents demo, typed: `mygo.DocumentsOf(Note, …)` is NewDocuments[T] for
+//! Zig. The controller reads and writes `Note` values; the wire stays bytes.
 const std = @import("std");
 const mygo = @import("mygo");
 const ui = mygo.ui;
 
+/// Note is the document content: a title line, then the body.
+const Note = struct {
+    title_buf: [64]u8 = @splat(0),
+    title_len: usize = 0,
+    body_buf: [64 * 1024]u8 = @splat(0),
+    body_len: usize = 0,
+
+    pub fn title(self: *const Note) []const u8 {
+        return self.title_buf[0..self.title_len];
+    }
+
+    pub fn body(self: *const Note) []const u8 {
+        return self.body_buf[0..self.body_len];
+    }
+
+    /// read parses a note: its first line is the title, the rest the body.
+    pub fn read(bytes: []const u8) anyerror!Note {
+        var note = Note{};
+        const at = std.mem.indexOfScalar(u8, bytes, '\n') orelse bytes.len;
+        const title_part = bytes[0..at];
+        const body_part = if (at < bytes.len) bytes[at + 1 ..] else "";
+        note.title_len = @min(title_part.len, note.title_buf.len);
+        @memcpy(note.title_buf[0..note.title_len], title_part[0..note.title_len]);
+        note.body_len = @min(body_part.len, note.body_buf.len);
+        @memcpy(note.body_buf[0..note.body_len], body_part[0..note.body_len]);
+        return note;
+    }
+
+    /// write encodes a note as its title line and body.
+    pub fn write(_: std.mem.Allocator, note: Note, out: *std.ArrayList(u8)) anyerror!void {
+        try out.appendSlice(std.heap.page_allocator, note.title());
+        try out.append(std.heap.page_allocator, '\n');
+        try out.appendSlice(std.heap.page_allocator, note.body());
+    }
+};
+
+const Notes = mygo.DocumentsOf(Note, .{
+    .types_json = "[{\"name\":\"Note\",\"extensions\":[\"note\"]}]",
+    .autosave_off = true, // save explicitly
+    .ask_on_quit = true,
+    .new_content = Note{ .title_buf = initTitle("Untitled"), .title_len = 8 },
+    .read = Note.read,
+    .write = Note.write,
+});
+
+fn initTitle(comptime s: []const u8) [64]u8 {
+    var buf: [64]u8 = @splat(0);
+    @memcpy(buf[0..s.len], s);
+    return buf;
+}
+
 const App = struct {
-    doc_id: usize = 0,
-    text_buf: [64 * 1024]u8 = undefined,
-    text_len: usize = 0,
+    doc: ?Notes.Document = null,
+    editing: Note = .{},
     status_buf: [256]u8 = undefined,
     status_len: usize = 0,
 
@@ -16,56 +67,35 @@ const App = struct {
         self.status_len = n;
     }
 
-    fn syncFromDoc(self: *App) void {
-        if (self.doc_id == 0) return;
-        const alloc = std.heap.page_allocator;
-        const bytes = mygo.Documents.content(alloc, self.doc_id) catch {
+    /// sync reads the document into the editor.
+    fn sync(self: *App) void {
+        const doc = self.doc orelse return;
+        self.editing = doc.content(std.heap.page_allocator) catch {
             self.setStatus("read failed");
             return;
         };
-        defer alloc.free(bytes);
-        const n = @min(bytes.len, self.text_buf.len);
-        @memcpy(self.text_buf[0..n], bytes[0..n]);
-        self.text_len = n;
-
-        const st = mygo.Documents.stateJSON(alloc, self.doc_id) catch {
-            self.setStatus("state failed");
-            return;
-        };
-        defer alloc.free(st);
-        self.setStatus(st);
+        self.setStatus("loaded");
     }
 
-    fn pushToDoc(self: *App) void {
-        if (self.doc_id == 0) return;
-        mygo.Documents.setContent(self.doc_id, self.text_buf[0..self.text_len]) catch {
-            self.setStatus("setContent failed");
+    /// push writes the editor into the document, which marks it edited.
+    fn push(self: *App) void {
+        const doc = self.doc orelse return;
+        doc.setContent(std.heap.page_allocator, self.editing) catch {
+            self.setStatus("write failed");
             return;
         };
-        mygo.Documents.changed(self.doc_id);
     }
 
-    fn onDoc(self: *App, doc_id: usize, ev: mygo.Documents.Event) usize {
-        switch (ev) {
-            .need_window => {
-                self.doc_id = doc_id;
-                const win = mygo.newWindowUi(*App, self, .{
-                    .title = "Documents Zig",
-                    .width = 720,
-                    .height = 520,
-                }, App.view) catch return 0;
-                return @intCast(win.id);
-            },
-            .state => |payload| {
-                self.setStatus(payload);
-                return 0;
-            },
-            .reload => {
-                self.syncFromDoc();
-                self.setStatus("reloaded");
-                return 0;
-            },
-        }
+    /// windowFor is the controller's window factory.
+    fn windowFor(self: *App, doc: Notes.Document) mygo.Window {
+        self.doc = doc;
+        self.sync();
+        const win = mygo.newWindowUi(*App, self, .{
+            .title = "Documents Zig",
+            .width = 720,
+            .height = 520,
+        }, App.view) catch return .{ .id = 0 };
+        return win;
     }
 
     fn view(self: *App, c: *ui.Context) void {
@@ -73,60 +103,54 @@ const App = struct {
         defer col.end();
 
         _ = c.text("Documents Zig").fontSize(20).bold();
-        _ = c.text("Bytes Documents over FFI — New / Open / Save / Revert").fontSize(12);
+        _ = c.text("mygo.DocumentsOf(Note) — typed content over the byte wire").fontSize(12);
 
         const bar = c.row().gap(8).begin();
         defer bar.end();
         if (c.button("new", "New").clicked()) {
-            self.doc_id = mygo.Documents.new() catch 0;
-            self.syncFromDoc();
+            self.doc = Notes.new() catch null;
+            self.sync();
         }
         if (c.button("open", "Open…").clicked()) {
             const alloc = std.heap.page_allocator;
-            const raw = mygo.Documents.openDialogJSON(alloc) catch {
+            if (Notes.openDialog(alloc)) |docs| {
+                defer alloc.free(docs);
+                if (docs.len > 0) {
+                    self.doc = docs[0];
+                    self.sync();
+                }
+            } else |_| {
                 self.setStatus("open dialog failed");
-                return;
-            };
-            defer alloc.free(raw);
-            var id: usize = 0;
-            var i: usize = 0;
-            while (i < raw.len) : (i += 1) {
-                const ch = raw[i];
-                if (ch >= '0' and ch <= '9') {
-                    id = id * 10 + (ch - '0');
-                } else if (id != 0) break;
-            }
-            if (id != 0) {
-                self.doc_id = id;
-                self.syncFromDoc();
-            } else {
-                self.setStatus(raw);
             }
         }
-        if (c.button("save", "Save").clicked() and self.doc_id != 0) {
-            self.pushToDoc();
-            mygo.Documents.save(self.doc_id) catch {
-                self.setStatus("save failed");
-                return;
-            };
-            self.syncFromDoc();
+        if (c.button("save", "Save").clicked()) {
+            if (self.doc) |doc| {
+                self.push();
+                doc.save() catch {
+                    self.setStatus("save failed");
+                    return;
+                };
+                self.sync();
+            }
         }
-        if (c.button("revert", "Revert").clicked() and self.doc_id != 0) {
-            mygo.Documents.revert(self.doc_id) catch {
-                self.setStatus("revert failed");
-                return;
-            };
-            self.syncFromDoc();
+        if (c.button("revert", "Revert").clicked()) {
+            if (self.doc) |doc| {
+                doc.revert() catch {
+                    self.setStatus("revert failed");
+                    return;
+                };
+                self.sync();
+            }
         }
 
         _ = c.text(self.status_buf[0..self.status_len]).fontSize(11);
 
-        var len = self.text_len;
-        if (c.textArea("body", self.text_buf[0..], &len).changed()) {
-            self.text_len = len;
-            self.pushToDoc();
+        var len = self.editing.body_len;
+        if (c.textArea("body", self.editing.body_buf[0..], &len).changed()) {
+            self.editing.body_len = len;
+            self.push();
         } else {
-            self.text_len = len;
+            self.editing.body_len = len;
         }
     }
 };
@@ -135,22 +159,12 @@ var g_app: App = .{};
 
 fn init() !void {
     mygo.setName("Documents Zig");
-    const types_json = "[{\"name\":\"Plain Text\",\"extensions\":[\"txt\"]}]";
-    try mygo.Documents.configure(
-        types_json,
-        true, // AutosaveOff — Save is explicit
-        true, // AskOnQuit
-        true, // NoUntitled — we open one from ready
-        0,
-        *App,
-        &g_app,
-        App.onDoc,
-    );
+    try Notes.init(*App, &g_app, App.windowFor);
 }
 
 fn onReady() void {
-    g_app.doc_id = mygo.Documents.new() catch 0;
-    g_app.syncFromDoc();
+    g_app.doc = Notes.new() catch null;
+    g_app.sync();
 }
 
 comptime {

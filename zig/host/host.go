@@ -153,6 +153,12 @@ func Main(libName string) {
 	}
 }
 
+// Use registers Go plugins for the app, as mygo.Use does: call it in the
+// shim before Run, so that their Setup runs and their services are bound.
+// A Zig app reaches a plugin's feature through its zig/host package; the
+// plugin itself stays Go.
+func Use(ps ...mygo.Plugin) { mygo.Use(ps...) }
+
 // Run loads the Zig dynamic library named libName, initializes its bindings,
 // handles MYGO_GENERATE when set, and runs the native MyGo event loop.
 func Run(libName string) error {

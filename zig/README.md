@@ -154,6 +154,47 @@ doc = doc.onLink(*App, &app, App.openLink)          // a URL was clicked
 `onTagStyle` fills a `ui.RichText.Style` (color, background, weight, italic,
 underline, strikethrough, radius, padding).
 
+### Documents (typed)
+
+`mygo.DocumentsOf(T, …)` is `NewDocuments[T]` for Zig: a controller whose
+documents hold `T`, with your `read` / `write` as the codecs.
+
+```zig
+const Notes = mygo.DocumentsOf(Note, .{
+    .types_json = "[{\"name\":\"Note\",\"extensions\":[\"note\"]}]",
+    .new_content = Note{ .title_buf = initTitle("Untitled"), .title_len = 8 },
+    .autosave_off = true,
+    .read = Note.read,
+    .write = Note.write,
+});
+
+try Notes.init(*App, &app, App.windowFor);     // before App.Run
+const doc = try Notes.new();                    // or Notes.open(path)
+self.note = try doc.content(alloc);             // decode
+try doc.setContent(alloc, self.note);            // encode + mark edited
+try doc.save();
+```
+
+`Document` also has `saveAs`, `saveAnyway`, `revert`, `rename`, `moveTo`,
+`duplicate`, `close`, `setEdited`, `focus`, `stateJSON`, `filePath`,
+`displayName`, `windowID`, `isReadOnly` and `hasConflict`; the namespace has
+`openDialog`, `list` and `forWindow`. `zig/examples/documents-zig` is built
+on it.
+
+### Go plugins
+
+A Zig app still uses Go plugins, from its shim:
+
+```go
+func main() {
+    host.Use(fetch.Plugin, websocket.Plugin) // their Setup runs, services bind
+    host.Main("myapp")
+}
+```
+
+The Zig side then uses the feature through `zig/host/fetch` and
+`zig/host/websocket`; the plugin's JavaScript service is for pages.
+
 ### Effects
 
 `ui.Effect` draws an element from what it renders: the element and its

@@ -3096,6 +3096,178 @@ pub const Audio = struct {
     }
 };
 
+/// DocumentsOf is NewDocuments[T] for Zig: a documents controller whose
+/// content is T, encoded by cfg.write and decoded by cfg.read, over the
+/// byte-level Documents wire.
+///
+/// ```zig
+/// const Notes = DocumentsOf(Note, .{
+///     .types_json = "[{\"name\":\"Note\",\"extensions\":[\"note\"]}]",
+///     .read = Note.read,
+///     .write = Note.write,
+/// });
+/// Notes.init(*App, app, App.newWindow) catch {};
+/// ```
+pub fn DocumentsOf(comptime T: type, comptime cfg: anytype) type {
+    return struct {
+        comptime {
+            if (!@hasField(@TypeOf(cfg), "types_json")) @compileError("DocumentsOf needs types_json");
+            if (!@hasField(@TypeOf(cfg), "read")) @compileError("DocumentsOf needs read");
+            if (!@hasField(@TypeOf(cfg), "write")) @compileError("DocumentsOf needs write");
+        }
+
+        const Cfg = @TypeOf(cfg);
+        const has_new = @hasField(Cfg, "new_content");
+        const autosave_off = if (@hasField(Cfg, "autosave_off")) cfg.autosave_off else false;
+        const ask_on_quit = if (@hasField(Cfg, "ask_on_quit")) cfg.ask_on_quit else false;
+        const no_untitled = if (@hasField(Cfg, "no_untitled")) cfg.no_untitled else false;
+        const autosave_delay_ms = if (@hasField(Cfg, "autosave_delay_ms")) cfg.autosave_delay_ms else 0;
+
+        /// A document whose content is T.
+        pub const Document = struct {
+            id: usize,
+
+            /// content decodes the document's content.
+            pub fn content(self: Document, allocator: std.mem.Allocator) !T {
+                const bytes = try Documents.content(allocator, self.id);
+                defer allocator.free(bytes);
+                return cfg.read(bytes);
+            }
+
+            /// setContent encodes value and marks the document edited.
+            pub fn setContent(self: Document, allocator: std.mem.Allocator, value: T) !void {
+                var out: std.ArrayList(u8) = .empty;
+                defer out.deinit(allocator);
+                try cfg.write(allocator, value, &out);
+                try Documents.setContent(self.id, out.items);
+                Documents.changed(self.id);
+            }
+
+            pub fn save(self: Document) Error!void {
+                return Documents.save(self.id);
+            }
+            pub fn saveAs(self: Document, path: []const u8) Error!void {
+                return Documents.saveAs(self.id, path);
+            }
+            pub fn saveAnyway(self: Document) Error!void {
+                return Documents.saveAnyway(self.id);
+            }
+            pub fn revert(self: Document) Error!void {
+                return Documents.revert(self.id);
+            }
+            pub fn rename(self: Document, name: []const u8) Error!void {
+                return Documents.rename(self.id, name);
+            }
+            pub fn moveTo(self: Document, dir: []const u8) Error!void {
+                return Documents.moveTo(self.id, dir);
+            }
+            /// duplicate makes another document with the same content.
+            pub fn duplicate(self: Document) Error!Document {
+                return .{ .id = try Documents.duplicate(self.id) };
+            }
+            pub fn close(self: Document) void {
+                Documents.close(self.id);
+            }
+            pub fn setEdited(self: Document, edited: bool) void {
+                Documents.setEdited(self.id, edited);
+            }
+            pub fn focus(self: Document) void {
+                Documents.focus(self.id);
+            }
+            pub fn stateJSON(self: Document, allocator: std.mem.Allocator) Error![]u8 {
+                return Documents.stateJSON(allocator, self.id);
+            }
+            pub fn filePath(self: Document, allocator: std.mem.Allocator) Error![]u8 {
+                return Documents.filePath(allocator, self.id);
+            }
+            pub fn displayName(self: Document, allocator: std.mem.Allocator) Error![]u8 {
+                return Documents.displayName(allocator, self.id);
+            }
+            pub fn windowID(self: Document) i32 {
+                return Documents.windowID(self.id);
+            }
+            pub fn isReadOnly(self: Document) bool {
+                return Documents.isReadOnly(self.id);
+            }
+            pub fn hasConflict(self: Document) bool {
+                return Documents.hasConflict(self.id);
+            }
+        };
+
+        /// init configures the controller; call it before App.Run, once.
+        /// windowFor builds the window that shows a document.
+        pub fn init(
+            comptime StatePtr: type,
+            state: StatePtr,
+            comptime windowFor: fn (StatePtr, Document) Window,
+        ) Error!void {
+            const S = struct {
+                fn onDoc(s: StatePtr, doc_id: usize, ev: Documents.Event) usize {
+                    switch (ev) {
+                        .need_window => {
+                            const win = windowFor(s, .{ .id = doc_id });
+                            return @intCast(win.id);
+                        },
+                        else => return 0,
+                    }
+                }
+            };
+            try Documents.configure(
+                cfg.types_json,
+                autosave_off,
+                ask_on_quit,
+                no_untitled,
+                autosave_delay_ms,
+                StatePtr,
+                state,
+                S.onDoc,
+            );
+        }
+
+        /// new makes an untitled document. Give it cfg.new_content first.
+        pub fn new() Error!Document {
+            const d = Document{ .id = try Documents.new() };
+            if (has_new) {
+                d.setContent(std.heap.page_allocator, cfg.new_content) catch {};
+            }
+            return d;
+        }
+
+        pub fn open(file_path: []const u8) Error!Document {
+            return .{ .id = try Documents.open(file_path) };
+        }
+
+        /// openDialog shows the system dialog and returns what was opened.
+        pub fn openDialog(allocator: std.mem.Allocator) Error![]Document {
+            const raw = try Documents.openDialogJSON(allocator);
+            defer allocator.free(raw);
+            const parsed = std.json.parseFromSlice([]usize, allocator, raw, .{}) catch return Error.MyGoError;
+            defer parsed.deinit();
+            const out = try allocator.alloc(Document, parsed.value.len);
+            for (parsed.value, 0..) |id, i| out[i] = .{ .id = id };
+            return out;
+        }
+
+        /// list returns the open documents.
+        pub fn list(allocator: std.mem.Allocator) Error![]Document {
+            const raw = try Documents.listJSON(allocator);
+            defer allocator.free(raw);
+            const parsed = std.json.parseFromSlice([]usize, allocator, raw, .{}) catch return Error.MyGoError;
+            defer parsed.deinit();
+            const out = try allocator.alloc(Document, parsed.value.len);
+            for (parsed.value, 0..) |id, i| out[i] = .{ .id = id };
+            return out;
+        }
+
+        /// forWindow finds the document a window shows.
+        pub fn forWindow(win_id: i32) ?Document {
+            const id = Documents.forWindow(win_id);
+            if (id == 0) return null;
+            return .{ .id = id };
+        }
+    };
+}
+
 pub const MenuItem = struct {
     pub const Kind = enum {
         normal,
