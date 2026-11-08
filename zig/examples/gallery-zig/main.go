@@ -5,6 +5,7 @@ import (
 	_ "github.com/egoist/mygo/zig/host/chart"
 	_ "github.com/egoist/mygo/zig/host/editor"
 	_ "github.com/egoist/mygo/zig/host/markdown"
+	_ "github.com/egoist/mygo/zig/host/terminal"
 	_ "github.com/egoist/mygo/zig/host/ui"
 )
 

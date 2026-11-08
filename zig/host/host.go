@@ -340,6 +340,13 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return EditorDispatch(op, a0, a1, a2, a3)
 	}
+	if op == HostOpTerminal || op == HostOpTerminalView {
+		if TerminalDispatch == nil {
+			SetError(errors.New("zighost: terminal not linked (import _ \"github.com/egoist/mygo/zig/host/terminal\")"))
+			return ^uintptr(0)
+		}
+		return TerminalDispatch(activeCall, op, a0, a1, a2, a3)
+	}
 	if op == HostOpLineChart || op == HostOpBarChart || op == HostOpAreaChart || op == HostOpPieChart {
 		if ChartDispatch == nil {
 			SetError(errors.New("zighost: chart not linked (import _ \"github.com/egoist/mygo/zig/host/chart\")"))
@@ -1520,6 +1527,16 @@ func splitNUL(s string) []string {
 
 func writeStringToOut(s string, outPtr, outCap uintptr) uintptr {
 	return writeBytesToOut([]byte(s), outPtr, outCap)
+}
+
+// WriteStringToOut copies s into a Zig out buffer for opt-in host packages.
+func WriteStringToOut(s string, outPtr, outCap uintptr) uintptr {
+	return writeStringToOut(s, outPtr, outCap)
+}
+
+// PtrOf returns the address of p for activeCall payload args.
+func PtrOf[T any](p *T) uintptr {
+	return uintptrSlicePtr(p)
 }
 
 func writeBytesToOut(b []byte, outPtr, outCap uintptr) uintptr {

@@ -68,6 +68,8 @@ pub const HostOp = enum(usize) {
     video_stream = 232,
     video_push = 233,
     video_end = 234,
+    terminal = 235,
+    terminal_view = 236,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -222,6 +224,7 @@ const ZigEvent = enum(usize) {
     page_media = 32,
     locale = 33,
     region = 34,
+    terminal = 35,
 };
 
 pub const CStr = extern struct {
@@ -657,6 +660,18 @@ fn registerRegionHandler(h: RawRegionHandler, userdata: usize) usize {
     return region_count;
 }
 
+const RawTerminalHandler = *const fn (term_id: usize, kind: u8, a3: usize, userdata: usize) void;
+var terminal_handlers: [16]RawTerminalHandler = undefined;
+var terminal_count: usize = 0;
+var terminal_handler_userdata: [16]usize = undefined;
+
+fn registerTerminalHandler(h: RawTerminalHandler, userdata: usize) usize {
+    terminal_handlers[terminal_count] = h;
+    terminal_handler_userdata[terminal_count] = userdata;
+    terminal_count += 1;
+    return terminal_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -1041,6 +1056,11 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         break :blk cs.toSlice();
                     } else "{}";
                     region_handlers[a0 - 1](json, region_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .terminal => {
+                    if (a0 == 0 or a0 > terminal_count) return 0;
+                    terminal_handlers[a0 - 1](a1, @truncate(a2), a3, terminal_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -2551,6 +2571,166 @@ pub const Protocol = struct {
             .body_len = body.len,
         };
         _ = dispatch(.protocol, 4, @intFromPtr(&spec), 0, 0);
+    }
+};
+
+
+pub const Terminal = struct {
+    id: usize = 0,
+
+    pub const Options = struct {
+        command: []const u8 = "", // NUL-separated argv; empty = user shell
+        dir: []const u8 = "",
+        shell_integration: bool = false,
+        transparent: bool = false,
+    };
+
+    pub fn create(opts: Options) Error!Terminal {
+        const Spec = extern struct {
+            command_ptr: usize = 0,
+            command_len: usize = 0,
+            dir_ptr: usize = 0,
+            dir_len: usize = 0,
+            title_cb: usize = 0,
+            exit_cb: usize = 0,
+            bell_cb: usize = 0,
+            shell_integration: u8 = 0,
+            transparent: u8 = 0,
+            _pad: [6]u8 = @splat(0),
+        };
+        var spec = Spec{
+            .command_ptr = sliceAddr(opts.command),
+            .command_len = opts.command.len,
+            .dir_ptr = sliceAddr(opts.dir),
+            .dir_len = opts.dir.len,
+            .shell_integration = @intFromBool(opts.shell_integration),
+            .transparent = @intFromBool(opts.transparent),
+        };
+        const id = dispatch(.terminal, 1, @intFromPtr(&spec), 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    /// Creates a terminal and registers title/exit/bell callbacks (same cb id).
+    pub fn createWithEvents(
+        opts: Options,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, Terminal, Event) void,
+    ) Error!Terminal {
+        const S = struct {
+            fn onTerm(term_id: usize, kind: u8, a3: usize, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                const term = Terminal{ .id = term_id };
+                switch (kind) {
+                    1 => {
+                        const title_text = if (a3 != 0) blk: {
+                            const cs: *const CStr = @ptrFromInt(a3);
+                            break :blk cs.toSlice();
+                        } else "";
+                        handler(s, term, .{ .title = title_text });
+                    },
+                    2 => handler(s, term, .{ .exit = @intCast(a3) }),
+                    3 => handler(s, term, .bell),
+                    else => {},
+                }
+            }
+        };
+        const cb = registerTerminalHandler(&S.onTerm, @intFromPtr(state));
+        const Spec = extern struct {
+            command_ptr: usize = 0,
+            command_len: usize = 0,
+            dir_ptr: usize = 0,
+            dir_len: usize = 0,
+            title_cb: usize = 0,
+            exit_cb: usize = 0,
+            bell_cb: usize = 0,
+            shell_integration: u8 = 0,
+            transparent: u8 = 0,
+            _pad: [6]u8 = @splat(0),
+        };
+        var spec = Spec{
+            .command_ptr = sliceAddr(opts.command),
+            .command_len = opts.command.len,
+            .dir_ptr = sliceAddr(opts.dir),
+            .dir_len = opts.dir.len,
+            .title_cb = cb,
+            .exit_cb = cb,
+            .bell_cb = cb,
+            .shell_integration = @intFromBool(opts.shell_integration),
+            .transparent = @intFromBool(opts.transparent),
+        };
+        const id = dispatch(.terminal, 1, @intFromPtr(&spec), 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    pub const Event = union(enum) {
+        title: []const u8,
+        exit: usize,
+        bell,
+    };
+
+    pub fn close(self: Terminal) void {
+        _ = dispatch(.terminal, 2, self.id, 0, 0);
+    }
+
+    pub fn paste(self: Terminal, text: []const u8) void {
+        _ = dispatch(.terminal, 3, self.id, sliceAddr(text), text.len);
+    }
+
+    pub fn send(self: Terminal, data: []const u8) void {
+        _ = dispatch(.terminal, 4, self.id, sliceAddr(data), data.len);
+    }
+
+    pub fn useDarkTheme(self: Terminal) void {
+        _ = dispatch(.terminal, 5, self.id, 0, 0);
+    }
+
+    pub fn useLightTheme(self: Terminal) void {
+        _ = dispatch(.terminal, 5, self.id, 1, 0);
+    }
+
+    pub fn useGhosttyTheme(self: Terminal, name: []const u8) Error!void {
+        var cs = CStr.fromSlice(name);
+        if (dispatch(.terminal, 5, self.id, 2, @intFromPtr(&cs)) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn resize(self: Terminal, cols: i32, rows: i32) void {
+        _ = dispatch(.terminal, 6, self.id, @intCast(cols), @intCast(rows));
+    }
+
+    pub fn title(self: Terminal, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [1024]u8 = undefined;
+        const got = dispatch(.terminal, 7, self.id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn dir(self: Terminal, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = dispatch(.terminal, 8, self.id, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    /// null when the program is still running.
+    pub fn exitCode(self: Terminal) ?usize {
+        const v = dispatch(.terminal, 9, self.id, 0, 0);
+        if (v == std.math.maxInt(usize)) return null;
+        return v;
+    }
+
+    pub fn clearScreen(self: Terminal) void {
+        _ = dispatch(.terminal, 10, self.id, 0, 0);
+    }
+
+    pub fn search(self: Terminal, query: []const u8) void {
+        _ = dispatch(.terminal, 11, self.id, sliceAddr(query), query.len);
+    }
+
+    pub fn endSearch(self: Terminal) void {
+        _ = dispatch(.terminal, 11, self.id, 0, 0);
     }
 };
 

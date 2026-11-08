@@ -1,45 +1,68 @@
 # Zig FFI completeness plan
 
-Last updated with `main` after the batch close-out. Pure-Go apps stay +0 bytes; Zig hosts opt in via `zig/host`.
+Last updated after Phase 0 consolidate + Phase 1 `terminal` plugin SDK.
 
-## Principle
+## Layers (read this first)
 
-- **Do in core Zig host**: anything already on `mygo.App` / `Window` / `Page` / `Shell` / `Clipboard` / desktop modules that is useful to Zig-authored apps and has a clear ABI.
-- **Defer**: standalone docs/version branding; terminal / sqlite / websocket / updater plugins (opt-in packages later); Windows-only shortcut links; full `Documents` flow; raw `Clipboard.Write(transfer.Data)` MIME soup (text/image/files already covered).
+```
+Zig app  →  Zig SDK (zig/sdk)  →  Zig Host (zig/host)  →  MyGo core / plugins
+```
 
-## Status matrix
+| Layer | What it is | Default in every Zig app? |
+|-------|------------|---------------------------|
+| **Core SDK** | `mygo.zig` / `ui.zig`: App, Window, Page, Shell, Clipboard, Lifecycle, native UI widgets | Yes |
+| **Opt-in host packages** | blank-import `zig/host/{ui,markdown,editor,chart,terminal}` | No — pay for what you use |
+| **Plugins** | `plugins/*` (terminal, sqlite, …). Zig binds them as opt-in host packages | No |
+| **Product** | docs site, go.mod branding, version strategy | Not FFI |
 
-### Done (desktop + page shell)
+Plugins are **not** core SDK, but they **are** optional SDK modules once bound
+(`import` host package + Zig API). Same pattern as `markdown` / `editor`.
 
-Widgets, painter, motion, dialogs, tray, flyout, notifications, protocol, desktop/JumpList/Dock, secrets, cookies/downloads, session, auth/cert, page lifecycle, permission/window.open, locale/find, login/relaunch, context menu, ContentRules, media mute/capture/PiP, eval, zoom/UA/DevTools/print, capture PNG, PrintToPDF, Path/Screen/Hotkey, Appearance/Power, Lifecycle badge/bounce/URL schemes.
+## Core desktop SDK — Done
 
-### Batch close-out (this pass)
+Widgets, painter, motion, dialogs, tray, flyout, notifications, protocol,
+desktop/JumpList/Dock, secrets, cookies/downloads, session, auth/cert, page
+lifecycle, permission/window.open, locale/find, login/relaunch, context menu,
+ContentRules, media, eval, zoom/UA/DevTools/print, capture PNG, PrintToPDF,
+Path/Screen/Hotkey, Appearance/Power, Lifecycle, window chrome/events, Shell
+basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 
-| Batch | Surface |
-|-------|---------|
-| A | App hide/show/focus/state/name/version/exit/activation; OnQuit/OnReady/OnWindowAllClosed/OnWindowCreated; Region JSON + OnRegionChanged |
-| B | Shell showItemInFolder/trashItem/fileIcon/typeIcon; Clipboard readFiles/writeFiles |
-| C | Window chrome: size/min/max/position, resizable/closable/maximizable/minimizable/movable, alwaysOnTop/shadow/opacity/bg, ignoreMouse/flash/icon, documentEdited/representedFile, visibility getters, blur/restore/showInactive, skipTaskbar/autoHideMenuBar/activeAppearance, nativeHandle |
-| D | Window events: move/show/hide/minimize/restore/maximize/unmaximize/enterFS/leaveFS/readyToShow |
-| E | Page: stop/reloadIgnoringCache/loadFile/canGoBack/Forward, processIDs, themeColor, title+theme events |
+## Opt-in packages
 
-### Explicitly deferred
+| Package | Status | Blank-import |
+|---------|--------|--------------|
+| `zig/host/ui` | Done | required for Native UI |
+| `zig/host/markdown` | Done | Markdown tab |
+| `zig/host/editor` | Done | Editor tab |
+| `zig/host/chart` | Done | Charts tab |
+| `zig/host/terminal` | Done (Phase 1) | Term tab; ships libghostty-vt via plugin JSON |
+| `zig/host/sqlite` | Backlog | — |
+| `zig/host/websocket` / fetch | Backlog | Zig often has its own HTTP |
+| `zig/host/updater` | Backlog | after shipping apps |
+| `zig/host/permissionflow` | Backlog | macOS polish |
+| `zig/host/watch` | Backlog | core `watch`, not under plugins/ |
+
+## Explicitly deferred (niche / product)
 
 | Item | Why |
 |------|-----|
-| Standalone `mygo-zig` docs site / go.mod branding | packaging, not FFI |
-| `plugins/terminal` Zig binding | opt-in purego + large surface |
-| sqlite / websocket / fetch / updater / automation Zig | opt-in plugins; same Model A later |
-| `Shell.InstalledApps` / `LaunchApp` | heavy, niche |
-| `Shell.WriteShortcutLink` | Windows-specific |
-| `Clipboard.Write` arbitrary MIME | text/image/files enough for apps |
-| Full Documents / NSDocument flow | Go-first; rare for Zig PoC apps |
-| Nested `WebView` as first-class Zig window type | UI `WebView` widget already exists |
+| Standalone docs / go.mod branding | packaging |
+| `Shell.InstalledApps` / `LaunchApp` | heavy, rare |
+| `Shell.WriteShortcutLink` | Windows-only |
+| Arbitrary MIME `Clipboard.Write` | text/image/files enough |
+| Full Documents / NSDocument | Go-first document apps |
+| First-class Zig `WebView` type | Page + UI WebView already |
+| glass / game / automation Zig | low demand or already indirect |
 
-## ABI notes
+## Roadmap
 
-- New AppEv subops continue after relaunch (**22+**).
-- New WinCtl subops continue after printToPDF (**61+**).
-- Window event kinds continue after file_drop (**7+**).
-- Page event kinds continue after render_gone (**7+** title, **8+** theme color).
-- ZigEventRegion = **34** for region-changed (or reuse Locale channel with JSON).
+1. **Phase 0** — consolidate docs + CI (this file) — Done
+2. **Phase 1** — `terminal` opt-in SDK + gallery Term tab — Done / in progress
+3. **Phase 2** — `sqlite` minimal Open/Execute/Query
+4. **Phase 3** — permissionflow / updater / watch as needed; docs site when users exist
+
+## Terminal ABI notes
+
+- `HostOpTerminal = 235` (lifecycle subops), `HostOpTerminalView = 236` (BindFrameElement)
+- `ZigEventTerminal = 35`: kind 1=title (*CStr), 2=exit (code), 3=bell
+- Theme: 0=DarkTheme, 1=LightTheme, 2=GhosttyTheme(name)

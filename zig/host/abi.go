@@ -41,6 +41,7 @@ const (
 	ZigEventPageMedia     uintptr = 32 // a0=cb_id a1=win_id a2=kind(1 audible/2 capture) a3=payload
 	ZigEventLocale        uintptr = 33 // a0=cb_id a1=*CStr locale
 	ZigEventRegion        uintptr = 34 // a0=cb_id a1=*CStr region JSON
+	ZigEventTerminal      uintptr = 35 // a0=cb_id a1=term_id a2=kind a3=payload
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -97,6 +98,8 @@ const (
 	HostOpVideoStream    uintptr = 232 // a0 = *CVideoStreamSpec (open)
 	HostOpVideoPush      uintptr = 233 // a0 = *CVideoPushSpec
 	HostOpVideoEnd       uintptr = 234 // a0 = key ptr, a1 = key len
+	HostOpTerminal       uintptr = 235 // a0=subop (lifecycle)
+	HostOpTerminalView   uintptr = 236 // a0=frame a1=term_id
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -344,6 +347,9 @@ var MarkdownDispatch func(frameHandle, a1, a2, a3 uintptr) uintptr
 
 // EditorDispatch is populated by `zig/host/editor` when imported.
 var EditorDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
+
+// TerminalDispatch is populated by `zig/host/terminal` when imported.
+var TerminalDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
@@ -879,4 +885,38 @@ type CIconSpec struct {
 	Size             int32
 	_                [4]byte
 	OutPtr, OutCap   uintptr
+}
+
+// Terminal lifecycle sub-ops for HostOpTerminal.
+const (
+	TermNew      uintptr = 1 // a1=*CTerminalNewSpec → id
+	TermClose     uintptr = 2 // a1=id
+	TermPaste     uintptr = 3 // a1=id a2=ptr a3=len
+	TermSend      uintptr = 4 // a1=id a2=ptr a3=len
+	TermUseTheme  uintptr = 5 // a1=id a2=kind(0 dark/1 light/2 ghostty) a3=name_ptr… via CStr at a3
+	TermResize    uintptr = 6 // a1=id a2=cols a3=rows
+	TermTitle     uintptr = 7 // a1=id a2=out a3=cap
+	TermDir       uintptr = 8
+	TermExitCode  uintptr = 9 // → code; running → maxUintptr-1 sentinel? use bit: high bit set if running
+	TermClear     uintptr = 10
+	TermSearch    uintptr = 11 // a1=id a2=ptr a3=len; empty ends
+)
+
+// Terminal event kinds (ZigEventTerminal a2).
+const (
+	TermEvTitle uintptr = 1 // a3=*CStr
+	TermEvExit  uintptr = 2 // a3=exit code
+	TermEvBell  uintptr = 3
+)
+
+// CTerminalNewSpec creates a plugins/terminal.Terminal.
+type CTerminalNewSpec struct {
+	CommandPtr, CommandLen uintptr // NUL-separated argv; empty = user shell
+	DirPtr, DirLen         uintptr
+	TitleCb                uintptr // ZigEventTerminal cb id (0 = none)
+	ExitCb                 uintptr
+	BellCb                 uintptr
+	ShellIntegration       uint8
+	Transparent            uint8
+	_                      [6]byte
 }

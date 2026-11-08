@@ -6,6 +6,7 @@
 //!   `Split` / `SplitVertical`, `Badge`, `Link`, `Progress`, `Meter`, `TextArea`),
 //! - Virtualized 100,000+ row `List` & multi-column `Table`,
 //! - Custom GPU vector drawing (`elem.draw(...)` + `Painter`),
+//! - Opt-in GFM `markdown`, `codeEditor`, charts, and `terminalView`
 //! - Opt-in GFM `markdown` (`zig/host/markdown`) & syntax-highlighted `codeEditor` +
 //!   `diffView` (`zig/host/editor`),
 //! - All running over a single `purego` callback (`CGO_ENABLED=0`).
@@ -3431,6 +3432,14 @@ pub const Context = struct {
     pub fn markdownStream(self: *Context, md_src: []const u8) Element {
         self.flush();
         _ = mygo.dispatch(.markdown_view, self.frame_handle, mygo.sliceAddr(md_src), md_src.len, 1);
+        return .{ .ctx = self };
+    }
+
+    /// Embeds a `plugins/terminal` view (`_ "…/zig/host/terminal"`).
+    /// Create the terminal with `mygo.Terminal.create` / `createWithEvents`.
+    pub fn terminalView(self: *Context, term: mygo.Terminal) Element {
+        self.flush();
+        _ = mygo.dispatch(.terminal_view, self.frame_handle, term.id, 0, 0);
         return .{ .ctx = self };
     }
 

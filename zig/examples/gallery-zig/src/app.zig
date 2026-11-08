@@ -1,5 +1,5 @@
 //! Zig gallery of MyGo Native UI widgets (Model A purego host).
-//! Tabs: Controls · Inputs · Layout · Data · Tree · More · Nav · Charts · Markdown · Editor
+//! Tabs: Controls · Inputs · Layout · Data · Tree · More · Nav · Charts · Markdown · Editor · Term
 
 const std = @import("std");
 const mygo = @import("mygo");
@@ -9,7 +9,7 @@ const waves_gif = @embedFile("waves.gif");
 const tray_png = @embedFile("tray.png");
 const tray_menu_json = "[{\"id\":\"show\",\"label\":\"Show Gallery\"},{\"type\":\"separator\"},{\"id\":\"quit\",\"label\":\"Quit\"}]";
 
-const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor" };
+const tabs = [_][]const u8{ "Controls", "Inputs", "Layout", "Data", "Tree", "More", "Nav", "Charts", "Markdown", "Editor", "Term" };
 const edit_submenu = [_]ui.MenuEntry{
     ui.MenuEntry.ofLabel("Cut"),
     ui.MenuEntry.ofLabel("Copy"),
@@ -194,6 +194,9 @@ const Gallery = struct {
     tray_menu_len: usize = 0,
     flyout_id: i32 = 0,
     main_win_id: i32 = 0,
+        term_id: usize = 0,
+        term_title_len: usize = 0,
+        term_title_buf: [128]u8 = undefined,
     web_win_id: i32 = 0,
     notif_id_buf: [64]u8 = undefined,
     notif_id_len: usize = 0,
@@ -1995,6 +1998,67 @@ const Gallery = struct {
         _ = c.markdown(sample_md).fillWidth().padding(12);
     }
 
+    
+    fn ensureTerm(self: *Gallery) void {
+        if (self.term_id != 0) return;
+        const term = mygo.Terminal.createWithEvents(.{}, *Gallery, self, onTermEvent) catch return;
+        self.term_id = term.id;
+    }
+
+    fn onTermEvent(self: *Gallery, _: mygo.Terminal, ev: mygo.Terminal.Event) void {
+        switch (ev) {
+            .title => |title_text| {
+                const n = @min(title_text.len, self.term_title_buf.len);
+                @memcpy(self.term_title_buf[0..n], title_text[0..n]);
+                self.term_title_len = n;
+            },
+            .exit => {
+                self.term_id = 0;
+                const msg = "(exited)";
+                @memcpy(self.term_title_buf[0..msg.len], msg);
+                self.term_title_len = msg.len;
+            },
+            .bell => {},
+        }
+    }
+
+    fn viewTerm(self: *Gallery, c: *ui.Context) void {
+        self.ensureTerm();
+        const root = c.column().gap(8).padding(12).fill().begin();
+        defer root.end();
+        {
+            const row = c.row().gap(8).fillWidth().begin();
+            defer row.end();
+            if (c.button("term-dark", "Dark theme").clicked()) {
+                if (self.term_id != 0) (mygo.Terminal{ .id = self.term_id }).useDarkTheme();
+            }
+            if (c.button("term-light", "Light theme").clicked()) {
+                if (self.term_id != 0) (mygo.Terminal{ .id = self.term_id }).useLightTheme();
+            }
+            if (c.button("term-paste", "Paste hello").clicked()) {
+                if (self.term_id != 0) (mygo.Terminal{ .id = self.term_id }).paste("echo hello-from-zig\n");
+            }
+            if (c.button("term-clear", "Clear").clicked()) {
+                if (self.term_id != 0) (mygo.Terminal{ .id = self.term_id }).clearScreen();
+            }
+            if (c.button("term-restart", "Restart").clicked()) {
+                if (self.term_id != 0) {
+                    (mygo.Terminal{ .id = self.term_id }).close();
+                    self.term_id = 0;
+                }
+                self.ensureTerm();
+            }
+        }
+        if (self.term_title_len > 0) {
+            _ = c.text(self.term_title_buf[0..self.term_title_len]).fillWidth();
+        } else {
+            _ = c.text("Terminal (user shell) — needs zig/host/terminal").fillWidth();
+        }
+        if (self.term_id != 0) {
+            _ = c.terminalView(.{ .id = self.term_id }).fill().grow(1.0);
+        }
+    }
+
     fn viewEditor(self: *Gallery, c: *ui.Context) void {
         const t = c.theme();
         {
@@ -2058,7 +2122,8 @@ const Gallery = struct {
             6 => self.viewNav(c),
             7 => self.viewCharts(c),
             8 => self.viewMarkdown(c),
-            else => self.viewEditor(c),
+            9 => self.viewEditor(c),
+            else => self.viewTerm(c),
         }
     }
 };
