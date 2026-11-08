@@ -11,6 +11,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"image/color"
 	"io"
 	"io/fs"
 	"log"
@@ -616,6 +617,26 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		case 6: // available_formats JSON → a1=out a2=cap
 			raw, _ := json.Marshal(mygo.Clipboard.AvailableFormats())
 			return writeBytesToOut(raw, a1, a2)
+		case 7: // read_files JSON paths
+			paths, err := mygo.Clipboard.ReadFiles()
+			if err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			raw, _ := json.Marshal(paths)
+			SetError(nil)
+			return writeBytesToOut(raw, a1, a2)
+		case 8: // write_files JSON paths array
+			var paths []string
+			if err := json.Unmarshal(CopyBytes(a1, a2), &paths); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			if err := mygo.Clipboard.WriteFiles(paths...); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
 		}
 		return 0
 
@@ -633,6 +654,43 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 			}
 		case 3:
 			mygo.Shell.Beep()
+		case 4:
+			mygo.Shell.ShowItemInFolder(CopyString(a1, a2))
+		case 5:
+			if err := mygo.Shell.TrashItem(CopyString(a1, a2)); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+		case 6: // FileIcon a1=*CIconSpec
+			spec := PtrTo[CIconSpec](a1)
+			if spec == nil {
+				SetError(errors.New("zighost: fileIcon needs spec"))
+				return ^uintptr(0)
+			}
+			png, err := mygo.Shell.FileIcon(CopyString(spec.PathPtr, spec.PathLen), int(spec.Size))
+			if err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+			return writeBytesToOut(png, spec.OutPtr, spec.OutCap)
+		case 7: // TypeIcon
+			spec := PtrTo[CIconSpec](a1)
+			if spec == nil {
+				SetError(errors.New("zighost: typeIcon needs spec"))
+				return ^uintptr(0)
+			}
+			png, err := mygo.Shell.TypeIcon(CopyString(spec.PathPtr, spec.PathLen), int(spec.Size))
+			if err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+			return writeBytesToOut(png, spec.OutPtr, spec.OutCap)
+		default:
+			SetError(errors.New("zighost: unknown shell subop"))
+			return ^uintptr(0)
 		}
 		return 0
 
@@ -880,6 +938,186 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		return capturePage(w, a2, a3)
 	case WinCtlPrintToPDF:
 		return printToPDF(w, a2)
+	case WinCtlSetMinSize:
+		w.SetMinimumSize(int(a2), int(a3))
+	case WinCtlSetMaxSize:
+		w.SetMaximumSize(int(a2), int(a3))
+	case WinCtlSetSize:
+		w.SetSize(int(a2), int(a3))
+	case WinCtlSetPosition:
+		w.SetPosition(int(a2), int(a3))
+	case WinCtlSetResizable:
+		w.SetResizable(a2 != 0)
+	case WinCtlIsResizable:
+		if w.IsResizable() {
+			return 1
+		}
+		return 0
+	case WinCtlSetClosable:
+		w.SetClosable(a2 != 0)
+	case WinCtlIsClosable:
+		if w.IsClosable() {
+			return 1
+		}
+		return 0
+	case WinCtlSetMaximizable:
+		w.SetMaximizable(a2 != 0)
+	case WinCtlIsMaximizable:
+		if w.IsMaximizable() {
+			return 1
+		}
+		return 0
+	case WinCtlSetMinimizable:
+		w.SetMinimizable(a2 != 0)
+	case WinCtlIsMinimizable:
+		if w.IsMinimizable() {
+			return 1
+		}
+		return 0
+	case WinCtlSetMovable:
+		w.SetMovable(a2 != 0)
+	case WinCtlIsMovable:
+		if w.IsMovable() {
+			return 1
+		}
+		return 0
+	case WinCtlSetAlwaysOnTop:
+		w.SetAlwaysOnTop(a2 != 0)
+	case WinCtlIsAlwaysOnTop:
+		if w.IsAlwaysOnTop() {
+			return 1
+		}
+		return 0
+	case WinCtlSetHasShadow:
+		w.SetHasShadow(a2 != 0)
+	case WinCtlHasShadow:
+		if w.HasShadow() {
+			return 1
+		}
+		return 0
+	case WinCtlSetOpacity:
+		w.SetOpacity(float64FromBits(a2))
+	case WinCtlGetOpacity:
+		return uintptr(math.Float64bits(w.Opacity()))
+	case WinCtlSetBackgroundColor:
+		if err := w.SetBackgroundColor(CopyString(a2, a3)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+	case WinCtlSetIgnoreMouseEvents:
+		w.SetIgnoreMouseEvents(a2 != 0)
+	case WinCtlFlashFrame:
+		w.FlashFrame(a2 != 0)
+	case WinCtlSetDocumentEdited:
+		w.SetDocumentEdited(a2 != 0)
+	case WinCtlIsDocumentEdited:
+		if w.IsDocumentEdited() {
+			return 1
+		}
+		return 0
+	case WinCtlSetRepresentedFile:
+		w.SetRepresentedFile(CopyString(a2, a3))
+	case WinCtlGetRepresentedFile:
+		return writeStringToOut(w.RepresentedFile(), a2, a3)
+	case WinCtlIsVisible:
+		if w.IsVisible() {
+			return 1
+		}
+		return 0
+	case WinCtlIsFocused:
+		if w.IsFocused() {
+			return 1
+		}
+		return 0
+	case WinCtlIsMinimized:
+		if w.IsMinimized() {
+			return 1
+		}
+		return 0
+	case WinCtlIsMaximized:
+		if w.IsMaximized() {
+			return 1
+		}
+		return 0
+	case WinCtlIsFullScreen:
+		if w.IsFullScreen() {
+			return 1
+		}
+		return 0
+	case WinCtlIsDestroyed:
+		if w.IsDestroyed() {
+			return 1
+		}
+		return 0
+	case WinCtlBlur:
+		w.Blur()
+	case WinCtlRestore:
+		w.Restore()
+	case WinCtlShowInactive:
+		w.ShowInactive()
+	case WinCtlSetIcon:
+		if err := w.SetIcon(CopyBytes(a2, a3)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+	case WinCtlSetSkipTaskbar:
+		w.SetSkipTaskbar(a2 != 0)
+	case WinCtlSetAutoHideMenuBar:
+		w.SetAutoHideMenuBar(a2 != 0)
+	case WinCtlSetActiveAppearance:
+		w.SetActiveAppearance(a2 != 0)
+	case WinCtlNativeHandle:
+		return w.NativeHandle()
+	case WinCtlStop:
+		if w.Page() != nil {
+			w.Page().Stop()
+		}
+	case WinCtlReloadIgnoringCache:
+		if w.Page() != nil {
+			w.Page().ReloadIgnoringCache()
+		}
+	case WinCtlLoadFile:
+		if w.Page() != nil {
+			if err := w.Page().LoadFile(CopyString(a2, a3)); err != nil {
+				SetError(err)
+				return ^uintptr(0)
+			}
+			SetError(nil)
+		}
+	case WinCtlCanGoBack:
+		if w.Page() != nil && w.Page().CanGoBack() {
+			return 1
+		}
+		return 0
+	case WinCtlCanGoForward:
+		if w.Page() != nil && w.Page().CanGoForward() {
+			return 1
+		}
+		return 0
+	case WinCtlProcessID:
+		if w.Page() == nil {
+			return 0
+		}
+		return uintptr(w.Page().ProcessID())
+	case WinCtlGPUProcessID:
+		if w.Page() == nil {
+			return 0
+		}
+		return uintptr(w.Page().GPUProcessID())
+	case WinCtlThemeColor:
+		out := PtrTo[CThemeColor](a2)
+		if out == nil || w.Page() == nil {
+			return 0
+		}
+		c, ok := w.Page().ThemeColor()
+		out.R, out.G, out.B, out.A = c.R, c.G, c.B, c.A
+		if ok {
+			out.OK = 1
+		}
+	case WinCtlTitleRespond:
+		return titleRespond(a2)
 	}
 	return 0
 }
@@ -921,6 +1159,30 @@ func windowOnEvent(winID int, kind int32, cbID uintptr) uintptr {
 			raw, _ := json.Marshal(e)
 			fire(raw)
 		})
+	case 7:
+		w.OnMove(func() {
+			b := w.Bounds()
+			raw, _ := json.Marshal(struct{ X, Y, Width, Height int }{b.X, b.Y, b.Width, b.Height})
+			fire(raw)
+		})
+	case 8:
+		w.OnShow(func() { fire(nil) })
+	case 9:
+		w.OnHide(func() { fire(nil) })
+	case 10:
+		w.OnMinimize(func() { fire(nil) })
+	case 11:
+		w.OnRestore(func() { fire(nil) })
+	case 12:
+		w.OnMaximize(func() { fire(nil) })
+	case 13:
+		w.OnUnmaximize(func() { fire(nil) })
+	case 14:
+		w.OnEnterFullScreen(func() { fire(nil) })
+	case 15:
+		w.OnLeaveFullScreen(func() { fire(nil) })
+	case 16:
+		w.OnReadyToShow(func() { fire(nil) })
 	default:
 		return ^uintptr(0)
 	}
@@ -1951,6 +2213,89 @@ func hostAppEvents(sub, a1, a2, a3 uintptr) uintptr {
 	case AppEvRelaunch:
 		mygo.App.Relaunch()
 		return 0
+	case AppEvHide:
+		mygo.App.Hide()
+		return 0
+	case AppEvShow:
+		mygo.App.Show()
+		return 0
+	case AppEvIsHidden:
+		if mygo.App.IsHidden() {
+			return 1
+		}
+		return 0
+	case AppEvFocus:
+		mygo.App.Focus()
+		return 0
+	case AppEvIsActive:
+		if mygo.App.IsActive() {
+			return 1
+		}
+		return 0
+	case AppEvIsReady:
+		if mygo.App.IsReady() {
+			return 1
+		}
+		return 0
+	case AppEvIsPackaged:
+		if mygo.App.IsPackaged() {
+			return 1
+		}
+		return 0
+	case AppEvName:
+		return writeStringToOut(mygo.App.Name(), a1, a2)
+	case AppEvVersion:
+		return writeStringToOut(mygo.App.Version(), a1, a2)
+	case AppEvSetVersion:
+		mygo.App.SetVersion(CopyString(a1, a2))
+		return 0
+	case AppEvExit:
+		mygo.App.Exit(int(a1))
+		return 0
+	case AppEvActivationPolicyGet:
+		return writeStringToOut(string(mygo.App.ActivationPolicy()), a1, a2)
+	case AppEvActivationPolicySet:
+		mygo.App.SetActivationPolicy(mygo.ActivationPolicy(CopyString(a1, a2)))
+		return 0
+	case AppEvRegionJSON:
+		raw, err := json.Marshal(mygo.App.Region())
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(raw, a1, a2)
+	case AppEvOnQuit:
+		cbID := a1
+		mygo.App.OnQuit(func() { activeCall(ZigEventApp, cbID, 9, 0, 0) })
+		return 0
+	case AppEvOnReady:
+		cbID := a1
+		mygo.App.OnReady(func() { activeCall(ZigEventApp, cbID, 10, 0, 0) })
+		return 0
+	case AppEvOnWindowAllClosed:
+		cbID := a1
+		mygo.App.OnWindowAllClosed(func() { activeCall(ZigEventApp, cbID, 11, 0, 0) })
+		return 0
+	case AppEvOnWindowCreated:
+		cbID := a1
+		mygo.App.OnWindowCreated(func(w *mygo.Window) {
+			var id uintptr
+			if w != nil {
+				id = uintptr(w.ID())
+			}
+			activeCall(ZigEventApp, cbID, 12, id, 0)
+		})
+		return 0
+	case AppEvOnRegionChanged:
+		cbID := a1
+		mygo.App.OnRegionChanged(func(r mygo.Region) {
+			raw, _ := json.Marshal(r)
+			cs := CStr{}
+			cs.Data, cs.Len = SliceAddr(raw)
+			activeCall(ZigEventRegion, cbID, uintptrSlicePtr(&cs), 0, 0)
+		})
+		return 0
 	default:
 		SetError(errors.New("zighost: unknown app event subop"))
 		return ^uintptr(0)
@@ -2599,6 +2944,37 @@ func setWindowPageHandler(w *mygo.Window, cbID uintptr) {
 		ev.DescPtr, ev.DescLen = SliceAddr(descB)
 		activeCall(ZigEventPage, cbID, winID, PageRenderGone, uintptrSlicePtr(&ev))
 	})
+	w.Page().OnPageTitleUpdated(func(e *mygo.TitleEvent) {
+		reqID := nextNavigateReq.Add(1)
+		ch := make(chan bool, 1)
+		navigateReqsMu.Lock()
+		navigateReqs[reqID] = ch
+		navigateReqsMu.Unlock()
+		defer func() {
+			navigateReqsMu.Lock()
+			delete(navigateReqs, reqID)
+			navigateReqsMu.Unlock()
+		}()
+		titleB := []byte(e.Title)
+		ev := CPageEvent{ReqID: reqID}
+		ev.URLPtr, ev.URLLen = SliceAddr(titleB) // title in URL fields
+		activeCall(ZigEventPage, cbID, winID, PageTitleUpdated, uintptrSlicePtr(&ev))
+		select {
+		case prevent := <-ch:
+			if prevent {
+				e.PreventDefault()
+			}
+		default:
+		}
+	})
+	w.Page().OnThemeColorChanged(func(c color.NRGBA, ok bool) {
+		ev := CPageEvent{}
+		if ok {
+			ev.UserInitiated = 1
+			ev.Code = int32(uint32(c.R)<<24 | uint32(c.G)<<16 | uint32(c.B)<<8 | uint32(c.A))
+		}
+		activeCall(ZigEventPage, cbID, winID, PageThemeColor, uintptrSlicePtr(&ev))
+	})
 }
 
 func navigateRespond(a2 uintptr) uintptr {
@@ -3060,3 +3436,5 @@ func printToPDF(w *mygo.Window, a2 uintptr) uintptr {
 	SetError(nil)
 	return writeBytesToOut(pdf, spec.OutPtr, spec.OutCap)
 }
+
+func titleRespond(a2 uintptr) uintptr { return navigateRespond(a2) }

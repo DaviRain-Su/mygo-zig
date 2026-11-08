@@ -681,6 +681,10 @@ const Gallery = struct {
             const win = mygo.Window{ .id = self.web_win_id };
             win.navigateRespond(ev.req_id, false);
         }
+        if (kind == @intFromEnum(mygo.PageEventKind.title_updated) and self.web_win_id != 0) {
+            const win = mygo.Window{ .id = self.web_win_id };
+            win.titleRespond(ev.req_id, false);
+        }
         const src = if (ev.url.len > 0) ev.url else ev.description;
         const n = @min(src.len, self.path_buf.len);
         @memcpy(self.path_buf[0..n], src[0..n]);
@@ -1478,6 +1482,26 @@ const Gallery = struct {
                     ;
                     win.setContentRulesJSON(ids) catch {};
                 }
+            }
+            if (c.button("win-chrome-demo", "Toggle always-on-top").clicked()) {
+                const win = mygo.Window{ .id = self.main_win_id };
+                win.setAlwaysOnTop(!win.isAlwaysOnTop());
+            }
+            if (c.button("app-name", "Show app name/version").clicked()) {
+                if (mygo.Lifecycle.name(std.heap.page_allocator)) |n| {
+                    defer std.heap.page_allocator.free(n);
+                    const m = @min(n.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..m], n[0..m]);
+                    self.path_len = m;
+                } else |_| {}
+            }
+            if (c.button("region-json", "Show region JSON").clicked()) {
+                if (mygo.Lifecycle.regionJSON(std.heap.page_allocator)) |j| {
+                    defer std.heap.page_allocator.free(j);
+                    const m = @min(j.len, self.path_buf.len);
+                    @memcpy(self.path_buf[0..m], j[0..m]);
+                    self.path_len = m;
+                } else |_| {}
             }
             if (c.button("capture-page", "Capture page PNG size").clicked()) {
                 if (self.web_win_id != 0) {

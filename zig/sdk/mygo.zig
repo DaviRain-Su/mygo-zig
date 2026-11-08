@@ -134,7 +134,58 @@ pub const WinCtl = enum(usize) {
     is_loading = 58,
     capture_page = 59,
     print_to_pdf = 60,
+    set_min_size = 61,
+    set_max_size = 62,
+    set_size = 63,
+    set_position = 64,
+    set_resizable = 65,
+    is_resizable = 66,
+    set_closable = 67,
+    is_closable = 68,
+    set_maximizable = 69,
+    is_maximizable = 70,
+    set_minimizable = 71,
+    is_minimizable = 72,
+    set_movable = 73,
+    is_movable = 74,
+    set_always_on_top = 75,
+    is_always_on_top = 76,
+    set_has_shadow = 77,
+    has_shadow = 78,
+    set_opacity = 79,
+    get_opacity = 80,
+    set_background_color = 81,
+    set_ignore_mouse_events = 82,
+    flash_frame = 83,
+    set_document_edited = 84,
+    is_document_edited = 85,
+    set_represented_file = 86,
+    get_represented_file = 87,
+    is_visible = 88,
+    is_focused = 89,
+    is_minimized = 90,
+    is_maximized = 91,
+    is_full_screen = 92,
+    is_destroyed = 93,
+    blur = 94,
+    restore = 95,
+    show_inactive = 96,
+    set_icon = 97,
+    set_skip_taskbar = 98,
+    set_auto_hide_menu_bar = 99,
+    set_active_appearance = 100,
+    native_handle = 101,
+    stop = 102,
+    reload_ignoring_cache = 103,
+    load_file = 104,
+    can_go_back = 105,
+    can_go_forward = 106,
+    process_id = 107,
+    gpu_process_id = 108,
+    theme_color = 109,
+    title_respond = 110,
 };
+
 
 const ZigEvent = enum(usize) {
     init = 1,
@@ -170,6 +221,7 @@ const ZigEvent = enum(usize) {
     context_menu = 31,
     page_media = 32,
     locale = 33,
+    region = 34,
 };
 
 pub const CStr = extern struct {
@@ -484,6 +536,8 @@ pub const PageEventKind = enum(u8) {
     did_finish = 4,
     did_fail = 5,
     render_gone = 6,
+    title_updated = 7,
+    theme_color = 8,
 };
 
 pub const PageEvent = struct {
@@ -589,6 +643,18 @@ fn registerLocaleHandler(h: RawLocaleHandler, userdata: usize) usize {
     locale_handler_userdata[locale_count] = userdata;
     locale_count += 1;
     return locale_count;
+}
+
+const RawRegionHandler = *const fn (json: []const u8, userdata: usize) void;
+var region_handlers: [8]RawRegionHandler = undefined;
+var region_count: usize = 0;
+var region_handler_userdata: [8]usize = undefined;
+
+fn registerRegionHandler(h: RawRegionHandler, userdata: usize) usize {
+    region_handlers[region_count] = h;
+    region_handler_userdata[region_count] = userdata;
+    region_count += 1;
+    return region_count;
 }
 
 pub const AppConfig = struct {
@@ -968,6 +1034,15 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     locale_handlers[a0 - 1](loc, locale_handler_userdata[a0 - 1]);
                     return 0;
                 },
+                .region => {
+                    if (a0 == 0 or a0 > region_count) return 0;
+                    const json = if (a1 != 0) blk: {
+                        const cs: *const CStr = @ptrFromInt(a1);
+                        break :blk cs.toSlice();
+                    } else "{}";
+                    region_handlers[a0 - 1](json, region_handler_userdata[a0 - 1]);
+                    return 0;
+                },
             }
         }
     };
@@ -992,6 +1067,16 @@ pub const WindowEventKind = enum(usize) {
     blur = 4,
     resize = 5,
     file_drop = 6,
+    move = 7,
+    show = 8,
+    hide = 9,
+    minimize = 10,
+    restore = 11,
+    maximize = 12,
+    unmaximize = 13,
+    enter_full_screen = 14,
+    leave_full_screen = 15,
+    ready_to_show = 16,
 };
 
 pub const Rectangle = struct {
@@ -1558,6 +1643,131 @@ pub const Window = struct {
         _ = self.ctl(.invalidate, 0, 0);
     }
 
+
+    pub fn setMinSize(self: Window, w: i32, h: i32) void { _ = self.ctl(.set_min_size, @intCast(w), @intCast(h)); }
+    pub fn setMaxSize(self: Window, w: i32, h: i32) void { _ = self.ctl(.set_max_size, @intCast(w), @intCast(h)); }
+    pub fn setSize(self: Window, w: i32, h: i32) void { _ = self.ctl(.set_size, @intCast(w), @intCast(h)); }
+    pub fn setPosition(self: Window, x: i32, y: i32) void { _ = self.ctl(.set_position, @intCast(x), @intCast(y)); }
+    pub fn setResizable(self: Window, v: bool) void { _ = self.ctl(.set_resizable, @intFromBool(v), 0); }
+    pub fn isResizable(self: Window) bool { return self.ctl(.is_resizable, 0, 0) != 0; }
+    pub fn setClosable(self: Window, v: bool) void { _ = self.ctl(.set_closable, @intFromBool(v), 0); }
+    pub fn isClosable(self: Window) bool { return self.ctl(.is_closable, 0, 0) != 0; }
+    pub fn setMaximizable(self: Window, v: bool) void { _ = self.ctl(.set_maximizable, @intFromBool(v), 0); }
+    pub fn isMaximizable(self: Window) bool { return self.ctl(.is_maximizable, 0, 0) != 0; }
+    pub fn setMinimizable(self: Window, v: bool) void { _ = self.ctl(.set_minimizable, @intFromBool(v), 0); }
+    pub fn isMinimizable(self: Window) bool { return self.ctl(.is_minimizable, 0, 0) != 0; }
+    pub fn setMovable(self: Window, v: bool) void { _ = self.ctl(.set_movable, @intFromBool(v), 0); }
+    pub fn isMovable(self: Window) bool { return self.ctl(.is_movable, 0, 0) != 0; }
+    pub fn setAlwaysOnTop(self: Window, v: bool) void { _ = self.ctl(.set_always_on_top, @intFromBool(v), 0); }
+    pub fn isAlwaysOnTop(self: Window) bool { return self.ctl(.is_always_on_top, 0, 0) != 0; }
+    pub fn setHasShadow(self: Window, v: bool) void { _ = self.ctl(.set_has_shadow, @intFromBool(v), 0); }
+    pub fn hasShadow(self: Window) bool { return self.ctl(.has_shadow, 0, 0) != 0; }
+    pub fn setOpacity(self: Window, v: f64) void { _ = self.ctl(.set_opacity, @bitCast(v), 0); }
+    pub fn opacity(self: Window) f64 { return @bitCast(self.ctl(.get_opacity, 0, 0)); }
+    pub fn setBackgroundColor(self: Window, color: []const u8) Error!void {
+        if (self.ctl(.set_background_color, sliceAddr(color), color.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+    pub fn setIgnoreMouseEvents(self: Window, v: bool) void { _ = self.ctl(.set_ignore_mouse_events, @intFromBool(v), 0); }
+    pub fn flashFrame(self: Window, flash: bool) void { _ = self.ctl(.flash_frame, @intFromBool(flash), 0); }
+    pub fn setDocumentEdited(self: Window, edited: bool) void { _ = self.ctl(.set_document_edited, @intFromBool(edited), 0); }
+    pub fn isDocumentEdited(self: Window) bool { return self.ctl(.is_document_edited, 0, 0) != 0; }
+    pub fn setRepresentedFile(self: Window, path: []const u8) void { _ = self.ctl(.set_represented_file, sliceAddr(path), path.len); }
+    pub fn representedFile(self: Window, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = self.ctl(.get_represented_file, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+    pub fn isVisible(self: Window) bool { return self.ctl(.is_visible, 0, 0) != 0; }
+    pub fn isFocused(self: Window) bool { return self.ctl(.is_focused, 0, 0) != 0; }
+    pub fn isMinimized(self: Window) bool { return self.ctl(.is_minimized, 0, 0) != 0; }
+    pub fn isMaximized(self: Window) bool { return self.ctl(.is_maximized, 0, 0) != 0; }
+    pub fn isFullScreen(self: Window) bool { return self.ctl(.is_full_screen, 0, 0) != 0; }
+    pub fn isDestroyed(self: Window) bool { return self.ctl(.is_destroyed, 0, 0) != 0; }
+    pub fn blur(self: Window) void { _ = self.ctl(.blur, 0, 0); }
+    pub fn restore(self: Window) void { _ = self.ctl(.restore, 0, 0); }
+    pub fn showInactive(self: Window) void { _ = self.ctl(.show_inactive, 0, 0); }
+    pub fn setIconPNG(self: Window, png: []const u8) Error!void {
+        if (self.ctl(.set_icon, sliceAddr(png), png.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+    pub fn setSkipTaskbar(self: Window, v: bool) void { _ = self.ctl(.set_skip_taskbar, @intFromBool(v), 0); }
+    pub fn setAutoHideMenuBar(self: Window, v: bool) void { _ = self.ctl(.set_auto_hide_menu_bar, @intFromBool(v), 0); }
+    pub fn setActiveAppearance(self: Window, v: bool) void { _ = self.ctl(.set_active_appearance, @intFromBool(v), 0); }
+    pub fn nativeHandle(self: Window) usize { return self.ctl(.native_handle, 0, 0); }
+
+    pub fn stop(self: Window) void { _ = self.ctl(.stop, 0, 0); }
+    pub fn reloadIgnoringCache(self: Window) void { _ = self.ctl(.reload_ignoring_cache, 0, 0); }
+    pub fn loadFile(self: Window, path: []const u8) Error!void {
+        if (self.ctl(.load_file, sliceAddr(path), path.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+    pub fn canGoBack(self: Window) bool { return self.ctl(.can_go_back, 0, 0) != 0; }
+    pub fn canGoForward(self: Window) bool { return self.ctl(.can_go_forward, 0, 0) != 0; }
+    pub fn processID(self: Window) usize { return self.ctl(.process_id, 0, 0); }
+    pub fn gpuProcessID(self: Window) usize { return self.ctl(.gpu_process_id, 0, 0); }
+
+    pub const ThemeColor = struct { r: u8 = 0, g: u8 = 0, b: u8 = 0, a: u8 = 0, ok: bool = false };
+    pub fn themeColor(self: Window) ThemeColor {
+        var out = extern struct { r: u8 = 0, g: u8 = 0, b: u8 = 0, a: u8 = 0, ok: u8 = 0, _pad: [3]u8 = @splat(0) }{};
+        _ = self.ctl(.theme_color, @intFromPtr(&out), 0);
+        return .{ .r = out.r, .g = out.g, .b = out.b, .a = out.a, .ok = out.ok != 0 };
+    }
+
+    /// For title_updated page events (kind=7); prevent=true keeps the previous window title.
+    pub fn titleRespond(self: Window, req_id: usize, prevent: bool) void {
+        const Spec = extern struct { req_id: usize = 0, prevent: u8 = 0, _pad: [7]u8 = @splat(0) };
+        var spec = Spec{ .req_id = req_id, .prevent = if (prevent) 1 else 0 };
+        _ = self.ctl(.title_respond, @intFromPtr(&spec), 0);
+    }
+
+    fn onWindowEvent(self: Window, kind: WindowEventKind, comptime handler: fn (Window, []const u8) void) Error!void {
+        const T = struct {
+            fn cb(win_id: i32, payload: []const u8) bool {
+                handler(.{ .id = win_id }, payload);
+                return false;
+            }
+        };
+        win_handlers[win_count] = &T.cb;
+        win_count += 1;
+        if (dispatch(.window_on_event, @intCast(self.id), @intFromEnum(kind), win_count, 0) != 0) return Error.MyGoError;
+    }
+
+    pub fn onMove(self: Window, comptime handler: fn (Window, []const u8) void) Error!void { return self.onWindowEvent(.move, handler); }
+    pub fn onShow(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.show, S.h);
+    }
+    pub fn onHide(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.hide, S.h);
+    }
+    pub fn onMinimize(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.minimize, S.h);
+    }
+    pub fn onRestore(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.restore, S.h);
+    }
+    pub fn onMaximize(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.maximize, S.h);
+    }
+    pub fn onUnmaximize(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.unmaximize, S.h);
+    }
+    pub fn onEnterFullScreen(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.enter_full_screen, S.h);
+    }
+    pub fn onLeaveFullScreen(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.leave_full_screen, S.h);
+    }
+    pub fn onReadyToShow(self: Window, comptime handler: fn (Window) void) Error!void {
+        const S = struct { fn h(w: Window, _: []const u8) void { handler(w); } };
+        return self.onWindowEvent(.ready_to_show, S.h);
+    }
     pub fn onClose(self: Window, comptime handler: fn (Window) bool) Error!void {
         const T = struct {
             fn cb(win_id: i32, _: []const u8) bool {
@@ -2536,6 +2746,105 @@ pub const Lifecycle = struct {
     pub fn relaunch() void {
         _ = dispatch(.app_events, 21, 0, 0, 0);
     }
+
+    pub fn hide() void { _ = dispatch(.app_events, 22, 0, 0, 0); }
+    pub fn show() void { _ = dispatch(.app_events, 23, 0, 0, 0); }
+    pub fn isHidden() bool { return dispatch(.app_events, 24, 0, 0, 0) != 0; }
+    pub fn focus() void { _ = dispatch(.app_events, 25, 0, 0, 0); }
+    pub fn isActive() bool { return dispatch(.app_events, 26, 0, 0, 0) != 0; }
+    pub fn isReady() bool { return dispatch(.app_events, 27, 0, 0, 0) != 0; }
+    pub fn isPackaged() bool { return dispatch(.app_events, 28, 0, 0, 0) != 0; }
+
+    pub fn name(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [256]u8 = undefined;
+        const got = dispatch(.app_events, 29, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+    pub fn version(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [64]u8 = undefined;
+        const got = dispatch(.app_events, 30, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+    pub fn setVersion(v: []const u8) void { _ = dispatch(.app_events, 31, sliceAddr(v), v.len, 0); }
+    pub fn exit(code: usize) void { _ = dispatch(.app_events, 32, code, 0, 0); }
+
+    pub fn activationPolicy(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [32]u8 = undefined;
+        const got = dispatch(.app_events, 33, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+    pub fn setActivationPolicy(policy: []const u8) void {
+        _ = dispatch(.app_events, 34, sliceAddr(policy), policy.len, 0);
+    }
+
+    pub fn regionJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [512]u8 = undefined;
+        const got = dispatch(.app_events, 35, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn onQuit(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 9) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 36, cb, 0, 0);
+    }
+    pub fn onReady(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 10) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 37, cb, 0, 0);
+    }
+    pub fn onWindowAllClosed(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onApp(kind: u8, _: usize, _: usize, ud: usize) usize {
+                if (kind != 11) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 38, cb, 0, 0);
+    }
+    pub fn onWindowCreated(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, i32) void) void {
+        const S = struct {
+            fn onApp(kind: u8, a2: usize, _: usize, ud: usize) usize {
+                if (kind != 12) return 0;
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, @intCast(@as(isize, @bitCast(a2))));
+                return 0;
+            }
+        };
+        const cb = registerAppHandler(&S.onApp, @intFromPtr(state));
+        _ = dispatch(.app_events, 39, cb, 0, 0);
+    }
+    pub fn onRegionChanged(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onReg(json: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, json);
+            }
+        };
+        const cb = registerRegionHandler(&S.onReg, @intFromPtr(state));
+        _ = dispatch(.app_events, 40, cb, 0, 0);
+    }
 };
 
 pub const Appearance = struct {
@@ -2731,6 +3040,17 @@ pub const Clipboard = struct {
         if (cap.oom) return Error.OutOfMemory;
         return cap.result orelse (allocator.dupe(u8, "") catch Error.OutOfMemory);
     }
+
+    pub fn readFilesJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [65536]u8 = undefined;
+        const got = dispatch(.clipboard, 7, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn writeFilesJSON(paths_json: []const u8) Error!void {
+        if (dispatch(.clipboard, 8, sliceAddr(paths_json), paths_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
 };
 
 pub const Shell = struct {
@@ -2744,6 +3064,58 @@ pub const Shell = struct {
 
     pub fn beep() void {
         _ = dispatch(.shell, 3, 0, 0, 0);
+    }
+
+    pub fn showItemInFolder(path: []const u8) void {
+        _ = dispatch(.shell, 4, sliceAddr(path), path.len, 0);
+    }
+
+    pub fn trashItem(path: []const u8) Error!void {
+        if (dispatch(.shell, 5, sliceAddr(path), path.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn fileIconPNG(allocator: std.mem.Allocator, path: []const u8, size: i32) Error![]u8 {
+        const Spec = extern struct {
+            path_ptr: usize = 0,
+            path_len: usize = 0,
+            size: i32 = 0,
+            _pad: [4]u8 = @splat(0),
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [1024 * 1024]u8 = undefined;
+        var spec = Spec{
+            .path_ptr = sliceAddr(path),
+            .path_len = path.len,
+            .size = size,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.shell, 6, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    pub fn typeIconPNG(allocator: std.mem.Allocator, ext: []const u8, size: i32) Error![]u8 {
+        const Spec = extern struct {
+            path_ptr: usize = 0,
+            path_len: usize = 0,
+            size: i32 = 0,
+            _pad: [4]u8 = @splat(0),
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [1024 * 1024]u8 = undefined;
+        var spec = Spec{
+            .path_ptr = sliceAddr(ext),
+            .path_len = ext.len,
+            .size = size,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.shell, 7, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
     }
 };
 

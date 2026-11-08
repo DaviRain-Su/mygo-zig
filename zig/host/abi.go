@@ -40,6 +40,7 @@ const (
 	ZigEventContextMenu   uintptr = 31 // a0=cb_id a1=win_id a2=*CContextMenuEv a3=req_id
 	ZigEventPageMedia     uintptr = 32 // a0=cb_id a1=win_id a2=kind(1 audible/2 capture) a3=payload
 	ZigEventLocale        uintptr = 33 // a0=cb_id a1=*CStr locale
+	ZigEventRegion        uintptr = 34 // a0=cb_id a1=*CStr region JSON
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -217,6 +218,56 @@ const (
 	WinCtlIsLoading            uintptr = 58 // → 1/0
 	WinCtlCapturePage          uintptr = 59 // a2=out a3=cap → nbytes PNG
 	WinCtlPrintToPDF           uintptr = 60 // a2=*CPDFSpec → nbytes
+	WinCtlSetMinSize           uintptr = 61 // a2=w a3=h
+	WinCtlSetMaxSize           uintptr = 62
+	WinCtlSetSize              uintptr = 63
+	WinCtlSetPosition          uintptr = 64 // a2=x a3=y
+	WinCtlSetResizable         uintptr = 65 // a2=0/1
+	WinCtlIsResizable          uintptr = 66
+	WinCtlSetClosable          uintptr = 67
+	WinCtlIsClosable           uintptr = 68
+	WinCtlSetMaximizable       uintptr = 69
+	WinCtlIsMaximizable        uintptr = 70
+	WinCtlSetMinimizable       uintptr = 71
+	WinCtlIsMinimizable        uintptr = 72
+	WinCtlSetMovable           uintptr = 73
+	WinCtlIsMovable            uintptr = 74
+	WinCtlSetAlwaysOnTop       uintptr = 75
+	WinCtlIsAlwaysOnTop        uintptr = 76
+	WinCtlSetHasShadow         uintptr = 77
+	WinCtlHasShadow            uintptr = 78
+	WinCtlSetOpacity           uintptr = 79 // a2=float64 bits
+	WinCtlGetOpacity           uintptr = 80
+	WinCtlSetBackgroundColor   uintptr = 81 // a2=ptr a3=len
+	WinCtlSetIgnoreMouseEvents uintptr = 82
+	WinCtlFlashFrame           uintptr = 83
+	WinCtlSetDocumentEdited    uintptr = 84
+	WinCtlIsDocumentEdited     uintptr = 85
+	WinCtlSetRepresentedFile   uintptr = 86
+	WinCtlGetRepresentedFile   uintptr = 87 // a2=out a3=cap
+	WinCtlIsVisible            uintptr = 88
+	WinCtlIsFocused            uintptr = 89
+	WinCtlIsMinimized          uintptr = 90
+	WinCtlIsMaximized          uintptr = 91
+	WinCtlIsFullScreen         uintptr = 92
+	WinCtlIsDestroyed          uintptr = 93
+	WinCtlBlur                 uintptr = 94
+	WinCtlRestore              uintptr = 95
+	WinCtlShowInactive         uintptr = 96
+	WinCtlSetIcon              uintptr = 97 // a2=ptr a3=len PNG
+	WinCtlSetSkipTaskbar       uintptr = 98
+	WinCtlSetAutoHideMenuBar   uintptr = 99
+	WinCtlSetActiveAppearance  uintptr = 100
+	WinCtlNativeHandle         uintptr = 101
+	WinCtlStop                 uintptr = 102
+	WinCtlReloadIgnoringCache  uintptr = 103
+	WinCtlLoadFile             uintptr = 104 // a2=ptr a3=len
+	WinCtlCanGoBack            uintptr = 105
+	WinCtlCanGoForward         uintptr = 106
+	WinCtlProcessID            uintptr = 107
+	WinCtlGPUProcessID         uintptr = 108
+	WinCtlThemeColor           uintptr = 109 // a2=*CThemeColor
+	WinCtlTitleRespond         uintptr = 110 // a2=*CNavResp (reuse prevent)
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -572,6 +623,25 @@ const (
 	AppEvOpenAtLogin           uintptr = 19 // → 1/0
 	AppEvWasOpenedAtLogin      uintptr = 20 // → 1/0
 	AppEvRelaunch              uintptr = 21
+	AppEvHide                  uintptr = 22
+	AppEvShow                  uintptr = 23
+	AppEvIsHidden              uintptr = 24
+	AppEvFocus                 uintptr = 25
+	AppEvIsActive              uintptr = 26
+	AppEvIsReady               uintptr = 27
+	AppEvIsPackaged            uintptr = 28
+	AppEvName                  uintptr = 29 // a1=out a2=cap
+	AppEvVersion               uintptr = 30
+	AppEvSetVersion            uintptr = 31
+	AppEvExit                  uintptr = 32 // a1=code
+	AppEvActivationPolicyGet   uintptr = 33
+	AppEvActivationPolicySet   uintptr = 34
+	AppEvRegionJSON            uintptr = 35
+	AppEvOnQuit                uintptr = 36 // ZigEventApp kind=9
+	AppEvOnReady               uintptr = 37 // kind=10
+	AppEvOnWindowAllClosed     uintptr = 38 // kind=11
+	AppEvOnWindowCreated       uintptr = 39 // kind=12 a2=win_id
+	AppEvOnRegionChanged       uintptr = 40 // ZigEventRegion
 )
 
 type CAboutSpec struct {
@@ -699,6 +769,8 @@ const (
 	PageDidFinish    uintptr = 4
 	PageDidFail      uintptr = 5
 	PageRenderGone   uintptr = 6
+	PageTitleUpdated uintptr = 7 // req_id in event; respond with WinCtlTitleRespond
+	PageThemeColor   uintptr = 8 // packed in CPageEvent.Code as RGBA; UserInitiated=ok
 )
 
 type CPageEvent struct {
@@ -794,4 +866,17 @@ type CPDFSpec struct {
 	MarginsTop, MarginsRight, MarginsBottom, MarginsLeft float64
 	Landscape, Background, HasMargins                    uint8
 	_                                                    [5]byte
+}
+
+type CThemeColor struct {
+	R, G, B, A uint8
+	OK         uint8
+	_          [3]byte
+}
+
+type CIconSpec struct {
+	PathPtr, PathLen uintptr
+	Size             int32
+	_                [4]byte
+	OutPtr, OutCap   uintptr
 }
