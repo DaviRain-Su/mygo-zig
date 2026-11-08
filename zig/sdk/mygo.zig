@@ -40,6 +40,8 @@ pub const HostOp = enum(usize) {
     path = 23,
     screen = 24,
     hotkey = 25,
+    theme = 26,
+    power = 27,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -107,6 +109,8 @@ const ZigEvent = enum(usize) {
     tray = 18,
     notification = 19,
     hotkey = 20,
+    theme = 21,
+    power = 22,
 };
 
 pub const CStr = extern struct {
@@ -275,6 +279,30 @@ fn registerHotkeyHandler(h: RawHotkeyHandler, userdata: usize) usize {
     return hotkey_count;
 }
 
+const RawThemeHandler = *const fn (userdata: usize) void;
+var theme_handlers: [8]RawThemeHandler = undefined;
+var theme_count: usize = 0;
+var theme_handler_userdata: [8]usize = undefined;
+
+fn registerThemeHandler(h: RawThemeHandler, userdata: usize) usize {
+    theme_handlers[theme_count] = h;
+    theme_handler_userdata[theme_count] = userdata;
+    theme_count += 1;
+    return theme_count;
+}
+
+const RawPowerHandler = *const fn (event: []const u8, userdata: usize) void;
+var power_handlers: [8]RawPowerHandler = undefined;
+var power_count: usize = 0;
+var power_handler_userdata: [8]usize = undefined;
+
+fn registerPowerHandler(h: RawPowerHandler, userdata: usize) usize {
+    power_handlers[power_count] = h;
+    power_handler_userdata[power_count] = userdata;
+    power_count += 1;
+    return power_count;
+}
+
 fn registerBytesHandler(h: RawBytesHandler) usize {
     bytes_handlers[bytes_count] = h;
     bytes_count += 1;
@@ -416,6 +444,20 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                 .hotkey => {
                     if (a0 == 0 or a0 > hotkey_count) return 0;
                     hotkey_handlers[a0 - 1](hotkey_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .theme => {
+                    if (a0 == 0 or a0 > theme_count) return 0;
+                    theme_handlers[a0 - 1](theme_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .power => {
+                    if (a0 == 0 or a0 > power_count) return 0;
+                    const ev: []const u8 = if (a1 != 0) blk: {
+                        const cs: *const CStr = @ptrFromInt(a1);
+                        break :blk cs.toSlice();
+                    } else "";
+                    power_handlers[a0 - 1](ev, power_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -1114,6 +1156,76 @@ pub const Notification = struct {
     }
 };
 
+
+
+pub const Appearance = struct {
+    pub fn isDark() bool {
+        return dispatch(.theme, 1, 0, 0, 0) != 0;
+    }
+
+    pub fn source(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [32]u8 = undefined;
+        const got = dispatch(.theme, 2, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    /// "system", "light", or "dark".
+    pub fn setSource(src: []const u8) void {
+        _ = dispatch(.theme, 3, sliceAddr(src), src.len, 0);
+    }
+
+    /// Preferences JSON (caller owns).
+    pub fn preferencesJSON(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [2048]u8 = undefined;
+        const got = dispatch(.theme, 4, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn onUpdated(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr) void) void {
+        const S = struct {
+            fn onTheme(ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s);
+            }
+        };
+        const cb = registerThemeHandler(&S.onTheme, @intFromPtr(state));
+        _ = dispatch(.theme, 5, cb, 0, 0);
+    }
+};
+
+pub const Power = struct {
+    pub fn isOnBattery() bool {
+        return dispatch(.power, 1, 0, 0, 0) != 0;
+    }
+
+    pub fn idleMs() usize {
+        return dispatch(.power, 2, 0, 0, 0);
+    }
+
+    /// Keep the machine awake; call `release(token)` when done.
+    pub fn keepAwake(reason: []const u8, display: bool) usize {
+        return dispatch(.power, 3, sliceAddr(reason), reason.len, @intFromBool(display));
+    }
+
+    pub fn release(token: usize) void {
+        _ = dispatch(.power, 4, token, 0, 0);
+    }
+
+    pub fn onEvent(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onPower(ev: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, ev);
+            }
+        };
+        const cb = registerPowerHandler(&S.onPower, @intFromPtr(state));
+        _ = dispatch(.power, 5, cb, 0, 0);
+    }
+};
 
 pub const Path = struct {
     /// Well-known directory name: home, appData, userData, cache, logs,

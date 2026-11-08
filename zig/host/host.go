@@ -557,6 +557,12 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	case HostOpHotkey:
 		return hostHotkey(a0, a1, a2, a3)
 
+	case HostOpTheme:
+		return hostTheme(a0, a1, a2, a3)
+
+	case HostOpPower:
+		return hostPower(a0, a1, a2, a3)
+
 	case HostOpClipboard:
 		switch a0 {
 		case 1: // write_text
@@ -1538,6 +1544,84 @@ func hostHotkey(sub, a1, a2, a3 uintptr) uintptr {
 		return 0
 	default:
 		SetError(errors.New("zighost: unknown hotkey subop"))
+		return ^uintptr(0)
+	}
+}
+
+var powerReleases sync.Map // uintptr token → func()
+
+func hostTheme(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case ThemeIsDark:
+		if mygo.Theme.IsDark() {
+			return 1
+		}
+		return 0
+	case ThemeSourceGet:
+		s := string(mygo.Theme.Source())
+		return writeBytesToOut([]byte(s), a1, a2)
+	case ThemeSourceSet:
+		mygo.Theme.SetSource(mygo.ThemeSource(CopyString(a1, a2)))
+		return 0
+	case ThemePrefsJSON:
+		raw, err := json.Marshal(mygo.Theme.Preferences())
+		if err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return writeBytesToOut(raw, a1, a2)
+	case ThemeOnUpdated:
+		cbID := a1
+		mygo.Theme.OnUpdated(func() {
+			activeCall(ZigEventTheme, cbID, 0, 0, 0)
+		})
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown theme subop"))
+		return ^uintptr(0)
+	}
+}
+
+func hostPower(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case PowerIsOnBattery:
+		if mygo.Power.IsOnBattery() {
+			return 1
+		}
+		return 0
+	case PowerIdleMs:
+		return uintptr(mygo.Power.IdleTime() / time.Millisecond)
+	case PowerKeepAwake:
+		reason := CopyString(a1, a2)
+		display := a3 != 0
+		release := mygo.Power.KeepAwake(reason, display)
+		token := uintptr(time.Now().UnixNano())
+		if token == 0 {
+			token = 1
+		}
+		powerReleases.Store(token, release)
+		return token
+	case PowerRelease:
+		if v, ok := powerReleases.LoadAndDelete(a1); ok {
+			v.(func())()
+		}
+		return 0
+	case PowerOnEvent:
+		cbID := a1
+		fire := func(name string) {
+			cs := CStr{}
+			ptr, ln := SliceAddr([]byte(name))
+			cs.Data, cs.Len = ptr, ln
+			activeCall(ZigEventPower, cbID, uintptrSlicePtr(&cs), 0, 0)
+		}
+		mygo.Power.OnSuspend(func() { fire("suspend") })
+		mygo.Power.OnResume(func() { fire("resume") })
+		mygo.Power.OnLockScreen(func() { fire("lock") })
+		mygo.Power.OnUnlockScreen(func() { fire("unlock") })
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown power subop"))
 		return ^uintptr(0)
 	}
 }

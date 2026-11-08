@@ -205,6 +205,12 @@ const Gallery = struct {
     path_len: usize = 0,
     cursor_x: i32 = 0,
     cursor_y: i32 = 0,
+    theme_dark: bool = false,
+    on_battery: bool = false,
+    idle_ms: usize = 0,
+    power_event_buf: [32]u8 = undefined,
+    power_event_len: usize = 0,
+    awake_token: usize = 0,
     dock_progress: f64 = 0,
     pie_vals: [4]f64 = .{ 30, 20, 25, 15 },
     custom_toasts: bool = false,
@@ -603,6 +609,19 @@ const Gallery = struct {
     }
 
 
+
+
+    fn onThemeUpdated(self: *Gallery) void {
+        self.theme_dark = mygo.Appearance.isDark();
+    }
+
+    fn onPowerEvent(self: *Gallery, ev: []const u8) void {
+        const n = @min(ev.len, self.power_event_buf.len);
+        @memcpy(self.power_event_buf[0..n], ev[0..n]);
+        self.power_event_len = n;
+        self.on_battery = mygo.Power.isOnBattery();
+        self.idle_ms = mygo.Power.idleMs();
+    }
 
     fn onHotkey(self: *Gallery) void {
         self.hotkey_hits +%= 1;
@@ -1284,6 +1303,34 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("theme-toggle", if (self.theme_dark) "Force light" else "Force dark").clicked()) {
+                if (self.theme_dark) {
+                    mygo.Appearance.setSource("light");
+                } else {
+                    mygo.Appearance.setSource("dark");
+                }
+                self.theme_dark = mygo.Appearance.isDark();
+            }
+            if (c.button("theme-system", "Theme system").clicked()) {
+                mygo.Appearance.setSource("system");
+                self.theme_dark = mygo.Appearance.isDark();
+            }
+            if (c.button("awake-toggle", if (self.awake_token != 0) "Allow sleep" else "Keep awake").clicked()) {
+                if (self.awake_token != 0) {
+                    mygo.Power.release(self.awake_token);
+                    self.awake_token = 0;
+                } else {
+                    self.awake_token = mygo.Power.keepAwake("gallery-zig", false);
+                }
+            }
+            _ = c.textf("theme dark={s} battery={s} idle={d}ms awake={s} power={s}", .{
+                if (self.theme_dark) "yes" else "no",
+                if (self.on_battery) "yes" else "no",
+                self.idle_ms,
+                if (self.awake_token != 0) "on" else "off",
+                if (self.power_event_len > 0) self.power_event_buf[0..self.power_event_len] else "-",
+            }).fontSize(11).textColor(t.text_muted);
+
             if (c.button("path-user", "Path userData").clicked()) {
                 if (mygo.Path.get(std.heap.page_allocator, "userData")) |path| {
                     defer std.heap.page_allocator.free(path);
@@ -1663,6 +1710,11 @@ fn onReady() void {
     app_state.notif_click_cb = mygo.Notification.registerClickHandler(*Gallery, &app_state, Gallery.onNotifClick);
     mygo.Notification.onAppClick(*Gallery, &app_state, Gallery.onNotifClick);
     mygo.Hotkey.register(*Gallery, &app_state, "CmdOrCtrl+Shift+G", Gallery.onHotkey) catch {};
+    app_state.theme_dark = mygo.Appearance.isDark();
+    app_state.on_battery = mygo.Power.isOnBattery();
+    app_state.idle_ms = mygo.Power.idleMs();
+    mygo.Appearance.onUpdated(*Gallery, &app_state, Gallery.onThemeUpdated);
+    mygo.Power.onEvent(*Gallery, &app_state, Gallery.onPowerEvent);
     const win = mygo.newWindowUi(*Gallery, &app_state, .{
         .title = "Zig UI Gallery",
         .width = 860,

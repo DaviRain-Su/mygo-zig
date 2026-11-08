@@ -27,6 +27,8 @@ const (
 	ZigEventTray          uintptr = 18 // a0=cb_id a1=tray_id a2=kind(1 click/2 right/3 appearance/4 menu) a3=*CStr menu id when kind=4
 	ZigEventNotification  uintptr = 19 // a0=cb_id a1=kind(1 note click / 2 app click) a2=*CStr id
 	ZigEventHotkey        uintptr = 20 // a0=cb_id a1=hotkey_id
+	ZigEventTheme         uintptr = 21 // a0=cb_id
+	ZigEventPower         uintptr = 22 // a0=cb_id a1=*CStr event
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -53,6 +55,8 @@ const (
 	HostOpPath          uintptr = 23 // a0=1 get / 2 set, a1=name, a2=path/out
 	HostOpScreen        uintptr = 24 // a0=subop
 	HostOpHotkey        uintptr = 25 // a0=subop
+	HostOpTheme         uintptr = 26 // a0=subop
+	HostOpPower         uintptr = 27 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -466,3 +470,21 @@ const (
 type CPoint struct {
 	X, Y int32
 }
+
+// Theme sub-ops for HostOpTheme.
+const (
+	ThemeIsDark    uintptr = 1 // → 1/0
+	ThemeSourceGet uintptr = 2 // a1=out_ptr a2=out_cap → source string len
+	ThemeSourceSet uintptr = 3 // a1=ptr a2=len
+	ThemePrefsJSON uintptr = 4 // a1=out_ptr a2=out_cap → JSON
+	ThemeOnUpdated uintptr = 5 // a1=cb_id
+)
+
+// Power sub-ops for HostOpPower.
+const (
+	PowerIsOnBattery uintptr = 1 // → 1/0
+	PowerIdleMs      uintptr = 2 // → idle milliseconds
+	PowerKeepAwake   uintptr = 3 // a1=reason_ptr a2=reason_len a3=display(1/0) → token id
+	PowerRelease     uintptr = 4 // a1=token
+	PowerOnEvent     uintptr = 5 // a1=cb_id (all power events)
+)
