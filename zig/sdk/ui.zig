@@ -468,6 +468,7 @@ pub const CoreOp = enum(u16) {
     on_text_key = 420,
     handle_text_input = 421,
     effect = 422,
+    video_query = 423,
 };
 
 /// A layer of a mask: the alpha of a gradient across the element's box.
@@ -4398,6 +4399,151 @@ pub const Context = struct {
         self.writeU8(3);
         self.flush();
     }
+
+    /// videoSeek moves the playhead of a video.
+    pub fn videoSeek(self: *Context, key: []const u8, ms: i32) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(4);
+        self.writeI32(ms);
+        self.flush();
+    }
+
+    pub fn videoSetRate(self: *Context, key: []const u8, rate: f64) void {
+        self.videoCtlF64(key, 5, rate);
+    }
+
+    pub fn videoSetVolume(self: *Context, key: []const u8, v: f64) void {
+        self.videoCtlF64(key, 6, v);
+    }
+
+    pub fn videoSetMuted(self: *Context, key: []const u8, muted: bool) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(7);
+        self.writeU8(@intFromBool(muted));
+        self.flush();
+    }
+
+    pub fn videoSetLoop(self: *Context, key: []const u8, on: bool) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(8);
+        self.writeU8(@intFromBool(on));
+        self.flush();
+    }
+
+    fn videoCtlF64(self: *Context, key: []const u8, ctl: u8, v: f64) void {
+        self.writeOp(@intFromEnum(CoreOp.video_control));
+        self.writeStr(key);
+        self.writeU8(ctl);
+        self.writeU64(@bitCast(v));
+        self.flush();
+    }
+
+    fn videoQuery(self: *Context, key: []const u8, kind: u8) CQuery {
+        self.writeOp(@intFromEnum(CoreOp.video_query));
+        self.writeStr(key);
+        self.writeU8(kind);
+        return self.flushQuery();
+    }
+
+    pub fn videoPositionMs(self: *Context, key: []const u8) f64 {
+        return self.videoQuery(key, 0).num_val;
+    }
+
+    pub fn videoDurationMs(self: *Context, key: []const u8) f64 {
+        return self.videoQuery(key, 1).num_val;
+    }
+
+    pub fn videoRate(self: *Context, key: []const u8) f64 {
+        return self.videoQuery(key, 2).num_val;
+    }
+
+    pub fn videoVolume(self: *Context, key: []const u8) f64 {
+        return self.videoQuery(key, 3).num_val;
+    }
+
+    pub fn videoReady(self: *Context, key: []const u8) bool {
+        return self.videoQuery(key, 4).bool_val != 0;
+    }
+
+    pub fn videoPlaying(self: *Context, key: []const u8) bool {
+        return self.videoQuery(key, 5).bool_val != 0;
+    }
+
+    pub fn videoEnded(self: *Context, key: []const u8) bool {
+        return self.videoQuery(key, 6).bool_val != 0;
+    }
+
+    pub fn videoMuted(self: *Context, key: []const u8) bool {
+        return self.videoQuery(key, 7).bool_val != 0;
+    }
+
+    pub fn videoLooping(self: *Context, key: []const u8) bool {
+        return self.videoQuery(key, 8).bool_val != 0;
+    }
+
+    pub fn videoSize(self: *Context, key: []const u8) Point {
+        const q = self.videoQuery(key, 9);
+        return .{ .x = @floatCast(q.num_val), .y = @floatCast(q.num_val2) };
+    }
+
+    /// Opens a file, stream URL or APNG under key for `video(key, …)`.
+    /// Import `zig/host/video` for these (GIFs and frame pushes need only
+    /// `zig/host/ui`).
+    pub const VideoSource = struct {
+        const Sub = enum(usize) {
+            open_file = 1,
+            open_data = 2,
+            open_url = 3,
+            apng = 4,
+            release = 5,
+        };
+
+        const CSpec = extern struct {
+            key_ptr: usize = 0,
+            key_len: usize = 0,
+            ptr: usize = 0,
+            len: usize = 0,
+            loop: u32 = 0,
+            _pad: [4]u8 = .{ 0, 0, 0, 0 },
+        };
+
+        pub fn openFile(key: []const u8, path: []const u8, loop: bool) mygo.Error!void {
+            return spec(.open_file, key, mygo.sliceAddr(path), path.len, loop);
+        }
+
+        pub fn openData(key: []const u8, data: []const u8, loop: bool) mygo.Error!void {
+            return spec(.open_data, key, mygo.sliceAddr(data), data.len, loop);
+        }
+
+        pub fn openURL(key: []const u8, url: []const u8, loop: bool) mygo.Error!void {
+            return spec(.open_url, key, mygo.sliceAddr(url), url.len, loop);
+        }
+
+        pub fn registerAPNG(key: []const u8, data: []const u8, loop: bool) mygo.Error!void {
+            return spec(.apng, key, mygo.sliceAddr(data), data.len, loop);
+        }
+
+        fn spec(sub: Sub, key: []const u8, ptr: usize, len: usize, loop: bool) mygo.Error!void {
+            var s = CSpec{
+                .key_ptr = mygo.sliceAddr(key),
+                .key_len = key.len,
+                .ptr = ptr,
+                .len = len,
+                .loop = @intFromBool(loop),
+            };
+            if (mygo.dispatch(.video, @intFromEnum(sub), @intFromPtr(&s), 0, 0) == std.math.maxInt(usize))
+                return mygo.Error.MyGoError;
+        }
+
+        /// release closes the player of key.
+        pub fn release(key: []const u8) void {
+            var s = CSpec{ .key_ptr = mygo.sliceAddr(key), .key_len = key.len };
+            _ = mygo.dispatch(.video, @intFromEnum(Sub.release), @intFromPtr(&s), 0, 0);
+        }
+    };
 
     /// Nested `Route.View` for a `{name...}` layout page.
     pub fn routeView(

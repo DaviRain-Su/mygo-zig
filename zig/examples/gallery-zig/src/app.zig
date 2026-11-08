@@ -286,6 +286,8 @@ const Gallery = struct {
     board: ui.Graph.Board = .{ .id = 0 },
     doc: ui.RichText.Doc = .{ .id = 0 },
     rich_status: []const u8 = "",
+    video_muted: bool = false,
+    video_loop: bool = true,
     win_states: [8 * 1024]u8 = @splat(0),
     win_states_len: usize = 0,
     rich_buf: [64 * 1024]u8 = @splat(0),
@@ -1291,6 +1293,28 @@ const Gallery = struct {
         if (self.show_video) {
             c.registerVideoGIF("waves", waves_gif, true);
             _ = c.video("waves", .cover).fillWidth().height(160).border(1, t.border).radius(8);
+            // Upstream's player controls, over the APNG/GIF wire.
+            const vrow = c.row().fillWidth().gap(8).center().begin();
+            defer vrow.end();
+            if (c.button("vw-play", "Play").clicked()) c.videoPlay("waves");
+            if (c.button("vw-pause", "Pause").clicked()) c.videoPause("waves");
+            if (c.button("vw-back", "-1s").clicked()) {
+                c.videoSeek("waves", @intFromFloat(@max(c.videoPositionMs("waves") - 1000, 0)));
+            }
+            if (c.button("vw-rate", "2x").clicked()) c.videoSetRate("waves", 2);
+            if (c.button("vw-mute", "Mute").clicked()) {
+                self.video_muted = !self.video_muted;
+                c.videoSetMuted("waves", self.video_muted);
+            }
+            _ = c.textf("{d:.0}/{d:.0}ms {s}", .{
+                c.videoPositionMs("waves"),
+                c.videoDurationMs("waves"),
+                if (c.videoPlaying("waves")) "playing" else "paused",
+            }).fontSize(11).textColor(t.text_muted).grow(1.0);
+            if (c.button("vw-loop", "Loop").clicked()) {
+                self.video_loop = !self.video_loop;
+                c.videoSetLoop("waves", self.video_loop);
+            }
         }
         if (self.frames_registered) {
             _ = c.video("frames", .contain).width(80).height(80).border(1, t.border).radius(6);

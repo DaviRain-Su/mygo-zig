@@ -91,6 +91,7 @@ pub const HostOp = enum(usize) {
     graph = 255,
     richtext = 256,
     window_states = 254,
+    video = 260,
 };
 
 pub const WinCtl = enum(usize) {

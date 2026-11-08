@@ -276,3 +276,27 @@ What stays Go-only, and why it is not a gap:
 Both were the last items on the parity list. What stays Go is by
 construction: a plugin's JavaScript service (pages call it, Zig does not)
 and Go's type parameters themselves (DocumentsOf is the Zig spelling).
+
+## Phase 17 — upstream sync: native video
+
+Upstream (dd14cc3a..de0966c4) replaced video playback with the system's media
+frameworks (`ui/video`: AVFoundation, Media Foundation, GStreamer, the video
+element), added animated PNG decoding, and grew `ui.VideoPlayer` with
+duration, position, seek, rate, volume, muting, looping, readiness and size.
+
+- `zig/host/video` (new, opt-in, `HostOpVideo=260`) opens files, data and
+  URLs with `ui/video`, and registers APNGs; players appear to `zig/host/ui`
+  through a `VideoSource` hook, so apps that do not import the package link
+  none of the media frameworks.
+- The element-level player controls now cover the whole player:
+  `videoSeek`, `videoSetRate`, `videoSetVolume`, `videoSetMuted`,
+  `videoSetLoop`, `videoPositionMs`, `videoDurationMs`, `videoRate`,
+  `videoVolume`, `videoReady`, `videoPlaying`, `videoEnded`, `videoMuted`,
+  `videoLooping`, `videoSize` (`opVideoQuery=423`).
+- The gallery's Charts tab has a control row over its GIF player, which now
+  reports its duration (the GIF decoder gained one upstream).
+- Tests cover APNG registration (a plain PNG decodes as a one-frame APNG),
+  background loading of bad data, and releasing an unknown key.
+- Nothing else needed syncing: `ui/api_gen.go` did not change, so uigen's
+  202 modifiers are unchanged, and the glass plugin's update was only its
+  recompiled shader library.

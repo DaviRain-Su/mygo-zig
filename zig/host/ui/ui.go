@@ -147,6 +147,7 @@ const (
 	opDataDragOver    uint16 = 307
 	opVideo           uint16 = 308
 	opVideoControl    uint16 = 309
+	opVideoQuery      uint16 = 423
 	opRouteView       uint16 = 310
 	opRouteMatch      uint16 = 311
 	opRouteParam      uint16 = 312
@@ -429,6 +430,10 @@ type uiWindowHost struct {
 }
 
 var assetCache sync.Map // hash key → *SVG | ImageSource
+
+// VideoSource, when set by zig/host/video, returns a player for a key that
+// was opened with the system's media framework (or an APNG).
+var VideoSource func(key string) *mygoui.VideoPlayer
 
 type uiFrame struct {
 	ctx        *mygoui.Context
@@ -3113,6 +3118,12 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 				return
 			}
 			p := f.host.videos[key]
+			if p == nil && VideoSource != nil {
+				p = VideoSource(key)
+				if p != nil {
+					f.host.videos[key] = p
+				}
+			}
 			if p == nil {
 				var (
 					dec  mygoui.VideoDecoder
@@ -3167,7 +3178,7 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 
 		case opVideoControl:
 			key, ok1 := r.str()
-			ctl, ok2 := r.u8() // 1=play, 2=pause, 3=close
+			ctl, ok2 := r.u8()
 			if !ok1 || !ok2 {
 				return
 			}
@@ -3183,6 +3194,75 @@ func flushUI(frameHandle, cmdPtr, cmdLen uintptr, out *cUIQuery) {
 			case 3:
 				p.Close()
 				delete(f.host.videos, key)
+			case 4: // seek ms
+				ms, ok := r.i32()
+				if !ok {
+					return
+				}
+				p.Seek(time.Duration(ms) * time.Millisecond)
+			case 5: // rate
+				bits, ok := r.u64()
+				if !ok {
+					return
+				}
+				p.SetRate(math.Float64frombits(bits))
+			case 6: // volume
+				bits, ok := r.u64()
+				if !ok {
+					return
+				}
+				p.SetVolume(math.Float64frombits(bits))
+			case 7: // muted
+				muted, ok := r.u8()
+				if !ok {
+					return
+				}
+				p.SetMuted(muted != 0)
+			case 8: // loop
+				loop, ok := r.u8()
+				if !ok {
+					return
+				}
+				p.SetLoop(loop != 0)
+			}
+
+		case opVideoQuery:
+			key, ok1 := r.str()
+			kind, ok2 := r.u8()
+			if !ok1 || !ok2 {
+				return
+			}
+			p := f.host.videos[key]
+			if p == nil || out == nil {
+				return
+			}
+			switch kind {
+			case 0: // position
+				out.NumVal = float64(p.Position() / time.Millisecond)
+			case 1: // duration
+				out.NumVal = float64(p.Duration() / time.Millisecond)
+			case 2: // rate
+				out.NumVal = p.Rate()
+			case 3: // volume
+				out.NumVal = p.Volume()
+			case 4:
+				out.BoolVal = u8Bool(p.Ready())
+			case 5:
+				out.BoolVal = u8Bool(p.Playing())
+			case 6:
+				out.BoolVal = u8Bool(p.Ended())
+			case 7:
+				out.BoolVal = u8Bool(p.Muted())
+			case 8:
+				out.BoolVal = u8Bool(p.Loop())
+			case 9: // size
+				w, h := p.Size()
+				out.NumVal = float64(w)
+				out.NumVal2 = float64(h)
+			case 10:
+				if err := p.Err(); err != nil {
+					host.SetError(err)
+				}
 			}
 
 		case opRouteMatch:

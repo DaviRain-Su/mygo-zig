@@ -154,6 +154,40 @@ doc = doc.onLink(*App, &app, App.openLink)          // a URL was clicked
 `onTagStyle` fills a `ui.RichText.Style` (color, background, weight, italic,
 underline, strikethrough, radius, padding).
 
+### Video
+
+GIFs, frame pushes and streams need only `zig/host/ui`; native video and APNGs
+come from the opt-in `zig/host/video` (`_ "github.com/egoist/mygo/zig/host/video"`),
+which plays files and streams with the system's media framework.
+
+```zig
+// GIF / pushed frames (zig/host/ui)
+try ui.registerVideoGIF("waves", gif_bytes, true);
+_ = c.video("waves", .cover).fillWidth().height(160);
+
+// A file, data, URL or APNG (zig/host/video)
+try ui.VideoSource.openFile("trailer", path, true);
+try ui.VideoSource.openData("clip", mp4_bytes, false);
+try ui.VideoSource.openURL("live", "https://example.com/live.m3u8", false);
+try ui.VideoSource.registerAPNG("anim", png_bytes, true);
+_ = c.video("trailer", .contain).fillWidth().height(240);
+```
+
+The player is the same for all of them:
+
+```zig
+c.videoPlay("waves");  c.videoPause("waves");  c.videoSeek("waves", 1500);
+c.videoSetRate("waves", 2);  c.videoSetVolume("waves", 0.6);
+c.videoSetMuted("waves", true);  c.videoSetLoop("waves", false);
+
+const at = c.videoPositionMs("waves");     // where the playhead is
+const len = c.videoDurationMs("waves");    // 0 until known, and for streams
+const size = c.videoSize("waves");         // 0x0 until the first picture
+if (c.videoReady("waves") and !c.videoEnded("waves")) { ... }
+```
+
+`ui.VideoSource.release("trailer")` closes a player.
+
 ### Documents (typed)
 
 `mygo.DocumentsOf(T, …)` is `NewDocuments[T]` for Zig: a controller whose

@@ -428,6 +428,13 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 	if op == HostOpNowPlaying {
 		return hostNowPlaying(activeCall, a0, a1, a2, a3)
 	}
+	if op == HostOpVideo {
+		if VideoDispatch == nil {
+			SetError(errors.New("zighost: video host not linked (import _ \"github.com/egoist/mygo/zig/host/video\")"))
+			return ^uintptr(0)
+		}
+		return VideoDispatch(op, a0, a1, a2, a3)
+	}
 	if op == HostOpRichText {
 		if RichTextDispatch == nil {
 			SetError(errors.New("zighost: richtext host not linked (import _ \"github.com/egoist/mygo/zig/host/richtext\")"))
