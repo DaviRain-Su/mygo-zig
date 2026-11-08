@@ -132,6 +132,8 @@ pub const WinCtl = enum(usize) {
     print = 56,
     url = 57,
     is_loading = 58,
+    capture_page = 59,
+    print_to_pdf = 60,
 };
 
 const ZigEvent = enum(usize) {
@@ -1495,6 +1497,61 @@ pub const Window = struct {
 
     pub fn isLoading(self: Window) bool {
         return self.ctl(.is_loading, 0, 0) != 0;
+    }
+
+    /// PNG screenshot of the visible page/content (caller frees).
+    pub fn capturePagePNG(self: Window, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [8 * 1024 * 1024]u8 = undefined;
+        const got = self.ctl(.capture_page, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub const PDFOptions = struct {
+        page_width: f64 = 0,
+        page_height: f64 = 0,
+        landscape: bool = false,
+        background: bool = false,
+        margins: ?struct { top: f64 = 0.4, right: f64 = 0.4, bottom: f64 = 0.4, left: f64 = 0.4 } = null,
+    };
+
+    /// PDF bytes (caller frees). Zero page size uses Letter.
+    pub fn printToPDF(self: Window, allocator: std.mem.Allocator, opts: PDFOptions) Error![]u8 {
+        const Spec = extern struct {
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+            page_width: f64 = 0,
+            page_height: f64 = 0,
+            margins_top: f64 = 0,
+            margins_right: f64 = 0,
+            margins_bottom: f64 = 0,
+            margins_left: f64 = 0,
+            landscape: u8 = 0,
+            background: u8 = 0,
+            has_margins: u8 = 0,
+            _pad: [5]u8 = @splat(0),
+        };
+        var scratch: [16 * 1024 * 1024]u8 = undefined;
+        var spec = Spec{
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+            .page_width = opts.page_width,
+            .page_height = opts.page_height,
+            .landscape = if (opts.landscape) 1 else 0,
+            .background = if (opts.background) 1 else 0,
+        };
+        if (opts.margins) |m| {
+            spec.has_margins = 1;
+            spec.margins_top = m.top;
+            spec.margins_right = m.right;
+            spec.margins_bottom = m.bottom;
+            spec.margins_left = m.left;
+        }
+        const got = self.ctl(.print_to_pdf, @intFromPtr(&spec), 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
     }
 
     pub fn invalidate(self: Window) void {

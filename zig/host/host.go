@@ -876,6 +876,10 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 			return 1
 		}
 		return 0
+	case WinCtlCapturePage:
+		return capturePage(w, a2, a3)
+	case WinCtlPrintToPDF:
+		return printToPDF(w, a2)
 	}
 	return 0
 }
@@ -3015,4 +3019,44 @@ func setWindowPageMediaHandler(w *mygo.Window, cbID uintptr) {
 
 func float64FromBits(bits uintptr) float64 {
 	return math.Float64frombits(uint64(bits))
+}
+
+func capturePage(w *mygo.Window, outPtr, outCap uintptr) uintptr {
+	png, err := w.CapturePage()
+	if err != nil {
+		SetError(err)
+		return ^uintptr(0)
+	}
+	SetError(nil)
+	return writeBytesToOut(png, outPtr, outCap)
+}
+
+func printToPDF(w *mygo.Window, a2 uintptr) uintptr {
+	if w.Page() == nil {
+		SetError(errors.New("zighost: printToPDF needs a page"))
+		return ^uintptr(0)
+	}
+	spec := PtrTo[CPDFSpec](a2)
+	if spec == nil {
+		SetError(errors.New("zighost: printToPDF needs spec"))
+		return ^uintptr(0)
+	}
+	opts := mygo.PDFOptions{
+		PageSize:   mygo.PageSize{Width: spec.PageWidth, Height: spec.PageHeight},
+		Landscape:  spec.Landscape != 0,
+		Background: spec.Background != 0,
+	}
+	if spec.HasMargins != 0 {
+		opts.Margins = &mygo.Margins{
+			Top: spec.MarginsTop, Right: spec.MarginsRight,
+			Bottom: spec.MarginsBottom, Left: spec.MarginsLeft,
+		}
+	}
+	pdf, err := w.Page().PrintToPDF(opts)
+	if err != nil {
+		SetError(err)
+		return ^uintptr(0)
+	}
+	SetError(nil)
+	return writeBytesToOut(pdf, spec.OutPtr, spec.OutCap)
 }

@@ -1479,6 +1479,32 @@ const Gallery = struct {
                     win.setContentRulesJSON(ids) catch {};
                 }
             }
+            if (c.button("capture-page", "Capture page PNG size").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    if (win.capturePagePNG(std.heap.page_allocator)) |png| {
+                        defer std.heap.page_allocator.free(png);
+                        var buf: [64]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "png={d}B", .{png.len}) catch "png";
+                        const n = @min(msg.len, self.path_buf.len);
+                        @memcpy(self.path_buf[0..n], msg[0..n]);
+                        self.path_len = n;
+                    } else |_| {}
+                }
+            }
+            if (c.button("print-pdf", "Print page to PDF size").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    if (win.printToPDF(std.heap.page_allocator, .{ .background = true })) |pdf| {
+                        defer std.heap.page_allocator.free(pdf);
+                        var buf: [64]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "pdf={d}B", .{pdf.len}) catch "pdf";
+                        const n = @min(msg.len, self.path_buf.len);
+                        @memcpy(self.path_buf[0..n], msg[0..n]);
+                        self.path_len = n;
+                    } else |_| {}
+                }
+            }
             if (c.button("page-url", "Show page URL").clicked()) {
                 if (self.web_win_id != 0) {
                     const win = mygo.Window{ .id = self.web_win_id };

@@ -215,6 +215,8 @@ const (
 	WinCtlPrint                uintptr = 56
 	WinCtlURL                  uintptr = 57 // a2=out a3=cap → len
 	WinCtlIsLoading            uintptr = 58 // → 1/0
+	WinCtlCapturePage          uintptr = 59 // a2=out a3=cap → nbytes PNG
+	WinCtlPrintToPDF           uintptr = 60 // a2=*CPDFSpec → nbytes
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -784,4 +786,12 @@ const (
 type CContentRulesCompileSpec struct {
 	IDPtr, IDLen       uintptr
 	RulesPtr, RulesLen uintptr
+}
+
+type CPDFSpec struct {
+	OutPtr, OutCap                                       uintptr
+	PageWidth, PageHeight                                float64
+	MarginsTop, MarginsRight, MarginsBottom, MarginsLeft float64
+	Landscape, Background, HasMargins                    uint8
+	_                                                    [5]byte
 }

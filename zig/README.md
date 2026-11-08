@@ -92,6 +92,7 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| Capture / PDF | Done | `capturePagePNG` / `printToPDF` |
 | Zoom / DevTools / Print / Locale.onChanged | Done | page chrome + `Locale.onChanged` |
 | Context menu / ContentRules / media | Done | `onContextMenu`, `ContentRules.compile`, mute/capture/PiP |
 | Page.Eval | Done | `Window.evalJSON` |
