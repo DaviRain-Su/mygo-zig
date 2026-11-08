@@ -92,6 +92,7 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| Session | Done | `Session.clearBrowsingData`/`clearData` + window `session_name` |
 | Cookies / Downloads | Done | `Cookies.listJSON`/`setJSON` + `Window.onDownload` |
 | Page auth/cert | Done | `setAuthHandler`/`authRespond`/`setCertificateErrorHandler` |
 | Secrets | Done | `Secrets.set`/`get`/`delete` (Keychain/libsecret/CredMan) |

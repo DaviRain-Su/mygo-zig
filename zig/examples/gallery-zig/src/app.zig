@@ -1391,6 +1391,12 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("clear-browsing", "Clear browsing data").clicked()) {
+                mygo.Session.clearBrowsingData() catch {};
+            }
+            if (c.button("clear-cookies-sess", "Clear default cookies").clicked()) {
+                mygo.Cookies.clear("") catch {};
+            }
             if (c.button("cookie-list", "List cookies").clicked()) {
                 if (mygo.Cookies.listJSON(std.heap.page_allocator, "{}")) |json| {
                     defer std.heap.page_allocator.free(json);

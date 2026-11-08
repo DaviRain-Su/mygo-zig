@@ -67,6 +67,7 @@ const (
 	HostOpDesktop       uintptr = 30 // a0=subop — dock/jumplist/recent
 	HostOpSecrets       uintptr = 31 // a0=subop
 	HostOpCookies       uintptr = 32 // a0=subop
+	HostOpSession       uintptr = 33 // a0=subop
 
 	// Opcodes >= HostOpUIBase are handled by zig/host/ui (and opt-in subpackages) when linked.
 	HostOpUIBase       uintptr = 100
@@ -211,6 +212,7 @@ type CWindowOptions struct {
 	TitleBarStyle   CStr
 	TitleBarHeight  int32
 	_PadTB          [4]byte
+	SessionName     CStr
 }
 
 // CAssetSpec describes an embedded asset registered by Zig (`@embedFile`).
@@ -629,4 +631,15 @@ type CDownloadResp struct {
 	Prevent          uint8
 	_                [7]byte
 	PathPtr, PathLen uintptr
+}
+
+// Session sub-ops for HostOpSession.
+const (
+	SessionClearBrowsing uintptr = 1 // App.ClearBrowsingData (default session, all)
+	SessionClearData     uintptr = 2 // a1=*CSessionClearSpec
+)
+
+type CSessionClearSpec struct {
+	NamePtr, NameLen uintptr // empty → default session
+	Types            uint64  // SiteData bitset; 0 = SiteDataAll
 }

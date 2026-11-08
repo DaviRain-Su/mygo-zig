@@ -47,6 +47,7 @@ pub const HostOp = enum(usize) {
     desktop = 30,
     secrets = 31,
     cookies = 32,
+    session = 33,
 
     window_new_ui = 100,
     ui_flush = 101,
@@ -169,6 +170,7 @@ pub const CWindowOptions = extern struct {
     title_bar_style: CStr = .{},
     title_bar_height: i32 = 0,
     _pad_tb: [4]u8 = @splat(0),
+    session_name: CStr = .{},
 };
 
 const CAssetSpec = extern struct {
@@ -748,6 +750,8 @@ pub const WindowOptions = struct {
     /// "", "default", "hidden", "hiddenInset".
     title_bar_style: []const u8 = "",
     title_bar_height: i32 = 0,
+    /// Named persistent session (NewSession); empty = default.
+    session_name: []const u8 = "",
 
     pub fn toC(self: WindowOptions) CWindowOptions {
         return .{
@@ -771,6 +775,7 @@ pub const WindowOptions = struct {
             .vibrancy_tint = CStr.fromSlice(self.vibrancy_tint),
             .title_bar_style = CStr.fromSlice(self.title_bar_style),
             .title_bar_height = self.title_bar_height,
+            .session_name = CStr.fromSlice(self.session_name),
         };
     }
 };
@@ -1475,6 +1480,38 @@ pub const Notification = struct {
 
 
 
+
+pub const SiteData = struct {
+    pub const cookies: u64 = 1;
+    pub const local_storage: u64 = 2;
+    pub const indexed_db: u64 = 4;
+    pub const caches: u64 = 8;
+    pub const service_workers: u64 = 16;
+    pub const all: u64 = 0; // host treats 0 as SiteDataAll
+};
+
+pub const Session = struct {
+    /// Clear all browsing data of the default session.
+    pub fn clearBrowsingData() Error!void {
+        if (dispatch(.session, 1, 0, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    /// Clear data of a named session (empty name = default). types=0 means all.
+    pub fn clearData(name: []const u8, types: u64) Error!void {
+        const Spec = extern struct {
+            name_ptr: usize = 0,
+            name_len: usize = 0,
+            types: u64 = 0,
+        };
+        var spec = Spec{
+            .name_ptr = sliceAddr(name),
+            .name_len = name.len,
+            .types = types,
+        };
+        if (dispatch(.session, 2, @intFromPtr(&spec), 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+};
+
 pub const Cookies = struct {
     pub fn listJSON(allocator: std.mem.Allocator, filter_json: []const u8) Error![]u8 {
         const Spec = extern struct {
@@ -1504,8 +1541,8 @@ pub const Cookies = struct {
         if (dispatch(.cookies, 3, sliceAddr(cookie_json), cookie_json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
 
-    pub fn clear() Error!void {
-        if (dispatch(.cookies, 4, 0, 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    pub fn clear(session: []const u8) Error!void {
+        if (dispatch(.cookies, 4, sliceAddr(session), session.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
     }
 };
 

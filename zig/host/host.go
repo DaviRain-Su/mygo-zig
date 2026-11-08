@@ -252,7 +252,7 @@ func ParseWindowOptions(raw *CWindowOptions) mygo.WindowOptions {
 	if raw == nil {
 		return mygo.WindowOptions{}
 	}
-	return mygo.WindowOptions{
+	opts := mygo.WindowOptions{
 		Title:           StrField(raw.Title),
 		URL:             StrField(raw.URL),
 		BackgroundColor: StrField(raw.BackgroundColor),
@@ -276,6 +276,10 @@ func ParseWindowOptions(raw *CWindowOptions) mygo.WindowOptions {
 			DevTools: mygo.DevTools(raw.DevTools),
 		},
 	}
+	if name := StrField(raw.SessionName); name != "" {
+		opts.Page.Session = mygo.NewSession(name)
+	}
+	return opts
 }
 
 type replyState struct {
@@ -578,6 +582,9 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 
 	case HostOpCookies:
 		return hostCookies(a0, a1, a2, a3)
+
+	case HostOpSession:
+		return hostSession(a0, a1, a2, a3)
 
 	case HostOpClipboard:
 		switch a0 {
@@ -2159,14 +2166,17 @@ func hostCookies(sub, a1, a2, a3 uintptr) uintptr {
 			SetError(errors.New("zighost: cookies list needs spec"))
 			return ^uintptr(0)
 		}
-		var filter mygo.CookieFilter
+		var filter struct {
+			mygo.CookieFilter
+			Session string `json:"session"`
+		}
 		if spec.FilterLen > 0 {
 			if err := json.Unmarshal(CopyBytes(spec.FilterPtr, spec.FilterLen), &filter); err != nil {
 				SetError(err)
 				return ^uintptr(0)
 			}
 		}
-		list, err := mygo.Cookies.List(filter)
+		list, err := cookiesModuleFromJSON(filter.Session).List(filter.CookieFilter)
 		if err != nil {
 			SetError(err)
 			return ^uintptr(0)
@@ -2207,6 +2217,7 @@ func hostCookies(sub, a1, a2, a3 uintptr) uintptr {
 			Secure   bool   `json:"secure"`
 			HTTPOnly bool   `json:"httpOnly"`
 			SameSite string `json:"sameSite"`
+			Session  string `json:"session"`
 		}
 		var in inJSON
 		if err := json.Unmarshal(CopyBytes(a1, a2), &in); err != nil {
@@ -2222,9 +2233,9 @@ func hostCookies(sub, a1, a2, a3 uintptr) uintptr {
 		}
 		var err error
 		if sub == CookiesSet {
-			err = mygo.Cookies.Set(c)
+			err = cookiesModuleFromJSON(in.Session).Set(c)
 		} else {
-			err = mygo.Cookies.Delete(c)
+			err = cookiesModuleFromJSON(in.Session).Delete(c)
 		}
 		if err != nil {
 			SetError(err)
@@ -2233,7 +2244,8 @@ func hostCookies(sub, a1, a2, a3 uintptr) uintptr {
 		SetError(nil)
 		return 0
 	case CookiesClear:
-		if err := mygo.Cookies.Clear(); err != nil {
+		store := cookiesModuleFromJSON(CopyString(a1, a2))
+		if err := store.Clear(); err != nil {
 			SetError(err)
 			return ^uintptr(0)
 		}
@@ -2311,4 +2323,49 @@ func downloadRespond(a2 uintptr) uintptr {
 	default:
 	}
 	return 0
+}
+
+func hostSession(sub, a1, a2, a3 uintptr) uintptr {
+	switch sub {
+	case SessionClearBrowsing:
+		if err := mygo.App.ClearBrowsingData(); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case SessionClearData:
+		spec := PtrTo[CSessionClearSpec](a1)
+		if spec == nil {
+			SetError(errors.New("zighost: session clear needs spec"))
+			return ^uintptr(0)
+		}
+		name := CopyString(spec.NamePtr, spec.NameLen)
+		types := mygo.SiteData(spec.Types)
+		if types == 0 {
+			types = mygo.SiteDataAll
+		}
+		var s *mygo.Session
+		if name == "" {
+			s = mygo.DefaultSession()
+		} else {
+			s = mygo.NewSession(name)
+		}
+		if err := s.ClearData(types); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	default:
+		SetError(errors.New("zighost: unknown session subop"))
+		return ^uintptr(0)
+	}
+}
+
+func cookiesModuleFromJSON(session string) mygo.CookiesModule {
+	if session == "" {
+		return mygo.Cookies
+	}
+	return mygo.NewSession(session).Cookies
 }
