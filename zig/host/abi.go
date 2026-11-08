@@ -39,6 +39,7 @@ const (
 	ZigEventWindowOpen    uintptr = 30 // a0=cb_id a1=win_id a2=*CWindowOpenReq a3=req_id
 	ZigEventContextMenu   uintptr = 31 // a0=cb_id a1=win_id a2=*CContextMenuEv a3=req_id
 	ZigEventPageMedia     uintptr = 32 // a0=cb_id a1=win_id a2=kind(1 audible/2 capture) a3=payload
+	ZigEventLocale        uintptr = 33 // a0=cb_id a1=*CStr locale
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -203,6 +204,17 @@ const (
 	WinCtlSetCaptureState      uintptr = 45 // a2=kind a3=state
 	WinCtlTogglePiP            uintptr = 46
 	WinCtlIsPiPActive          uintptr = 47 // → 1/0
+	WinCtlSetZoom              uintptr = 48 // a2=bits of float64
+	WinCtlGetZoom              uintptr = 49 // → bits of float64
+	WinCtlSetUserAgent         uintptr = 50 // a2=ptr a3=len
+	WinCtlGetUserAgent         uintptr = 51 // a2=out a3=cap → len
+	WinCtlOpenDevTools         uintptr = 52
+	WinCtlCloseDevTools        uintptr = 53
+	WinCtlIsDevToolsOpened     uintptr = 54 // → 1/0
+	WinCtlToggleDevTools       uintptr = 55
+	WinCtlPrint                uintptr = 56
+	WinCtlURL                  uintptr = 57 // a2=out a3=cap → len
+	WinCtlIsLoading            uintptr = 58 // → 1/0
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -737,6 +749,7 @@ const (
 	LocalePreferredJSON    uintptr = 3 // a1=out a2=cap
 	LocaleLanguagesJSON    uintptr = 4
 	LocaleSetLanguagesJSON uintptr = 5 // a1=json array
+	LocaleOnChanged        uintptr = 6 // a1=cb_id
 )
 
 type CEvalSpec struct {

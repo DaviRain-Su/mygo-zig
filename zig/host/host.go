@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -817,6 +818,61 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		return 0
 	case WinCtlIsPiPActive:
 		if w.Page() != nil && w.Page().IsPictureInPictureActive() {
+			return 1
+		}
+		return 0
+	case WinCtlSetZoom:
+		if w.Page() != nil {
+			w.Page().SetZoomFactor(float64FromBits(a2))
+		}
+		return 0
+	case WinCtlGetZoom:
+		if w.Page() == nil {
+			return uintptr(math.Float64bits(1))
+		}
+		return uintptr(math.Float64bits(w.Page().ZoomFactor()))
+	case WinCtlSetUserAgent:
+		if w.Page() != nil {
+			w.Page().SetUserAgent(CopyString(a2, a3))
+		}
+		return 0
+	case WinCtlGetUserAgent:
+		if w.Page() == nil {
+			return 0
+		}
+		return writeStringToOut(w.Page().UserAgent(), a2, a3)
+	case WinCtlOpenDevTools:
+		if w.Page() != nil {
+			w.Page().OpenDevTools()
+		}
+		return 0
+	case WinCtlCloseDevTools:
+		if w.Page() != nil {
+			w.Page().CloseDevTools()
+		}
+		return 0
+	case WinCtlIsDevToolsOpened:
+		if w.Page() != nil && w.Page().IsDevToolsOpened() {
+			return 1
+		}
+		return 0
+	case WinCtlToggleDevTools:
+		if w.Page() != nil {
+			w.Page().ToggleDevTools()
+		}
+		return 0
+	case WinCtlPrint:
+		if w.Page() != nil {
+			w.Page().Print()
+		}
+		return 0
+	case WinCtlURL:
+		if w.Page() == nil {
+			return 0
+		}
+		return writeStringToOut(w.Page().URL(), a2, a3)
+	case WinCtlIsLoading:
+		if w.Page() != nil && w.Page().IsLoading() {
 			return 1
 		}
 		return 0
@@ -2699,6 +2755,15 @@ func hostLocale(sub, a1, a2, a3 uintptr) uintptr {
 		mygo.App.SetLanguages(tags...)
 		SetError(nil)
 		return 0
+	case LocaleOnChanged:
+		cbID := a1
+		mygo.App.OnLocaleChanged(func(locale string) {
+			b := []byte(locale)
+			cs := CStr{}
+			cs.Data, cs.Len = SliceAddr(b)
+			activeCall(ZigEventLocale, cbID, uintptrSlicePtr(&cs), 0, 0)
+		})
+		return 0
 	default:
 		SetError(errors.New("zighost: unknown locale subop"))
 		return ^uintptr(0)
@@ -2946,4 +3011,8 @@ func setWindowPageMediaHandler(w *mygo.Window, cbID uintptr) {
 	w.Page().OnCaptureStateChanged(func(kind mygo.CaptureKind, state mygo.CaptureState) {
 		activeCall(ZigEventPageMedia, cbID, winID, 2, (uintptr(kind)<<16)|uintptr(state))
 	})
+}
+
+func float64FromBits(bits uintptr) float64 {
+	return math.Float64frombits(uint64(bits))
 }

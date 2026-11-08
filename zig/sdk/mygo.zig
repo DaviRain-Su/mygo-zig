@@ -121,6 +121,17 @@ pub const WinCtl = enum(usize) {
     set_capture_state = 45,
     toggle_pip = 46,
     is_pip_active = 47,
+    set_zoom = 48,
+    get_zoom = 49,
+    set_user_agent = 50,
+    get_user_agent = 51,
+    open_devtools = 52,
+    close_devtools = 53,
+    is_devtools_opened = 54,
+    toggle_devtools = 55,
+    print = 56,
+    url = 57,
+    is_loading = 58,
 };
 
 const ZigEvent = enum(usize) {
@@ -156,6 +167,7 @@ const ZigEvent = enum(usize) {
     window_open = 30,
     context_menu = 31,
     page_media = 32,
+    locale = 33,
 };
 
 pub const CStr = extern struct {
@@ -565,6 +577,18 @@ fn registerPageMediaHandler(h: RawPageMediaHandler, userdata: usize) usize {
     return page_media_count;
 }
 
+const RawLocaleHandler = *const fn (locale: []const u8, userdata: usize) void;
+var locale_handlers: [8]RawLocaleHandler = undefined;
+var locale_count: usize = 0;
+var locale_handler_userdata: [8]usize = undefined;
+
+fn registerLocaleHandler(h: RawLocaleHandler, userdata: usize) usize {
+    locale_handlers[locale_count] = h;
+    locale_handler_userdata[locale_count] = userdata;
+    locale_count += 1;
+    return locale_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -931,6 +955,15 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                     const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
                     const media_kind: u8 = @intCast(a2);
                     page_media_handlers[a0 - 1](win_id, media_kind, a3, page_media_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .locale => {
+                    if (a0 == 0 or a0 > locale_count) return 0;
+                    const loc = if (a1 != 0) blk: {
+                        const cs: *const CStr = @ptrFromInt(a1);
+                        break :blk cs.toSlice();
+                    } else "";
+                    locale_handlers[a0 - 1](loc, locale_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -1410,6 +1443,58 @@ pub const Window = struct {
 
     pub fn isPictureInPictureActive(self: Window) bool {
         return self.ctl(.is_pip_active, 0, 0) != 0;
+    }
+
+    pub fn setZoomFactor(self: Window, factor: f64) void {
+        _ = self.ctl(.set_zoom, @bitCast(factor), 0);
+    }
+
+    pub fn zoomFactor(self: Window) f64 {
+        return @bitCast(self.ctl(.get_zoom, 0, 0));
+    }
+
+    pub fn setUserAgent(self: Window, ua: []const u8) void {
+        _ = self.ctl(.set_user_agent, sliceAddr(ua), ua.len);
+    }
+
+    pub fn userAgent(self: Window, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [1024]u8 = undefined;
+        const got = self.ctl(.get_user_agent, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn openDevTools(self: Window) void {
+        _ = self.ctl(.open_devtools, 0, 0);
+    }
+
+    pub fn closeDevTools(self: Window) void {
+        _ = self.ctl(.close_devtools, 0, 0);
+    }
+
+    pub fn isDevToolsOpened(self: Window) bool {
+        return self.ctl(.is_devtools_opened, 0, 0) != 0;
+    }
+
+    pub fn toggleDevTools(self: Window) void {
+        _ = self.ctl(.toggle_devtools, 0, 0);
+    }
+
+    pub fn print(self: Window) void {
+        _ = self.ctl(.print, 0, 0);
+    }
+
+    pub fn pageURL(self: Window, allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [4096]u8 = undefined;
+        const got = self.ctl(.url, @intFromPtr(&scratch), scratch.len);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn isLoading(self: Window) bool {
+        return self.ctl(.is_loading, 0, 0) != 0;
     }
 
     pub fn invalidate(self: Window) void {
@@ -1989,6 +2074,17 @@ pub const Locale = struct {
 
     pub fn setLanguagesJSON(json: []const u8) Error!void {
         if (dispatch(.locale, 5, sliceAddr(json), json.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn onChanged(comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, []const u8) void) void {
+        const S = struct {
+            fn onLoc(loc: []const u8, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, loc);
+            }
+        };
+        const cb = registerLocaleHandler(&S.onLoc, @intFromPtr(state));
+        _ = dispatch(.locale, 6, cb, 0, 0);
     }
 };
 

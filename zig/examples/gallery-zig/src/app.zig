@@ -624,6 +624,13 @@ const Gallery = struct {
 
 
 
+
+    fn onLocaleChanged(self: *Gallery, locale: []const u8) void {
+        const n = @min(locale.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], locale[0..n]);
+        self.path_len = n;
+    }
+
     fn onContextMenu(self: *Gallery, ev: mygo.ContextMenuEvent) void {
         const src = if (ev.link_url.len > 0) ev.link_url else if (ev.selection.len > 0) ev.selection else "context-menu";
         const n = @min(src.len, self.path_buf.len);
@@ -1472,6 +1479,29 @@ const Gallery = struct {
                     win.setContentRulesJSON(ids) catch {};
                 }
             }
+            if (c.button("page-url", "Show page URL").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    if (win.pageURL(std.heap.page_allocator)) |u| {
+                        defer std.heap.page_allocator.free(u);
+                        const n = @min(u.len, self.path_buf.len);
+                        @memcpy(self.path_buf[0..n], u[0..n]);
+                        self.path_len = n;
+                    } else |_| {}
+                }
+            }
+            if (c.button("zoom-in", "Zoom in page").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    win.setZoomFactor(win.zoomFactor() * 1.1);
+                }
+            }
+            if (c.button("toggle-devtools", "Toggle DevTools").clicked()) {
+                if (self.web_win_id != 0) {
+                    const win = mygo.Window{ .id = self.web_win_id };
+                    win.toggleDevTools();
+                }
+            }
             if (c.button("toggle-mute", "Toggle page mute").clicked()) {
                 if (self.web_win_id != 0) {
                     const win = mygo.Window{ .id = self.web_win_id };
@@ -2023,6 +2053,7 @@ fn onReady() void {
         return;
     };
     app_state.main_win_id = win.id;
+    mygo.Locale.onChanged(*Gallery, &app_state, Gallery.onLocaleChanged);
     win.setAuthHandler(*Gallery, &app_state, Gallery.onAuthChallenge);
     win.setCertificateErrorHandler(*Gallery, &app_state, Gallery.onCertError);
     win.onDownload(*Gallery, &app_state, Gallery.onDownload);
