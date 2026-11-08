@@ -37,8 +37,8 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 | `zig/host/chart` | Done | Charts tab |
 | `zig/host/terminal` | Done (Phase 1) | Term tab; ships libghostty-vt via plugin JSON |
 | `zig/host/sqlite` | Done (Phase 2) | More-tab demo; JSON args/results |
-| `zig/host/websocket` / fetch | Backlog | Zig often has its own HTTP |
-| `zig/host/updater` | Backlog | after shipping apps |
+| `zig/host/fetch` / `websocket` | Done | HTTP+WS with netproxy / plugin dialer |
+| `zig/host/updater` | Done | Check + automatic prefs; `Use` on import |
 | `zig/host/permissionflow` | Done (Phase 3) | Check/Allowed/OpenSettings + async Request/Guide/Wait |
 | `zig/host/watch` | Done (Phase 3) | push JSON FileEvent batches |
 
@@ -46,7 +46,7 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 
 | Item | Why |
 |------|-----|
-| Standalone docs / go.mod branding | packaging |
+| Standalone docs site / go.mod branding | packaging (in-tree `docs/zig.md` Done) |
 | `Shell.InstalledApps` / `LaunchApp` | heavy, rare |
 | `Shell.WriteShortcutLink` | Windows-only |
 | Arbitrary MIME `Clipboard.Write` | text/image/files enough |
@@ -59,7 +59,8 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 1. **Phase 0** — consolidate docs + CI (this file) — Done
 2. **Phase 1** — `terminal` opt-in SDK + gallery Term tab — Done
 3. **Phase 2** — `sqlite` minimal Open/Execute/Query/Transaction — Done
-4. **Phase 3** — watch + permissionflow — Done; updater / docs site when needed
+4. **Phase 3** — watch + permissionflow — Done
+5. **Phase 4** — docs/zig.md + fetch/websocket/updater — Done
 
 ## Terminal ABI notes
 
@@ -79,3 +80,10 @@ basics + icons/trash, Clipboard text/image/files, page stop/theme/title.
 - `HostOpPermissionFlow = 239`, `ZigEventPermFlow = 37` (async status)
 - Permission names match Go strings (`microphone`, `accessibility`, …)
 - Status codes: 0 unknown, 1 not_determined, 2 denied, 3 granted
+
+## Fetch / WebSocket / Updater ABI notes
+
+- `HostOpFetch = 243` — sync JSON response (body as JSON base64), 16 MiB cap
+- `HostOpWebSocket = 244`, `ZigEventWebSocket = 38` — open/text/binary/close
+- `HostOpUpdater = 245` — check + automatic checks/downloads prefs
+- `plugins/websocket.Dial` is the shared Go API for native / Zig callers

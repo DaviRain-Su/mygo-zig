@@ -25,6 +25,9 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 | `host/sqlite/` | Opt-in `plugins/sqlite` (Open/Execute/Query/Tx) |
 | `host/watch/` | Opt-in `mygo.WatchFiles` (JSON event push) |
 | `host/permissionflow/` | Opt-in `plugins/permissionflow` |
+| `host/fetch/` | Opt-in HTTP (`netproxy`) for Zig |
+| `host/websocket/` | Opt-in WebSocket dial + events |
+| `host/updater/` | Opt-in auto-update (`mygo.Use` on import) |
 | `sdk/mygo.zig` | Idiomatic Zig SDK (`exportApp`, `bind`, `declareEvent`, `Window`, …) |
 | `sdk/ui.zig` | Zero-alloc CommandBuffer client + rich controls |
 | `sdk/element_gen.zig` | Generated style / layout / query modifiers |
@@ -47,7 +50,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
 ### Opt-in rich text & charts
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow`
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`) · `mygo.Watch` · `mygo.PermissionFlow` · `mygo.Fetch` · `mygo.WebSocket` · `mygo.Updater`
 
 ### 202 Element modifiers (generated)
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, `draggable`, …
@@ -96,6 +99,7 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| Fetch / WebSocket / Updater | Done | HTTP+WS for Zig; thin updater prefs/check |
 | Watch + PermissionFlow | Done | `mygo.Watch` / `mygo.PermissionFlow` opt-in hosts |
 | SQLite plugin SDK | Done | `mygo.SQLite` open/execute/query/transaction (JSON args) |
 | Terminal plugin SDK | Done | `mygo.Terminal` + `ui.terminalView`; gallery Term tab |

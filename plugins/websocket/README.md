@@ -5,7 +5,17 @@ connections Go makes, with the API of the browser's. Unlike the browser's,
 it may send any header with the opening handshake, such as Authorization,
 Cookie or Origin, and is not subject to the page's Content Security Policy.
 
-Use the plugin in Go:
+For Go / Zig native UI (no page), dial directly:
+
+```go
+conn, err := websocket.Dial(ctx, "wss://example.com/live", websocket.DialOptions{
+	Headers: [][2]string{{"Authorization", "Bearer …"}},
+})
+```
+
+Zig apps blank-import `zig/host/websocket` and use `mygo.WebSocket`.
+
+Use the page IPC plugin in Go:
 
 ```go
 import "github.com/egoist/mygo/plugins/websocket"

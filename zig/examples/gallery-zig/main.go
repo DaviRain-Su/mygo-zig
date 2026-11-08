@@ -9,6 +9,8 @@ import (
 	_ "github.com/egoist/mygo/zig/host/sqlite"
 	_ "github.com/egoist/mygo/zig/host/watch"
 	_ "github.com/egoist/mygo/zig/host/permissionflow"
+	_ "github.com/egoist/mygo/zig/host/fetch"
+	_ "github.com/egoist/mygo/zig/host/websocket"
 	_ "github.com/egoist/mygo/zig/host/ui"
 )
 

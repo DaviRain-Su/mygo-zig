@@ -1488,6 +1488,9 @@ const Gallery = struct {
                     win.setContentRulesJSON(ids) catch {};
                 }
             }
+            if (c.button("fetch-demo", "HTTP GET example.com").clicked()) {
+                self.runFetchDemo();
+            }
             if (c.button("watch-demo", "Watch userData").clicked()) {
                 self.startWatchDemo();
             }
@@ -2014,6 +2017,21 @@ const Gallery = struct {
 
     
 
+
+
+    fn runFetchDemo(self: *Gallery) void {
+        const alloc = std.heap.page_allocator;
+        const raw = mygo.Fetch.request(alloc, "https://example.com", "GET", "[]", "", "follow") catch {
+            const msg = "fetch: failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        defer alloc.free(raw);
+        const n = @min(raw.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], raw[0..n]);
+        self.path_len = n;
+    }
 
     fn startWatchDemo(self: *Gallery) void {
         if (self.watch_id != 0) {

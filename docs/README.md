@@ -77,6 +77,8 @@ that must start instantly.
 
 - [Getting started](getting-started.md): install the tools, then create,
   develop and build an app, with native UI or a web frontend.
+- [Zig apps](zig.md): external Model A host (`mygo-zig`), SDK layers and
+  opt-in plugin packages for Zig-authored apps.
 
 ## Building the app
 

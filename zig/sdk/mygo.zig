@@ -73,6 +73,9 @@ pub const HostOp = enum(usize) {
     sqlite = 237,
     watch = 238,
     permission_flow = 239,
+    fetch = 243,
+    websocket = 244,
+    updater = 245,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -230,6 +233,7 @@ const ZigEvent = enum(usize) {
     terminal = 35,
     watch = 36,
     perm_flow = 37,
+    websocket = 38,
 };
 
 pub const CStr = extern struct {
@@ -701,6 +705,18 @@ fn registerPermFlowHandler(h: RawPermFlowHandler, userdata: usize) usize {
     return perm_count;
 }
 
+const RawWSHandler = *const fn (conn_id: usize, kind: u8, a3: usize, userdata: usize) void;
+var ws_handlers: [16]RawWSHandler = undefined;
+var ws_count: usize = 0;
+var ws_handler_userdata: [16]usize = undefined;
+
+fn registerWSHandler(h: RawWSHandler, userdata: usize) usize {
+    ws_handlers[ws_count] = h;
+    ws_handler_userdata[ws_count] = userdata;
+    ws_count += 1;
+    return ws_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -1104,6 +1120,11 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         break :blk cs.toSlice();
                     } else "";
                     perm_handlers[a0 - 1](a1, @truncate(a2), err_msg, perm_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .websocket => {
+                    if (a0 == 0 or a0 > ws_count) return 0;
+                    ws_handlers[a0 - 1](a1, @truncate(a2), a3, ws_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -2619,6 +2640,157 @@ pub const Protocol = struct {
 
 
 
+
+
+pub const Fetch = struct {
+    /// Performs one HTTP request. `headers_json` is `[["k","v"],...]` or "[]".
+    /// `redirect` is "follow" (default), "error", or "manual".
+    /// Returns JSON `{status,statusText,url,redirected,headers,body}` where
+    /// `body` is standard JSON base64 for bytes. Caller owns the slice.
+    pub fn request(
+        allocator: std.mem.Allocator,
+        url: []const u8,
+        method: []const u8,
+        headers_json: []const u8,
+        body: []const u8,
+        redirect: []const u8,
+    ) Error![]u8 {
+        const Spec = extern struct {
+            url_ptr: usize = 0,
+            url_len: usize = 0,
+            method_ptr: usize = 0,
+            method_len: usize = 0,
+            headers_ptr: usize = 0,
+            headers_len: usize = 0,
+            body_ptr: usize = 0,
+            body_len: usize = 0,
+            redirect_ptr: usize = 0,
+            redirect_len: usize = 0,
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [1024 * 1024]u8 = undefined;
+        var spec = Spec{
+            .url_ptr = sliceAddr(url),
+            .url_len = url.len,
+            .method_ptr = sliceAddr(method),
+            .method_len = method.len,
+            .headers_ptr = sliceAddr(headers_json),
+            .headers_len = headers_json.len,
+            .body_ptr = sliceAddr(body),
+            .body_len = body.len,
+            .redirect_ptr = sliceAddr(redirect),
+            .redirect_len = redirect.len,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.fetch, 1, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+};
+
+pub const WebSocket = struct {
+    id: usize = 0,
+
+    pub const Event = union(enum) {
+        open: []const u8, // selected protocol
+        text: []const u8,
+        binary: []const u8,
+        close: []const u8, // JSON {code,reason,clean,error}
+    };
+
+    pub fn connect(
+        url: []const u8,
+        protocols_json: []const u8,
+        headers_json: []const u8,
+        comptime StatePtr: type,
+        state: StatePtr,
+        comptime handler: fn (StatePtr, WebSocket, Event) void,
+    ) Error!WebSocket {
+        const S = struct {
+            fn onWS(conn_id: usize, kind: u8, a3: usize, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                const ws = WebSocket{ .id = conn_id };
+                const payload = if (a3 != 0) blk: {
+                    const cs: *const CStr = @ptrFromInt(a3);
+                    break :blk cs.toSlice();
+                } else "";
+                switch (kind) {
+                    1 => handler(s, ws, .{ .open = payload }),
+                    2 => handler(s, ws, .{ .text = payload }),
+                    3 => handler(s, ws, .{ .binary = payload }),
+                    4 => handler(s, ws, .{ .close = payload }),
+                    else => {},
+                }
+            }
+        };
+        const cb = registerWSHandler(&S.onWS, @intFromPtr(state));
+        const Spec = extern struct {
+            url_ptr: usize = 0,
+            url_len: usize = 0,
+            protocols_ptr: usize = 0,
+            protocols_len: usize = 0,
+            headers_ptr: usize = 0,
+            headers_len: usize = 0,
+            event_cb: usize = 0,
+        };
+        var spec = Spec{
+            .url_ptr = sliceAddr(url),
+            .url_len = url.len,
+            .protocols_ptr = sliceAddr(protocols_json),
+            .protocols_len = protocols_json.len,
+            .headers_ptr = sliceAddr(headers_json),
+            .headers_len = headers_json.len,
+            .event_cb = cb,
+        };
+        const id = dispatch(.websocket, 1, @intFromPtr(&spec), 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    pub fn sendText(self: WebSocket, text: []const u8) Error!void {
+        if (dispatch(.websocket, 2, self.id, sliceAddr(text), text.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn sendBinary(self: WebSocket, data: []const u8) Error!void {
+        if (dispatch(.websocket, 3, self.id, sliceAddr(data), data.len) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn close(self: WebSocket, code: usize, reason: []const u8) Error!void {
+        var cs = CStr.fromSlice(reason);
+        if (dispatch(.websocket, 4, self.id, code, @intFromPtr(&cs)) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+};
+
+pub const Updater = struct {
+    pub fn checkForUpdates() void {
+        _ = dispatch(.updater, 1, 0, 0, 0);
+    }
+
+    pub fn automaticChecks() bool {
+        return dispatch(.updater, 2, 0, 0, 0) != 0;
+    }
+
+    pub fn setAutomaticChecks(on: bool) void {
+        _ = dispatch(.updater, 3, @intFromBool(on), 0, 0);
+    }
+
+    pub fn automaticDownloads() bool {
+        return dispatch(.updater, 4, 0, 0, 0) != 0;
+    }
+
+    pub fn setAutomaticDownloads(on: bool) void {
+        _ = dispatch(.updater, 5, @intFromBool(on), 0, 0);
+    }
+
+    pub fn availableVersion(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [64]u8 = undefined;
+        const got = dispatch(.updater, 6, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+};
 
 pub const Watch = struct {
     id: usize = 0,

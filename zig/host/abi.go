@@ -44,6 +44,7 @@ const (
 	ZigEventTerminal      uintptr = 35 // a0=cb_id a1=term_id a2=kind a3=payload
 	ZigEventWatch         uintptr = 36 // a0=cb_id a1=watch_id a2=kind a3=payload
 	ZigEventPermFlow      uintptr = 37 // a0=cb_id a1=req_id a2=status a3=*CStr err
+	ZigEventWebSocket     uintptr = 38 // a0=cb_id a1=conn_id a2=kind a3=payload
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -105,6 +106,9 @@ const (
 	HostOpSQLite         uintptr = 237 // a0=subop
 	HostOpWatch          uintptr = 238 // a0=subop (mygo.WatchFiles)
 	HostOpPermissionFlow uintptr = 239 // a0=subop
+	HostOpFetch          uintptr = 243 // a0=subop HTTP for Zig
+	HostOpWebSocket      uintptr = 244 // a0=subop
+	HostOpUpdater        uintptr = 245 // a0=subop
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -364,6 +368,10 @@ var WatchDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
 
 // PermissionFlowDispatch is populated by `zig/host/permissionflow` when imported.
 var PermissionFlowDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+
+var FetchDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
+var WebSocketDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+var UpdaterDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
@@ -1001,3 +1009,46 @@ type CPermAsyncSpec struct {
 	NameLabelPtr, NameLabelLen uintptr
 	CbID             uintptr
 }
+
+const (
+	FetchDo uintptr = 1 // a1=*CFetchSpec → nbytes JSON response
+)
+
+type CFetchSpec struct {
+	URLPtr, URLLen       uintptr
+	MethodPtr, MethodLen uintptr
+	HeadersPtr, HeadersLen uintptr // JSON [[name,value],...]
+	BodyPtr, BodyLen     uintptr
+	RedirectPtr, RedirectLen uintptr // follow|error|manual; empty=follow
+	OutPtr, OutCap       uintptr
+}
+
+const (
+	WSConnect    uintptr = 1 // a1=*CWSConnectSpec → id
+	WSSendText   uintptr = 2 // a1=id a2=ptr a3=len
+	WSSendBinary uintptr = 3
+	WSClose      uintptr = 4 // a1=id a2=code a3=reason via CStr at… use a2=code, a3=*CStr reason
+)
+
+const (
+	WSEvOpen   uintptr = 1 // a3=*CStr protocol
+	WSEvText   uintptr = 2 // a3=*CStr
+	WSEvBinary uintptr = 3 // a3=*CStr bytes
+	WSEvClose  uintptr = 4 // a3=*CStr JSON {code,reason,clean,error}
+)
+
+type CWSConnectSpec struct {
+	URLPtr, URLLen             uintptr
+	ProtocolsPtr, ProtocolsLen uintptr // JSON string array
+	HeadersPtr, HeadersLen     uintptr // JSON [[k,v],...]
+	EventCb                    uintptr
+}
+
+const (
+	UpdaterCheck              uintptr = 1
+	UpdaterAutomaticChecksGet uintptr = 2 // → 1/0
+	UpdaterAutomaticChecksSet uintptr = 3 // a1=0/1
+	UpdaterAutomaticDownloadsGet uintptr = 4
+	UpdaterAutomaticDownloadsSet uintptr = 5
+	UpdaterAvailableVersion   uintptr = 6 // a1=out a2=cap
+)

@@ -6,6 +6,9 @@ JavaScript package whose functions call them. The app uses the Go half with
 
 ## Official plugins
 
+Zig-authored apps bind several of these through opt-in `zig/host/*` packages; see [Zig apps](zig.md).
+
+
 - [Fetch](plugins/fetch.md): a `fetch` that makes HTTP requests from Go,
   with no CORS, any header, streamed bodies and cancellation.
 - [WebSocket](plugins/websocket.md): a `WebSocket` whose connections Go

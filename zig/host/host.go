@@ -354,6 +354,27 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return PermissionFlowDispatch(activeCall, op, a0, a1, a2, a3)
 	}
+	if op == HostOpFetch {
+		if FetchDispatch == nil {
+			SetError(errors.New("zighost: fetch not linked (import _ \"github.com/egoist/mygo/zig/host/fetch\")"))
+			return ^uintptr(0)
+		}
+		return FetchDispatch(op, a0, a1, a2, a3)
+	}
+	if op == HostOpWebSocket {
+		if WebSocketDispatch == nil {
+			SetError(errors.New("zighost: websocket not linked (import _ \"github.com/egoist/mygo/zig/host/websocket\")"))
+			return ^uintptr(0)
+		}
+		return WebSocketDispatch(activeCall, op, a0, a1, a2, a3)
+	}
+	if op == HostOpUpdater {
+		if UpdaterDispatch == nil {
+			SetError(errors.New("zighost: updater not linked (import _ \"github.com/egoist/mygo/zig/host/updater\")"))
+			return ^uintptr(0)
+		}
+		return UpdaterDispatch(op, a0, a1, a2, a3)
+	}
 	if op == HostOpSQLite {
 		if SQLiteDispatch == nil {
 			SetError(errors.New("zighost: sqlite not linked (import _ \"github.com/egoist/mygo/zig/host/sqlite\")"))
