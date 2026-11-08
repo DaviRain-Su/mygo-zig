@@ -34,6 +34,7 @@ const (
 	ZigEventAuth          uintptr = 25 // a0=cb_id a1=win_id a2=*CAuthReq a3=req_id
 	ZigEventCert          uintptr = 26 // a0=cb_id a1=win_id a2=*CCertErr; return !=0 allow
 	ZigEventDownload      uintptr = 27 // a0=cb_id a1=win_id a2=kind(1 will/2 done) a3=*CDownload
+	ZigEventPage          uintptr = 28 // a0=cb_id a1=win_id a2=kind a3=*CPageEvent
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -174,6 +175,8 @@ const (
 	WinCtlSetCertHandler       uintptr = 23 // a2=cb_id (0 clears)
 	WinCtlOnDownload           uintptr = 24 // a2=cb_id (0 clears)
 	WinCtlDownloadRespond      uintptr = 25 // a2=*CDownloadResp
+	WinCtlOnPage               uintptr = 26 // a2=cb_id (0 clears)
+	WinCtlNavigateRespond      uintptr = 27 // a2=*CNavResp
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -642,4 +645,29 @@ const (
 type CSessionClearSpec struct {
 	NamePtr, NameLen uintptr // empty → default session
 	Types            uint64  // SiteData bitset; 0 = SiteDataAll
+}
+
+// Page event kinds for ZigEventPage.
+const (
+	PageWillNavigate uintptr = 1
+	PageDidNavigate  uintptr = 2
+	PageDOMReady     uintptr = 3
+	PageDidFinish    uintptr = 4
+	PageDidFail      uintptr = 5
+	PageRenderGone   uintptr = 6
+)
+
+type CPageEvent struct {
+	ReqID            uintptr
+	URLPtr, URLLen   uintptr
+	DescPtr, DescLen uintptr
+	Code             int32
+	UserInitiated    uint8
+	_                [3]byte
+}
+
+type CNavResp struct {
+	ReqID   uintptr
+	Prevent uint8
+	_       [7]byte
 }

@@ -97,6 +97,8 @@ pub const WinCtl = enum(usize) {
     set_cert_handler = 23,
     on_download = 24,
     download_respond = 25,
+    on_page = 26,
+    navigate_respond = 27,
 };
 
 const ZigEvent = enum(usize) {
@@ -127,6 +129,7 @@ const ZigEvent = enum(usize) {
     auth = 25,
     cert = 26,
     download = 27,
+    page = 28,
 };
 
 pub const CStr = extern struct {
@@ -434,6 +437,35 @@ fn registerDownloadHandler(h: RawDownloadHandler, userdata: usize) usize {
     return download_count;
 }
 
+pub const PageEventKind = enum(u8) {
+    will_navigate = 1,
+    did_navigate = 2,
+    dom_ready = 3,
+    did_finish = 4,
+    did_fail = 5,
+    render_gone = 6,
+};
+
+pub const PageEvent = struct {
+    req_id: usize = 0,
+    url: []const u8 = "",
+    description: []const u8 = "",
+    code: i32 = 0,
+    user_initiated: bool = false,
+};
+
+const RawPageHandler = *const fn (win_id: i32, kind: u8, ev: PageEvent, userdata: usize) void;
+var page_handlers: [8]RawPageHandler = undefined;
+var page_count: usize = 0;
+var page_handler_userdata: [8]usize = undefined;
+
+fn registerPageHandler(h: RawPageHandler, userdata: usize) usize {
+    page_handlers[page_count] = h;
+    page_handler_userdata[page_count] = userdata;
+    page_count += 1;
+    return page_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -693,6 +725,33 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         .err = if (creq.err_ptr != 0 and creq.err_len != 0) @as([*]const u8, @ptrFromInt(creq.err_ptr))[0..creq.err_len] else "",
                     };
                     download_handlers[a0 - 1](win_id, dl_kind, ev, download_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .page => {
+                    if (a0 == 0 or a0 > page_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const page_kind: u8 = @intCast(a2);
+                    var ev = PageEvent{};
+                    if (a3 != 0) {
+                        const creq: *const extern struct {
+                            req_id: usize = 0,
+                            url_ptr: usize = 0,
+                            url_len: usize = 0,
+                            desc_ptr: usize = 0,
+                            desc_len: usize = 0,
+                            code: i32 = 0,
+                            user_initiated: u8 = 0,
+                            _pad: [3]u8 = @splat(0),
+                        } = @ptrFromInt(a3);
+                        ev = PageEvent{
+                            .req_id = creq.req_id,
+                            .url = if (creq.url_ptr != 0 and creq.url_len != 0) @as([*]const u8, @ptrFromInt(creq.url_ptr))[0..creq.url_len] else "",
+                            .description = if (creq.desc_ptr != 0 and creq.desc_len != 0) @as([*]const u8, @ptrFromInt(creq.desc_ptr))[0..creq.desc_len] else "",
+                            .code = creq.code,
+                            .user_initiated = creq.user_initiated != 0,
+                        };
+                    }
+                    page_handlers[a0 - 1](win_id, page_kind, ev, page_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -962,6 +1021,32 @@ pub const Window = struct {
             .path_len = path.len,
         };
         _ = self.ctl(.download_respond, @intFromPtr(&spec), 0);
+    }
+
+    /// Page lifecycle: will/did navigate, DOM ready, finish/fail, render gone.
+    /// For will_navigate (kind=1), call navigateRespond before returning.
+    pub fn onPage(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, u8, PageEvent) void) void {
+        const S = struct {
+            fn onPg(_: i32, kind: u8, ev: PageEvent, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, kind, ev);
+            }
+        };
+        const cb = registerPageHandler(&S.onPg, @intFromPtr(state));
+        _ = self.ctl(.on_page, cb, 0);
+    }
+
+    pub fn navigateRespond(self: Window, req_id: usize, prevent: bool) void {
+        const Spec = extern struct {
+            req_id: usize = 0,
+            prevent: u8 = 0,
+            _pad: [7]u8 = @splat(0),
+        };
+        var spec = Spec{
+            .req_id = req_id,
+            .prevent = if (prevent) 1 else 0,
+        };
+        _ = self.ctl(.navigate_respond, @intFromPtr(&spec), 0);
     }
 
     pub fn invalidate(self: Window) void {

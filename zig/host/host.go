@@ -737,6 +737,10 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		setWindowDownloadHandler(w, a2)
 	case WinCtlDownloadRespond:
 		return downloadRespond(a2)
+	case WinCtlOnPage:
+		setWindowPageHandler(w, a2)
+	case WinCtlNavigateRespond:
+		return navigateRespond(a2)
 	}
 	return 0
 }
@@ -2368,4 +2372,86 @@ func cookiesModuleFromJSON(session string) mygo.CookiesModule {
 		return mygo.Cookies
 	}
 	return mygo.NewSession(session).Cookies
+}
+
+var (
+	navigateReqsMu  sync.Mutex
+	navigateReqs    = map[uintptr]chan bool{}
+	nextNavigateReq atomic.Uintptr
+)
+
+func setWindowPageHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil || cbID == 0 {
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
+		reqID := nextNavigateReq.Add(1)
+		ch := make(chan bool, 1)
+		navigateReqsMu.Lock()
+		navigateReqs[reqID] = ch
+		navigateReqsMu.Unlock()
+		defer func() {
+			navigateReqsMu.Lock()
+			delete(navigateReqs, reqID)
+			navigateReqsMu.Unlock()
+		}()
+		urlB := []byte(e.URL)
+		ev := CPageEvent{ReqID: reqID}
+		ev.URLPtr, ev.URLLen = SliceAddr(urlB)
+		if e.UserInitiated {
+			ev.UserInitiated = 1
+		}
+		activeCall(ZigEventPage, cbID, winID, PageWillNavigate, uintptrSlicePtr(&ev))
+		select {
+		case prevent := <-ch:
+			if prevent {
+				e.PreventDefault()
+			}
+		default:
+		}
+	})
+	w.Page().OnDidNavigate(func(url string) {
+		urlB := []byte(url)
+		ev := CPageEvent{}
+		ev.URLPtr, ev.URLLen = SliceAddr(urlB)
+		activeCall(ZigEventPage, cbID, winID, PageDidNavigate, uintptrSlicePtr(&ev))
+	})
+	w.Page().OnDOMReady(func() {
+		activeCall(ZigEventPage, cbID, winID, PageDOMReady, 0)
+	})
+	w.Page().OnDidFinishLoad(func() {
+		activeCall(ZigEventPage, cbID, winID, PageDidFinish, 0)
+	})
+	w.Page().OnDidFailLoad(func(err *mygo.LoadError) {
+		ev := CPageEvent{Code: int32(err.Code)}
+		urlB, descB := []byte(err.URL), []byte(err.Description)
+		ev.URLPtr, ev.URLLen = SliceAddr(urlB)
+		ev.DescPtr, ev.DescLen = SliceAddr(descB)
+		activeCall(ZigEventPage, cbID, winID, PageDidFail, uintptrSlicePtr(&ev))
+	})
+	w.Page().OnRenderProcessGone(func(reason string) {
+		ev := CPageEvent{}
+		descB := []byte(reason)
+		ev.DescPtr, ev.DescLen = SliceAddr(descB)
+		activeCall(ZigEventPage, cbID, winID, PageRenderGone, uintptrSlicePtr(&ev))
+	})
+}
+
+func navigateRespond(a2 uintptr) uintptr {
+	spec := PtrTo[CNavResp](a2)
+	if spec == nil {
+		return ^uintptr(0)
+	}
+	navigateReqsMu.Lock()
+	ch := navigateReqs[spec.ReqID]
+	navigateReqsMu.Unlock()
+	if ch == nil {
+		return 0
+	}
+	select {
+	case ch <- spec.Prevent != 0:
+	default:
+	}
+	return 0
 }

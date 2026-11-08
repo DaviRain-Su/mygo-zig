@@ -194,6 +194,7 @@ const Gallery = struct {
     tray_menu_len: usize = 0,
     flyout_id: i32 = 0,
     main_win_id: i32 = 0,
+    web_win_id: i32 = 0,
     notif_id_buf: [64]u8 = undefined,
     notif_id_len: usize = 0,
     notif_clicks: u32 = 0,
@@ -619,6 +620,18 @@ const Gallery = struct {
 
 
 
+
+
+    fn onPageEvent(self: *Gallery, kind: u8, ev: mygo.PageEvent) void {
+        if (kind == @intFromEnum(mygo.PageEventKind.will_navigate) and self.web_win_id != 0) {
+            const win = mygo.Window{ .id = self.web_win_id };
+            win.navigateRespond(ev.req_id, false);
+        }
+        const src = if (ev.url.len > 0) ev.url else ev.description;
+        const n = @min(src.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], src[0..n]);
+        self.path_len = n;
+    }
 
     fn onDownload(self: *Gallery, kind: u8, ev: mygo.DownloadEvent) void {
         if (kind == 1) {
@@ -1391,6 +1404,12 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("open-page-win", "Open page-events window").clicked()) {
+                if (mygo.newWindow(.{ .title = "Page events", .url = "https://example.com", .width = 480, .height = 360 })) |w| {
+                    self.web_win_id = w.id;
+                    w.onPage(*Gallery, self, Gallery.onPageEvent);
+                } else |_| {}
+            }
             if (c.button("clear-browsing", "Clear browsing data").clicked()) {
                 mygo.Session.clearBrowsingData() catch {};
             }
