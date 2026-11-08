@@ -741,6 +741,12 @@ func windowControl(winID int, subOp, a2, a3 uintptr) uintptr {
 		setWindowPageHandler(w, a2)
 	case WinCtlNavigateRespond:
 		return navigateRespond(a2)
+	case WinCtlSetPermissionHandler:
+		setWindowPermissionHandler(w, a2)
+	case WinCtlSetWindowOpenHandler:
+		setWindowOpenHandler(w, a2)
+	case WinCtlWindowOpenRespond:
+		return windowOpenRespond(a2)
 	}
 	return 0
 }
@@ -1788,6 +1794,26 @@ func hostAppEvents(sub, a1, a2, a3 uintptr) uintptr {
 			return 1
 		}
 		return 0
+	case AppEvSetOpenAtLogin:
+		if err := mygo.App.SetOpenAtLogin(a1 != 0); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case AppEvOpenAtLogin:
+		if mygo.App.OpenAtLogin() {
+			return 1
+		}
+		return 0
+	case AppEvWasOpenedAtLogin:
+		if mygo.App.WasOpenedAtLogin() {
+			return 1
+		}
+		return 0
+	case AppEvRelaunch:
+		mygo.App.Relaunch()
+		return 0
 	default:
 		SetError(errors.New("zighost: unknown app event subop"))
 		return ^uintptr(0)
@@ -2451,6 +2477,91 @@ func navigateRespond(a2 uintptr) uintptr {
 	}
 	select {
 	case ch <- spec.Prevent != 0:
+	default:
+	}
+	return 0
+}
+
+var (
+	windowOpenReqsMu  sync.Mutex
+	windowOpenReqs    = map[uintptr]chan *mygo.WindowOptions{}
+	nextWindowOpenReq atomic.Uintptr
+)
+
+func setWindowPermissionHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil {
+		return
+	}
+	if cbID == 0 {
+		w.Page().SetPermissionHandler(nil)
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().SetPermissionHandler(func(req mygo.PermissionRequest) bool {
+		originB := []byte(req.Origin)
+		permsB, _ := json.Marshal(req.Permissions)
+		creq := CPermReq{}
+		creq.OriginPtr, creq.OriginLen = SliceAddr(originB)
+		creq.PermsPtr, creq.PermsLen = SliceAddr(permsB)
+		return activeCall(ZigEventPermission, cbID, winID, uintptrSlicePtr(&creq), 0) != 0
+	})
+}
+
+func setWindowOpenHandler(w *mygo.Window, cbID uintptr) {
+	if w.Page() == nil {
+		return
+	}
+	if cbID == 0 {
+		w.Page().SetWindowOpenHandler(nil)
+		return
+	}
+	winID := uintptr(w.ID())
+	w.Page().SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions {
+		reqID := nextWindowOpenReq.Add(1)
+		ch := make(chan *mygo.WindowOptions, 1)
+		windowOpenReqsMu.Lock()
+		windowOpenReqs[reqID] = ch
+		windowOpenReqsMu.Unlock()
+		defer func() {
+			windowOpenReqsMu.Lock()
+			delete(windowOpenReqs, reqID)
+			windowOpenReqsMu.Unlock()
+		}()
+		urlB, frameB := []byte(req.URL), []byte(req.FrameName)
+		creq := CWindowOpenReq{Width: int32(req.Width), Height: int32(req.Height)}
+		creq.URLPtr, creq.URLLen = SliceAddr(urlB)
+		creq.FramePtr, creq.FrameLen = SliceAddr(frameB)
+		if req.UserInitiated {
+			creq.UserInitiated = 1
+		}
+		activeCall(ZigEventWindowOpen, cbID, winID, uintptrSlicePtr(&creq), reqID)
+		select {
+		case opts := <-ch:
+			return opts
+		default:
+			return nil
+		}
+	})
+}
+
+func windowOpenRespond(a2 uintptr) uintptr {
+	spec := PtrTo[CWindowOpenResp](a2)
+	if spec == nil {
+		return ^uintptr(0)
+	}
+	windowOpenReqsMu.Lock()
+	ch := windowOpenReqs[spec.ReqID]
+	windowOpenReqsMu.Unlock()
+	if ch == nil {
+		return 0
+	}
+	var opts *mygo.WindowOptions
+	if spec.Deny == 0 {
+		o := ParseWindowOptions(&spec.Opts)
+		opts = &o
+	}
+	select {
+	case ch <- opts:
 	default:
 	}
 	return 0

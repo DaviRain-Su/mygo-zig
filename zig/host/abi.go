@@ -35,6 +35,8 @@ const (
 	ZigEventCert          uintptr = 26 // a0=cb_id a1=win_id a2=*CCertErr; return !=0 allow
 	ZigEventDownload      uintptr = 27 // a0=cb_id a1=win_id a2=kind(1 will/2 done) a3=*CDownload
 	ZigEventPage          uintptr = 28 // a0=cb_id a1=win_id a2=kind a3=*CPageEvent
+	ZigEventPermission    uintptr = 29 // a0=cb_id a1=win_id a2=*CPermReq; return !=0 grant
+	ZigEventWindowOpen    uintptr = 30 // a0=cb_id a1=win_id a2=*CWindowOpenReq a3=req_id
 )
 
 // Host dispatch opcodes (`host_dispatch(op, a0, a1, a2, a3)`).
@@ -177,6 +179,9 @@ const (
 	WinCtlDownloadRespond      uintptr = 25 // a2=*CDownloadResp
 	WinCtlOnPage               uintptr = 26 // a2=cb_id (0 clears)
 	WinCtlNavigateRespond      uintptr = 27 // a2=*CNavResp
+	WinCtlSetPermissionHandler uintptr = 28 // a2=cb_id (0 clears)
+	WinCtlSetWindowOpenHandler uintptr = 29 // a2=cb_id (0 clears)
+	WinCtlWindowOpenRespond    uintptr = 30 // a2=*CWindowOpenResp
 )
 
 // CProgressSpec is WinCtlSetProgressBar a2.
@@ -528,6 +533,10 @@ const (
 	AppEvRegisterScheme        uintptr = 15 // a1=scheme_ptr a2=scheme_len
 	AppEvUnregisterScheme      uintptr = 16
 	AppEvIsSchemeRegistered    uintptr = 17 // → 1/0
+	AppEvSetOpenAtLogin        uintptr = 18 // a1=0/1
+	AppEvOpenAtLogin           uintptr = 19 // → 1/0
+	AppEvWasOpenedAtLogin      uintptr = 20 // → 1/0
+	AppEvRelaunch              uintptr = 21
 )
 
 type CAboutSpec struct {
@@ -670,4 +679,24 @@ type CNavResp struct {
 	ReqID   uintptr
 	Prevent uint8
 	_       [7]byte
+}
+
+type CPermReq struct {
+	OriginPtr, OriginLen uintptr
+	PermsPtr, PermsLen   uintptr // JSON array of strings
+}
+
+type CWindowOpenReq struct {
+	URLPtr, URLLen     uintptr
+	FramePtr, FrameLen uintptr
+	Width, Height      int32
+	UserInitiated      uint8
+	_                  [3]byte
+}
+
+type CWindowOpenResp struct {
+	ReqID uintptr
+	Deny  uint8 // 1 = deny
+	_     [7]byte
+	Opts  CWindowOptions
 }

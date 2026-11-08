@@ -622,6 +622,29 @@ const Gallery = struct {
 
 
 
+
+    fn onPermission(self: *Gallery, req: mygo.PermissionRequest) bool {
+        const n = @min(req.origin.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], req.origin[0..n]);
+        self.path_len = n;
+        return false; // deny by default in gallery
+    }
+
+    fn onWindowOpen(self: *Gallery, req_id: usize, req: mygo.WindowOpenRequest) void {
+        const n = @min(req.url.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], req.url[0..n]);
+        self.path_len = n;
+        if (self.web_win_id != 0) {
+            const win = mygo.Window{ .id = self.web_win_id };
+            // Deny scripted popups; allow user-initiated into a small window.
+            if (!req.user_initiated) {
+                win.windowOpenRespond(req_id, true, .{});
+            } else {
+                win.windowOpenRespond(req_id, false, .{ .title = "Opened", .url = req.url, .width = if (req.width > 0) req.width else 480, .height = if (req.height > 0) req.height else 360 });
+            }
+        }
+    }
+
     fn onPageEvent(self: *Gallery, kind: u8, ev: mygo.PageEvent) void {
         if (kind == @intFromEnum(mygo.PageEventKind.will_navigate) and self.web_win_id != 0) {
             const win = mygo.Window{ .id = self.web_win_id };
@@ -1404,10 +1427,19 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("open-at-login", "Toggle open at login").clicked()) {
+                const cur = mygo.Lifecycle.openAtLogin();
+                mygo.Lifecycle.setOpenAtLogin(!cur) catch {};
+            }
+            if (c.button("relaunch-app", "Relaunch app").clicked()) {
+                mygo.Lifecycle.relaunch();
+            }
             if (c.button("open-page-win", "Open page-events window").clicked()) {
                 if (mygo.newWindow(.{ .title = "Page events", .url = "https://example.com", .width = 480, .height = 360 })) |w| {
                     self.web_win_id = w.id;
                     w.onPage(*Gallery, self, Gallery.onPageEvent);
+                    w.setPermissionHandler(*Gallery, self, Gallery.onPermission);
+                    w.setWindowOpenHandler(*Gallery, self, Gallery.onWindowOpen);
                 } else |_| {}
             }
             if (c.button("clear-browsing", "Clear browsing data").clicked()) {

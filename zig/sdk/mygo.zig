@@ -99,6 +99,9 @@ pub const WinCtl = enum(usize) {
     download_respond = 25,
     on_page = 26,
     navigate_respond = 27,
+    set_permission_handler = 28,
+    set_window_open_handler = 29,
+    window_open_respond = 30,
 };
 
 const ZigEvent = enum(usize) {
@@ -130,6 +133,8 @@ const ZigEvent = enum(usize) {
     cert = 26,
     download = 27,
     page = 28,
+    permission = 29,
+    window_open = 30,
 };
 
 pub const CStr = extern struct {
@@ -466,6 +471,43 @@ fn registerPageHandler(h: RawPageHandler, userdata: usize) usize {
     return page_count;
 }
 
+pub const PermissionRequest = struct {
+    origin: []const u8 = "",
+    permissions_json: []const u8 = "[]",
+};
+
+pub const WindowOpenRequest = struct {
+    url: []const u8 = "",
+    frame_name: []const u8 = "",
+    width: i32 = 0,
+    height: i32 = 0,
+    user_initiated: bool = false,
+};
+
+const RawPermissionHandler = *const fn (win_id: i32, req: PermissionRequest, userdata: usize) bool;
+var permission_handlers: [8]RawPermissionHandler = undefined;
+var permission_count: usize = 0;
+var permission_handler_userdata: [8]usize = undefined;
+
+fn registerPermissionHandler(h: RawPermissionHandler, userdata: usize) usize {
+    permission_handlers[permission_count] = h;
+    permission_handler_userdata[permission_count] = userdata;
+    permission_count += 1;
+    return permission_count;
+}
+
+const RawWindowOpenHandler = *const fn (win_id: i32, req_id: usize, req: WindowOpenRequest, userdata: usize) void;
+var window_open_handlers: [8]RawWindowOpenHandler = undefined;
+var window_open_count: usize = 0;
+var window_open_handler_userdata: [8]usize = undefined;
+
+fn registerWindowOpenHandler(h: RawWindowOpenHandler, userdata: usize) usize {
+    window_open_handlers[window_open_count] = h;
+    window_open_handler_userdata[window_open_count] = userdata;
+    window_open_count += 1;
+    return window_open_count;
+}
+
 pub const AppConfig = struct {
     init: ?*const fn () anyerror!void = null,
     ready: *const fn () void,
@@ -752,6 +794,44 @@ pub fn exportApp(comptime cfg: AppConfig) void {
                         };
                     }
                     page_handlers[a0 - 1](win_id, page_kind, ev, page_handler_userdata[a0 - 1]);
+                    return 0;
+                },
+                .permission => {
+                    if (a0 == 0 or a0 > permission_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const creq: *const extern struct {
+                        origin_ptr: usize = 0,
+                        origin_len: usize = 0,
+                        perms_ptr: usize = 0,
+                        perms_len: usize = 0,
+                    } = @ptrFromInt(a2);
+                    const req = PermissionRequest{
+                        .origin = if (creq.origin_ptr != 0 and creq.origin_len != 0) @as([*]const u8, @ptrFromInt(creq.origin_ptr))[0..creq.origin_len] else "",
+                        .permissions_json = if (creq.perms_ptr != 0 and creq.perms_len != 0) @as([*]const u8, @ptrFromInt(creq.perms_ptr))[0..creq.perms_len] else "[]",
+                    };
+                    return if (permission_handlers[a0 - 1](win_id, req, permission_handler_userdata[a0 - 1])) 1 else 0;
+                },
+                .window_open => {
+                    if (a0 == 0 or a0 > window_open_count) return 0;
+                    const win_id: i32 = @intCast(@as(isize, @bitCast(a1)));
+                    const creq: *const extern struct {
+                        url_ptr: usize = 0,
+                        url_len: usize = 0,
+                        frame_ptr: usize = 0,
+                        frame_len: usize = 0,
+                        width: i32 = 0,
+                        height: i32 = 0,
+                        user_initiated: u8 = 0,
+                        _pad: [3]u8 = @splat(0),
+                    } = @ptrFromInt(a2);
+                    const req = WindowOpenRequest{
+                        .url = if (creq.url_ptr != 0 and creq.url_len != 0) @as([*]const u8, @ptrFromInt(creq.url_ptr))[0..creq.url_len] else "",
+                        .frame_name = if (creq.frame_ptr != 0 and creq.frame_len != 0) @as([*]const u8, @ptrFromInt(creq.frame_ptr))[0..creq.frame_len] else "",
+                        .width = creq.width,
+                        .height = creq.height,
+                        .user_initiated = creq.user_initiated != 0,
+                    };
+                    window_open_handlers[a0 - 1](win_id, a3, req, window_open_handler_userdata[a0 - 1]);
                     return 0;
                 },
             }
@@ -1047,6 +1127,53 @@ pub const Window = struct {
             .prevent = if (prevent) 1 else 0,
         };
         _ = self.ctl(.navigate_respond, @intFromPtr(&spec), 0);
+    }
+
+    /// Return true to grant. Default (no handler) grants trusted pages only.
+    pub fn setPermissionHandler(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, PermissionRequest) bool) void {
+        const S = struct {
+            fn onPerm(_: i32, req: PermissionRequest, ud: usize) bool {
+                const s: StatePtr = @ptrFromInt(ud);
+                return handler(s, req);
+            }
+        };
+        const cb = registerPermissionHandler(&S.onPerm, @intFromPtr(state));
+        _ = self.ctl(.set_permission_handler, cb, 0);
+    }
+
+    pub fn clearPermissionHandler(self: Window) void {
+        _ = self.ctl(.set_permission_handler, 0, 0);
+    }
+
+    /// Handler must call `windowOpenRespond` (or deny) before returning.
+    pub fn setWindowOpenHandler(self: Window, comptime StatePtr: type, state: StatePtr, comptime handler: fn (StatePtr, usize, WindowOpenRequest) void) void {
+        const S = struct {
+            fn onOpen(_: i32, req_id: usize, req: WindowOpenRequest, ud: usize) void {
+                const s: StatePtr = @ptrFromInt(ud);
+                handler(s, req_id, req);
+            }
+        };
+        const cb = registerWindowOpenHandler(&S.onOpen, @intFromPtr(state));
+        _ = self.ctl(.set_window_open_handler, cb, 0);
+    }
+
+    pub fn clearWindowOpenHandler(self: Window) void {
+        _ = self.ctl(.set_window_open_handler, 0, 0);
+    }
+
+    pub fn windowOpenRespond(self: Window, req_id: usize, deny: bool, opts: WindowOptions) void {
+        const Spec = extern struct {
+            req_id: usize = 0,
+            deny: u8 = 0,
+            _pad: [7]u8 = @splat(0),
+            opts: CWindowOptions = .{},
+        };
+        var spec = Spec{
+            .req_id = req_id,
+            .deny = if (deny) 1 else 0,
+            .opts = opts.toC(),
+        };
+        _ = self.ctl(.window_open_respond, @intFromPtr(&spec), 0);
     }
 
     pub fn invalidate(self: Window) void {
@@ -1949,6 +2076,22 @@ pub const Lifecycle = struct {
 
     pub fn isURLSchemeRegistered(scheme: []const u8) bool {
         return dispatch(.app_events, 17, sliceAddr(scheme), scheme.len, 0) != 0;
+    }
+
+    pub fn setOpenAtLogin(open: bool) Error!void {
+        if (dispatch(.app_events, 18, @intFromBool(open), 0, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn openAtLogin() bool {
+        return dispatch(.app_events, 19, 0, 0, 0) != 0;
+    }
+
+    pub fn wasOpenedAtLogin() bool {
+        return dispatch(.app_events, 20, 0, 0, 0) != 0;
+    }
+
+    pub fn relaunch() void {
+        _ = dispatch(.app_events, 21, 0, 0, 0);
     }
 };
 

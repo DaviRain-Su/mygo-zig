@@ -92,6 +92,8 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| Login / Relaunch | Done | `Lifecycle.setOpenAtLogin`/`relaunch` |
+| Permission / window.open | Done | `setPermissionHandler`/`setWindowOpenHandler` |
 | Page events | Done | `Window.onPage` / `navigateRespond` (will/did/DOM/fail/gone) |
 | Session | Done | `Session.clearBrowsingData`/`clearData` + window `session_name` |
 | Cookies / Downloads | Done | `Cookies.listJSON`/`setJSON` + `Window.onDownload` |
@@ -107,7 +109,6 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Notification | Done | `Notification.show`/`close`/`clearAll`/`onAppClick` |
 | Flyout | Done | `newFlyoutUi` + vibrancy + `Window.setAnchor` |
 | Bitmap / Canvas / Fonts | Done | `registerBitmap`/`bitmap`, `registerFont`, `registerCanvas` + Painter `canvasBegin`/`End`/`image` |
-| File dialogs / tray | Open | only if/when host `mygo` exposes them to Zig |
 | DX: CI + one-shot build | Done | `.github/workflows/zig.yml`; `go run ./zig/cmd/build <app>`; `scaffold -build` |
 | Standalone module path | Open | `mygo-zig` go.mod branding / docs site |
 
