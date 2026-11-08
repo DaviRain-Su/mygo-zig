@@ -131,6 +131,10 @@ const sample_zig =
     \\}
 ;
 
+/// beep_wav is a static buffer: a stack buffer here would be inlined into the
+/// view function, and a frame build runs on the system stack, which is small.
+var beep_wav: [44 + 22050 * 2 * 300 / 1000]u8 = undefined;
+
 /// makeBeepWav writes a mono 16-bit WAV of a 440 Hz tone into buf.
 fn makeBeepWav(buf: []u8, ms: u32) []u8 {
     const rate: u32 = 22050;
@@ -981,8 +985,7 @@ const Gallery = struct {
 
     fn beepNow(self: *Gallery) void {
         if (self.beep.id == 0) {
-            var wav: [44 + 22050 * 2 * 300 / 1000]u8 = undefined;
-            const bytes = makeBeepWav(wav[0..], 300);
+            const bytes = makeBeepWav(beep_wav[0..], 300);
             self.beep = mygo.Audio.decodeSound(bytes) catch return;
             self.beep_ms = self.beep.durationMs();
         }
