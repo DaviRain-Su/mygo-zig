@@ -22,6 +22,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 | `host/markdown/` | Opt-in `ui/markdown` (`View` + `Stream`) |
 | `host/editor/` | Opt-in `ui/editor` (`View` + `DiffView`) |
 | `host/terminal/` | Opt-in `plugins/terminal` (Ghostty VT) |
+| `host/sqlite/` | Opt-in `plugins/sqlite` (Open/Execute/Query/Tx) |
 | `sdk/mygo.zig` | Idiomatic Zig SDK (`exportApp`, `bind`, `declareEvent`, `Window`, …) |
 | `sdk/ui.zig` | Zero-alloc CommandBuffer client + rich controls |
 | `sdk/element_gen.zig` | Generated style / layout / query modifiers |
@@ -44,7 +45,7 @@ Full MyGo applications—both **WebView** apps and **GPU-rendered Native UI (`pa
 Virtualized `list` (100k+ rows) · multi-column `table` · virtualized `gridView` · hierarchical `outline` / `outlineTable` · custom `draw` + `Painter`
 
 ### Opt-in rich text & charts
-`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`)
+`markdown` / `markdownStream` (`_ "…/zig/host/markdown"`) · `codeEditor` / `diffView` (`_ "…/zig/host/editor"`) · `lineChart` / `barChart` / `areaChart` / `pieChart` (`_ "…/zig/host/chart"`) · `terminalView` / `mygo.Terminal` (`_ "…/zig/host/terminal"`) · `mygo.SQLite` (`_ "…/zig/host/sqlite"`)
 
 ### 202 Element modifiers (generated)
 padding, gap, grow, border, radius, fonts, `tooltip`, `cursor`, `direction`, `justify` / `alignItems`, queries (`clicked` / `hovered` / …), shortcuts, `draggable`, …
@@ -93,6 +94,7 @@ File-backed formats (mp4/webm) stay out of core: decode externally, push frames.
 | Painter paths / gradients | Done | paths + linear/conic/radial + multi-stop (`linearGradStops`/`fill*Gradient`) |
 | File dialogs | Done | `Dialog.open`/`save`/`message` + multi `FileFilter` |
 | Tray | Done | `Tray.new` / menu / click / destroy |
+| SQLite plugin SDK | Done | `mygo.SQLite` open/execute/query/transaction (JSON args) |
 | Terminal plugin SDK | Done | `mygo.Terminal` + `ui.terminalView`; gallery Term tab |
 | Completeness batch | Done | App state, window chrome/events, shell icons/trash, clipboard files, page stop/theme/title — see COMPLETENESS.md |
 | Capture / PDF | Done | `capturePagePNG` / `printToPDF` |
@@ -151,6 +153,7 @@ import (
 	_ "github.com/egoist/mygo/zig/host/markdown" // optional
 	_ "github.com/egoist/mygo/zig/host/editor"   // optional
 	_ "github.com/egoist/mygo/zig/host/terminal" // optional
+	_ "github.com/egoist/mygo/zig/host/sqlite"   // optional
 )
 
 func main() { host.Main("myapp") }

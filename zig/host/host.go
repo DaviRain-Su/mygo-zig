@@ -340,6 +340,13 @@ func hostDispatch(op, a0, a1, a2, a3 uintptr) uintptr {
 		}
 		return EditorDispatch(op, a0, a1, a2, a3)
 	}
+	if op == HostOpSQLite {
+		if SQLiteDispatch == nil {
+			SetError(errors.New("zighost: sqlite not linked (import _ \"github.com/egoist/mygo/zig/host/sqlite\")"))
+			return ^uintptr(0)
+		}
+		return SQLiteDispatch(op, a0, a1, a2, a3)
+	}
 	if op == HostOpTerminal || op == HostOpTerminalView {
 		if TerminalDispatch == nil {
 			SetError(errors.New("zighost: terminal not linked (import _ \"github.com/egoist/mygo/zig/host/terminal\")"))
@@ -1532,6 +1539,11 @@ func writeStringToOut(s string, outPtr, outCap uintptr) uintptr {
 // WriteStringToOut copies s into a Zig out buffer for opt-in host packages.
 func WriteStringToOut(s string, outPtr, outCap uintptr) uintptr {
 	return writeStringToOut(s, outPtr, outCap)
+}
+
+// WriteBytesToOut copies bytes into a Zig out buffer for opt-in host packages.
+func WriteBytesToOut(b []byte, outPtr, outCap uintptr) uintptr {
+	return writeBytesToOut(b, outPtr, outCap)
 }
 
 // PtrOf returns the address of p for activeCall payload args.

@@ -197,6 +197,7 @@ const Gallery = struct {
         term_id: usize = 0,
         term_title_len: usize = 0,
         term_title_buf: [128]u8 = undefined,
+        sqlite_id: usize = 0,
     web_win_id: i32 = 0,
     notif_id_buf: [64]u8 = undefined,
     notif_id_len: usize = 0,
@@ -1486,6 +1487,9 @@ const Gallery = struct {
                     win.setContentRulesJSON(ids) catch {};
                 }
             }
+            if (c.button("sqlite-demo", "SQLite insert+query").clicked()) {
+                self.runSQLiteDemo();
+            }
             if (c.button("win-chrome-demo", "Toggle always-on-top").clicked()) {
                 const win = mygo.Window{ .id = self.main_win_id };
                 win.setAlwaysOnTop(!win.isAlwaysOnTop());
@@ -1999,6 +2003,55 @@ const Gallery = struct {
     }
 
     
+
+    fn runSQLiteDemo(self: *Gallery) void {
+        const alloc = std.heap.page_allocator;
+        const dir = mygo.Path.get(alloc, "userData") catch {
+            const msg = "sqlite: no userData";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        defer alloc.free(dir);
+        var path_buf: [512]u8 = undefined;
+        const path = std.fmt.bufPrint(&path_buf, "{s}/gallery-zig-demo.db", .{dir}) catch {
+            return;
+        };
+        if (self.sqlite_id != 0) {
+            (mygo.SQLite{ .id = self.sqlite_id }).close();
+            self.sqlite_id = 0;
+        }
+        const db = mygo.SQLite.open(path, false) catch {
+            const msg = "sqlite: open failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        self.sqlite_id = db.id;
+        _ = db.execute(alloc, "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, body TEXT)", "[]") catch {
+            const msg = "sqlite: create failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        _ = db.execute(alloc, "INSERT INTO notes(body) VALUES (?)", "[\"hello from zig\"]") catch {
+            const msg = "sqlite: insert failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        const rows = db.query(alloc, "SELECT id, body FROM notes ORDER BY id DESC LIMIT 3", "[]") catch {
+            const msg = "sqlite: query failed";
+            @memcpy(self.path_buf[0..msg.len], msg);
+            self.path_len = msg.len;
+            return;
+        };
+        defer alloc.free(rows);
+        const n = @min(rows.len, self.path_buf.len);
+        @memcpy(self.path_buf[0..n], rows[0..n]);
+        self.path_len = n;
+    }
+
     fn ensureTerm(self: *Gallery) void {
         if (self.term_id != 0) return;
         const term = mygo.Terminal.createWithEvents(.{}, *Gallery, self, onTermEvent) catch return;

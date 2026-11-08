@@ -70,6 +70,7 @@ pub const HostOp = enum(usize) {
     video_end = 234,
     terminal = 235,
     terminal_view = 236,
+    sqlite = 237,
     register_font = 240,
     register_bitmap = 241,
     register_canvas = 242,
@@ -2574,6 +2575,91 @@ pub const Protocol = struct {
     }
 };
 
+
+
+pub const SQLite = struct {
+    id: usize = 0,
+
+    pub fn open(path: []const u8, read_only: bool) Error!SQLite {
+        const Spec = extern struct {
+            path_ptr: usize = 0,
+            path_len: usize = 0,
+            read_only: u8 = 0,
+            _pad: [7]u8 = @splat(0),
+        };
+        var spec = Spec{
+            .path_ptr = sliceAddr(path),
+            .path_len = path.len,
+            .read_only = @intFromBool(read_only),
+        };
+        const id = dispatch(.sqlite, 1, @intFromPtr(&spec), 0, 0);
+        if (id == std.math.maxInt(usize)) return Error.MyGoError;
+        return .{ .id = id };
+    }
+
+    pub fn close(self: SQLite) void {
+        _ = dispatch(.sqlite, 2, self.id, 0, 0);
+    }
+
+    /// Runs one statement. `args_json` is a JSON array ("[]" when none).
+    /// Returns JSON `{changes,lastInsertId}` owned by `allocator`.
+    pub fn execute(self: SQLite, allocator: std.mem.Allocator, sql: []const u8, args_json: []const u8) Error![]u8 {
+        return self.call(allocator, 3, sql, args_json);
+    }
+
+    /// Returns JSON `{columns,rows}` owned by `allocator`.
+    pub fn query(self: SQLite, allocator: std.mem.Allocator, sql: []const u8, args_json: []const u8) Error![]u8 {
+        return self.call(allocator, 4, sql, args_json);
+    }
+
+    /// `stmts_json` is `[{{"sql":"...","args":[...]}}, ...]`.
+    /// Returns JSON array of `{changes,lastInsertId}`.
+    pub fn transaction(self: SQLite, allocator: std.mem.Allocator, stmts_json: []const u8) Error![]u8 {
+        const Spec = extern struct {
+            db_id: usize = 0,
+            stmts_ptr: usize = 0,
+            stmts_len: usize = 0,
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [256 * 1024]u8 = undefined;
+        var spec = Spec{
+            .db_id = self.id,
+            .stmts_ptr = sliceAddr(stmts_json),
+            .stmts_len = stmts_json.len,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.sqlite, 5, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+
+    fn call(self: SQLite, allocator: std.mem.Allocator, sub: usize, sql: []const u8, args_json: []const u8) Error![]u8 {
+        const Spec = extern struct {
+            db_id: usize = 0,
+            sql_ptr: usize = 0,
+            sql_len: usize = 0,
+            args_ptr: usize = 0,
+            args_len: usize = 0,
+            out_ptr: usize = 0,
+            out_cap: usize = 0,
+        };
+        var scratch: [256 * 1024]u8 = undefined;
+        var spec = Spec{
+            .db_id = self.id,
+            .sql_ptr = sliceAddr(sql),
+            .sql_len = sql.len,
+            .args_ptr = sliceAddr(args_json),
+            .args_len = args_json.len,
+            .out_ptr = @intFromPtr(&scratch),
+            .out_cap = scratch.len,
+        };
+        const got = dispatch(.sqlite, sub, @intFromPtr(&spec), 0, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        return try allocator.dupe(u8, scratch[0..@min(got, scratch.len)]);
+    }
+};
 
 pub const Terminal = struct {
     id: usize = 0,

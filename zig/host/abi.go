@@ -100,6 +100,7 @@ const (
 	HostOpVideoEnd       uintptr = 234 // a0 = key ptr, a1 = key len
 	HostOpTerminal       uintptr = 235 // a0=subop (lifecycle)
 	HostOpTerminalView   uintptr = 236 // a0=frame a1=term_id
+	HostOpSQLite         uintptr = 237 // a0=subop
 	HostOpRegisterFont   uintptr = 240 // a0=*CFontSpec
 	HostOpRegisterBitmap uintptr = 241 // a0=*CBitmapSpec
 	HostOpRegisterCanvas uintptr = 242 // a0=*CCanvasSpec
@@ -350,6 +351,9 @@ var EditorDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
 
 // TerminalDispatch is populated by `zig/host/terminal` when imported.
 var TerminalDispatch func(call CallZigFn, op, a0, a1, a2, a3 uintptr) uintptr
+
+// SQLiteDispatch is populated by `zig/host/sqlite` when imported.
+var SQLiteDispatch func(op, a0, a1, a2, a3 uintptr) uintptr
 
 // ChartDispatch is populated by `zig/host/chart` when imported.
 var ChartDispatch func(op, frameHandle, a1, a2, a3 uintptr) uintptr
@@ -919,4 +923,32 @@ type CTerminalNewSpec struct {
 	ShellIntegration       uint8
 	Transparent            uint8
 	_                      [6]byte
+}
+
+// SQLite sub-ops for HostOpSQLite.
+const (
+	SQLiteOpen        uintptr = 1 // a1=*CSQLiteOpenSpec → id
+	SQLiteClose       uintptr = 2 // a1=id
+	SQLiteExecute     uintptr = 3 // a1=*CSQLiteExecSpec → nbytes JSON
+	SQLiteQuery       uintptr = 4 // a1=*CSQLiteExecSpec → nbytes JSON
+	SQLiteTransaction uintptr = 5 // a1=*CSQLiteTxSpec → nbytes JSON
+)
+
+type CSQLiteOpenSpec struct {
+	PathPtr, PathLen uintptr
+	ReadOnly         uint8
+	_                [7]byte
+}
+
+type CSQLiteExecSpec struct {
+	DBID              uintptr
+	SQLPtr, SQLLen    uintptr
+	ArgsPtr, ArgsLen  uintptr // JSON array
+	OutPtr, OutCap    uintptr
+}
+
+type CSQLiteTxSpec struct {
+	DBID                 uintptr
+	StmtsPtr, StmtsLen   uintptr // JSON [{sql,args},...]
+	OutPtr, OutCap       uintptr
 }
