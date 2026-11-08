@@ -1712,6 +1712,35 @@ func hostAppEvents(sub, a1, a2, a3 uintptr) uintptr {
 		}
 		mygo.App.ShowAboutPanel(opts)
 		return 0
+	case AppEvSetBadge:
+		mygo.App.Dock.SetBadge(CopyString(a1, a2))
+		return 0
+	case AppEvGetBadge:
+		return writeBytesToOut([]byte(mygo.App.Dock.Badge()), a1, a2)
+	case AppEvBounce:
+		return uintptr(mygo.App.Dock.Bounce(a1 != 0))
+	case AppEvCancelBounce:
+		mygo.App.Dock.CancelBounce(int(a1))
+		return 0
+	case AppEvRegisterScheme:
+		if err := mygo.App.RegisterURLScheme(CopyString(a1, a2)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case AppEvUnregisterScheme:
+		if err := mygo.App.UnregisterURLScheme(CopyString(a1, a2)); err != nil {
+			SetError(err)
+			return ^uintptr(0)
+		}
+		SetError(nil)
+		return 0
+	case AppEvIsSchemeRegistered:
+		if mygo.App.IsURLSchemeRegistered(CopyString(a1, a2)) {
+			return 1
+		}
+		return 0
 	default:
 		SetError(errors.New("zighost: unknown app event subop"))
 		return ^uintptr(0)

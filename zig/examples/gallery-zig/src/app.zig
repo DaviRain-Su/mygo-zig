@@ -1321,6 +1321,16 @@ const Gallery = struct {
                 _ = c.textf("dialog: {s}", .{self.dialog_buf[0..self.dialog_len]}).fontSize(11).textColor(t.text_muted);
             }
 
+            if (c.button("badge-set", "Badge 3").clicked()) {
+                mygo.Lifecycle.setBadge("3");
+            }
+            if (c.button("badge-clear", "Clear badge").clicked()) {
+                mygo.Lifecycle.setBadge("");
+            }
+            if (c.button("dock-bounce", "Bounce Dock").clicked()) {
+                _ = mygo.Lifecycle.bounce(false);
+            }
+
             if (c.button("about-show", "About…").clicked()) {
                 mygo.Lifecycle.showAbout(.{ .name = "Gallery Zig", .version = "0.1.0", .credits = "Zig binding demo" });
             }

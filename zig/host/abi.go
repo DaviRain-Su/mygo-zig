@@ -503,6 +503,13 @@ const (
 	AppEvOnSecondInstance      uintptr = 8  // kind=8, a2=*CStr JSON {args,wd}
 	AppEvRequestSingleInstance uintptr = 9  // → 1 if first instance
 	AppEvShowAbout             uintptr = 10 // a1=*CAboutSpec
+	AppEvSetBadge              uintptr = 11 // a1=text_ptr a2=text_len
+	AppEvGetBadge              uintptr = 12 // a1=out_ptr a2=out_cap → len
+	AppEvBounce                uintptr = 13 // a1=critical 0/1 → bounce id
+	AppEvCancelBounce          uintptr = 14 // a1=id
+	AppEvRegisterScheme        uintptr = 15 // a1=scheme_ptr a2=scheme_len
+	AppEvUnregisterScheme      uintptr = 16
+	AppEvIsSchemeRegistered    uintptr = 17 // → 1/0
 )
 
 type CAboutSpec struct {

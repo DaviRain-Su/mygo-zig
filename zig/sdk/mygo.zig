@@ -1324,6 +1324,38 @@ pub const Lifecycle = struct {
         };
         _ = dispatch(.app_events, 10, @intFromPtr(&spec), 0, 0);
     }
+
+    pub fn setBadge(text: []const u8) void {
+        _ = dispatch(.app_events, 11, sliceAddr(text), text.len, 0);
+    }
+
+    pub fn badge(allocator: std.mem.Allocator) Error![]u8 {
+        var scratch: [256]u8 = undefined;
+        const got = dispatch(.app_events, 12, @intFromPtr(&scratch), scratch.len, 0);
+        if (got == std.math.maxInt(usize)) return Error.MyGoError;
+        const n = @min(got, scratch.len);
+        return try allocator.dupe(u8, scratch[0..n]);
+    }
+
+    pub fn bounce(critical: bool) usize {
+        return dispatch(.app_events, 13, @intFromBool(critical), 0, 0);
+    }
+
+    pub fn cancelBounce(id: usize) void {
+        _ = dispatch(.app_events, 14, id, 0, 0);
+    }
+
+    pub fn registerURLScheme(scheme: []const u8) Error!void {
+        if (dispatch(.app_events, 15, sliceAddr(scheme), scheme.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn unregisterURLScheme(scheme: []const u8) Error!void {
+        if (dispatch(.app_events, 16, sliceAddr(scheme), scheme.len, 0) == std.math.maxInt(usize)) return Error.MyGoError;
+    }
+
+    pub fn isURLSchemeRegistered(scheme: []const u8) bool {
+        return dispatch(.app_events, 17, sliceAddr(scheme), scheme.len, 0) != 0;
+    }
 };
 
 pub const Appearance = struct {
